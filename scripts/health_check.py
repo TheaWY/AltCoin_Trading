@@ -15,8 +15,21 @@ PROBE_FILE = PROJECT_ROOT / "data" / "health_probe.json"
 DEFAULT_PORT = 8000
 
 
+def _env_value(key: str) -> str | None:
+    env_path = PROJECT_ROOT / ".env"
+    if not env_path.exists():
+        return None
+    for raw_line in env_path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or not line.startswith(f"{key}="):
+            continue
+        value = line.split("=", 1)[1].split("#", 1)[0].strip()
+        return value.strip("\"'")
+    return None
+
+
 def main() -> int:
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_PORT
+    port = int(sys.argv[1] if len(sys.argv) > 1 else (_env_value("API_PORT") or DEFAULT_PORT))
     url = f"http://127.0.0.1:{port}/api/health"
     now = int(datetime.now(timezone.utc).timestamp())
 
