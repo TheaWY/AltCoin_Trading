@@ -26,9 +26,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 RUN mkdir -p /data
 
-EXPOSE 8080
+EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD sh -c 'curl -sf "http://127.0.0.1:${PORT:-8080}/api/health" || exit 1'
+    CMD sh -c 'curl -sf "http://127.0.0.1:${PORT:-8000}/api/health" || exit 1'
 
 CMD ["bash", "scripts/start-web.sh"]
