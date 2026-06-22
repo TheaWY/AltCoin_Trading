@@ -55,6 +55,11 @@ launchctl enable "gui/$(id -u)/${LABEL_HEALTH}"
 launchctl kickstart -k "gui/$(id -u)/${LABEL_APP}"
 launchctl kickstart -k "gui/$(id -u)/${LABEL_HEALTH}"
 
+# GitHub auto-sync (optional — commits & pushes every 3 min)
+if [[ -x "$PROJECT_DIR/scripts/install-gitsync.sh" ]]; then
+  "$PROJECT_DIR/scripts/install-gitsync.sh" || echo "⚠️  Git sync install failed (see logs/git-sync.log)"
+fi
+
 echo ""
 echo "Services started:"
 echo "  App:    $LABEL_APP"

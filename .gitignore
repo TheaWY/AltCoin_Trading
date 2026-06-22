@@ -12,3 +12,4 @@ logs/
 data/health.json
 data/health_probe.json
 data/ngrok.url
+data/*.db
