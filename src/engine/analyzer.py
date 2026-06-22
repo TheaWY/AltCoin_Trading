@@ -18,13 +18,36 @@ def _pct_change(current: float, past: float) -> float | None:
     return ((current - past) / past) * 100.0
 
 
-def _price_momentum(storage: Storage, symbol: str) -> dict[str, float | None]:
+def _price_momentum(storage: Storage, symbol: str) -> dict[str, Any]:
     prices = storage.get_prices(symbol, limit=168)
     if len(prices) < 2:
-        return {"pct_24h": None, "pct_7d": None}
+        return {
+            "pct_24h": None,
+            "pct_7d": None,
+            "volume_spike": False,
+            "volume_ratio": 0.0,
+            "volume_trend": "flat",
+        }
 
     latest = float(prices[-1]["close"])
     ts_latest = int(prices[-1]["timestamp"])
+    latest_volume = float(prices[-1]["volume"])
+    volume_stats = storage.get_volume_stats(symbol, timeframe="1h", lookback=24)
+    avg_volume = volume_stats["avg"]
+    volume_ratio = (latest_volume / float(avg_volume)) if avg_volume else 0.0
+    volume_spike = volume_ratio >= 2.0
+
+    volumes_24h = [float(row["volume"]) for row in prices[-24:]]
+    recent_volume = volumes_24h[-6:]
+    previous_volume = volumes_24h[:-6]
+    volume_trend = "flat"
+    if recent_volume and previous_volume:
+        recent_avg = sum(recent_volume) / len(recent_volume)
+        previous_avg = sum(previous_volume) / len(previous_volume)
+        if previous_avg and recent_avg > previous_avg * 1.05:
+            volume_trend = "rising"
+        elif previous_avg and recent_avg < previous_avg * 0.95:
+            volume_trend = "falling"
 
     def close_near(seconds_ago: int) -> float | None:
         target = ts_latest - seconds_ago
@@ -40,7 +63,41 @@ def _price_momentum(storage: Storage, symbol: str) -> dict[str, float | None]:
     return {
         "pct_24h": _pct_change(latest, past_24h),
         "pct_7d": _pct_change(latest, past_7d),
+        "volume_spike": volume_spike,
+        "volume_ratio": round(volume_ratio, 2),
+        "volume_trend": volume_trend,
     }
+
+
+def _apply_volume_signal(
+    direction: str,
+    pct_24h: float | None,
+    confidence: float,
+    reason_parts: list[str],
+    volume_spike: bool,
+) -> float:
+    if not volume_spike:
+        return confidence
+
+    pct = pct_24h or 0.0
+    aligned = (
+        direction == SignalDirection.LONG.value and pct > 0
+    ) or (
+        direction == SignalDirection.SHORT.value and pct < 0
+    )
+    against = (
+        direction == SignalDirection.LONG.value and pct < 0
+    ) or (
+        direction == SignalDirection.SHORT.value and pct > 0
+    )
+
+    if aligned:
+        confidence += 0.1
+        reason_parts.append("volume spike confirms direction")
+    elif against:
+        confidence -= 0.1
+        reason_parts.append("volume spike against direction")
+    return confidence
 
 
 def _rating_from_score(score: float) -> str:
@@ -59,6 +116,7 @@ def _analyze_short_term(
     direction: str,
     funding_rate: float,
     pct_24h: float | None,
+    volume_spike: bool,
 ) -> dict[str, Any]:
     """1–3 day horizon — funding reversal + 24h momentum alignment."""
     if direction == SignalDirection.NONE.value:
@@ -99,6 +157,9 @@ def _analyze_short_term(
             reason_parts.append("24h flat — fade crowded longs")
         action = "SHORT"
 
+    confidence = _apply_volume_signal(
+        direction, pct_24h, confidence, reason_parts, volume_spike
+    )
     confidence = max(0.0, min(1.0, confidence))
     rating = _rating_from_score(confidence)
     worth = rating in ("GOOD", "STRONG") and confidence >= config.SHORT_TERM_MIN_CONFIDENCE
@@ -119,6 +180,7 @@ def _analyze_swing(
     funding_rate: float,
     pct_24h: float | None,
     pct_7d: float | None,
+    volume_spike: bool,
 ) -> dict[str, Any]:
     """1–2 week horizon — 7d trend + funding alignment."""
     if direction == SignalDirection.NONE.value:
@@ -162,6 +224,9 @@ def _analyze_swing(
         if funding_rate > config.FUNDING_RATE_SHORT_THRESHOLD:
             confidence += 0.1
 
+    confidence = _apply_volume_signal(
+        direction, pct_24h, confidence, reason_parts, volume_spike
+    )
     confidence = max(0.0, min(1.0, confidence))
     rating = _rating_from_score(confidence)
     worth = rating in ("GOOD", "STRONG") and confidence >= config.SWING_MIN_CONFIDENCE
@@ -195,8 +260,19 @@ class AltAnalyzer:
         direction = latest_signal["direction"] if latest_signal else SignalDirection.NONE.value
 
         fr = funding_rate or 0.0
-        short_term = _analyze_short_term(direction, fr, momentum["pct_24h"])
-        swing = _analyze_swing(direction, fr, momentum["pct_24h"], momentum["pct_7d"])
+        short_term = _analyze_short_term(
+            direction,
+            fr,
+            momentum["pct_24h"],
+            momentum["volume_spike"],
+        )
+        swing = _analyze_swing(
+            direction,
+            fr,
+            momentum["pct_24h"],
+            momentum["pct_7d"],
+            momentum["volume_spike"],
+        )
 
         best = short_term if short_term["confidence"] >= swing["confidence"] else swing
         worth = (
@@ -218,6 +294,9 @@ class AltAnalyzer:
             "funding_rate_pct": (funding_rate * 100) if funding_rate is not None else None,
             "pct_24h": momentum["pct_24h"],
             "pct_7d": momentum["pct_7d"],
+            "volume_spike": momentum["volume_spike"],
+            "volume_ratio": momentum["volume_ratio"],
+            "volume_trend": momentum["volume_trend"],
             "signal": latest_signal,
             "direction": direction,
             "short_term": short_term,

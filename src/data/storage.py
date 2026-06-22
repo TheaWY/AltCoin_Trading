@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -258,6 +259,22 @@ class Storage:
                 )
                 deleted[timeframe] = cursor.rowcount
         return deleted
+
+    def get_volume_stats(
+        self, symbol: str, timeframe: str = "1h", lookback: int = 24
+    ) -> dict[str, float | int | None]:
+        rows = self.get_prices(symbol, limit=lookback, timeframe=timeframe)
+        volumes = [float(row["volume"]) for row in rows]
+        if not volumes:
+            return {"avg": None, "stddev": None, "count": 0}
+
+        avg = sum(volumes) / len(volumes)
+        variance = sum((volume - avg) ** 2 for volume in volumes) / len(volumes)
+        return {
+            "avg": avg,
+            "stddev": math.sqrt(variance),
+            "count": len(volumes),
+        }
 
     # --- funding rates ---
 
