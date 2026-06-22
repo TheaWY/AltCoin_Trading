@@ -285,7 +285,14 @@ def is_ngrok_process_running() -> bool:
 def verify_public_url(base_url: str) -> bool:
     try:
         url = f"{base_url.rstrip('/')}/api/health"
-        with urllib.request.urlopen(url, timeout=12) as resp:
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "AltCoinTrading/health",
+                "ngrok-skip-browser-warning": "1",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=12) as resp:
             return resp.status == 200
     except Exception:
         return False
