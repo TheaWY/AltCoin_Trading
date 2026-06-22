@@ -15,8 +15,6 @@ DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "trading.db"))
 
 # --- API server ---
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-# Cloud hosts (Railway, Render, Fly) set PORT; local dev uses API_PORT.
-API_PORT = int(os.getenv("PORT", os.getenv("API_PORT", "8000")))
 
 
 def is_cloud_runtime() -> bool:
@@ -47,6 +45,14 @@ def public_base_url() -> str | None:
     if fly_app:
         return f"https://{fly_app}.fly.dev"
     return None
+
+
+# Cloud hosts set PORT and require the app to bind it; API_PORT remains the local override.
+API_PORT = int(
+    os.getenv("PORT")
+    if is_cloud_runtime() and os.getenv("PORT")
+    else (os.getenv("API_PORT") or os.getenv("PORT") or "8000")
+)
 
 # --- Binance / ccxt ---
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")

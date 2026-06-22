@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from src import config
 from src.api.routes import alts, dashboard, health, signals, trades
 from src.api.websocket import router as ws_router
 
 logger = logging.getLogger(__name__)
+
+
+def _log_background_failure(future: asyncio.Future) -> None:
+    try:
+        future.result()
+    except Exception:
+        logger.exception("Background startup task failed")
 
 
 def _start_ngrok_tunnel() -> None:
@@ -28,17 +36,23 @@ def _start_ngrok_tunnel() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from src.health import get_health
+    from src.runtime import start_scheduler
+
+    health = get_health()
+    health.mark_started(os.getpid())
+    scheduler = start_scheduler()
+    health.mark_running()
+
     if config.NGROK_ENABLED:
         from src.tunnel import set_api_ready
 
         set_api_ready(True)
-        await asyncio.sleep(0.5)
-        try:
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, _start_ngrok_tunnel)
-        except Exception:
-            logger.exception("Ngrok tunnel failed — running local only")
+        loop = asyncio.get_running_loop()
+        ngrok_future = loop.run_in_executor(None, _start_ngrok_tunnel)
+        ngrok_future.add_done_callback(_log_background_failure)
     yield
+    scheduler.shutdown(wait=False)
     if config.NGROK_ENABLED:
         from src.tunnel import set_api_ready, stop_ngrok
 
@@ -65,3 +79,8 @@ async def root() -> dict[str, str]:
 async def dashboard_page() -> FileResponse:
     index = config.DASHBOARD_DIR / "index.html"
     return FileResponse(index)
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> Response:
+    return Response(status_code=204)

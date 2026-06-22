@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY main.py .
 COPY src ./src/
+COPY scripts/start-web.sh ./scripts/start-web.sh
 
 ENV PYTHONUNBUFFERED=1
 ENV DEPLOYMENT_MODE=cloud

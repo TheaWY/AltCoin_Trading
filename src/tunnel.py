@@ -1,4 +1,4 @@
-"""Ngrok tunnel — uses system ngrok CLI (reads ~/.ngrok/ngrok.yml authtoken)."""
+"""Ngrok tunnel management."""
 
 from __future__ import annotations
 
@@ -40,7 +40,14 @@ def _static_endpoint_url() -> str | None:
 
 
 def _ngrok_http_cmd(ngrok_bin: str, port: int) -> list[str]:
-    cmd = [ngrok_bin, "http", str(port), "--log=stdout"]
+    cmd = [
+        ngrok_bin,
+        "http",
+        str(port),
+        "--log=stdout",
+        "--web-addr",
+        f"127.0.0.1:{config.NGROK_WEB_PORT}",
+    ]
     static_url = _static_endpoint_url()
     if static_url:
         cmd.extend(["--url", static_url])
@@ -55,6 +62,7 @@ def _find_ngrok_bin() -> str | None:
     for candidate in (
         "/opt/homebrew/bin/ngrok",
         "/usr/local/bin/ngrok",
+        "/snap/bin/ngrok",
     ):
         if Path(candidate).is_file():
             return candidate
@@ -67,6 +75,8 @@ def _authtoken_from_ngrok_config() -> str:
 
     config_paths = [
         Path.home() / "Library/Application Support/ngrok/ngrok.yml",
+        Path.home() / ".config/ngrok/ngrok.yml",
+        Path.home() / ".ngrok/ngrok.yml",
         Path.home() / ".ngrok2/ngrok.yml",
     ]
     for path in config_paths:
@@ -86,7 +96,9 @@ def _save_public_url(url: str) -> None:
 
 
 def _fetch_https_url() -> str | None:
-    for web_port in range(4040, 4055):
+    ports = [config.NGROK_WEB_PORT]
+    ports.extend(port for port in range(4040, 4055) if port != config.NGROK_WEB_PORT)
+    for web_port in ports:
         api = f"http://127.0.0.1:{web_port}/api/tunnels"
         try:
             with urllib.request.urlopen(api, timeout=2) as resp:
@@ -109,7 +121,7 @@ def _start_ngrok_cli(port: int) -> str:
     ngrok_bin = _find_ngrok_bin()
     if not ngrok_bin:
         raise RuntimeError(
-            "ngrok not found. Install with: brew install ngrok/ngrok/ngrok"
+            "ngrok not found. Install ngrok, or set NGROK_BIN to the ngrok executable."
         )
 
     cmd = _ngrok_http_cmd(ngrok_bin, port)
