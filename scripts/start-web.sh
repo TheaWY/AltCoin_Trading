@@ -15,7 +15,7 @@ if [[ -n "${PORT:-}" ]]; then
 elif [[ -n "${API_PORT:-}" ]]; then
   WEB_PORT="$API_PORT"
 elif [[ "${DEPLOYMENT_MODE:-}" == "cloud" ]]; then
-  WEB_PORT="8080"
+  WEB_PORT="8000"
 else
   WEB_PORT="8000"
 fi
