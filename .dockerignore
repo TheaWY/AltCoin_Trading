@@ -1,0 +1,15 @@
+.env
+.venv
+venv
+__pycache__
+*.py[cod]
+.git
+logs
+data
+*.db
+.DS_Store
+*.egg-info
+dist
+build
+launchd
+scripts/restart.sh

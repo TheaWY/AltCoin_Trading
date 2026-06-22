@@ -21,13 +21,12 @@ pkill -f "ngrok http.*8000" 2>/dev/null || true
 sleep 1
 
 mkdir -p logs data
-if command -v setsid >/dev/null 2>&1; then
-  setsid .venv/bin/python main.py >> logs/trading.stdout.log 2>> logs/trading.stderr.log </dev/null &
-else
-  nohup .venv/bin/python main.py >> logs/trading.stdout.log 2>> logs/trading.stderr.log </dev/null &
-  disown -h "$!" 2>/dev/null || true
-fi
-echo "Starting server (pid $!)..."
+# Fully detach from the launching shell (macOS has no setsid by default).
+nohup bash -c 'cd "$0" && exec .venv/bin/python main.py' "$(pwd)" \
+  >> logs/trading.stdout.log 2>> logs/trading.stderr.log </dev/null >/dev/null 2>&1 &
+SERVER_PID=$!
+disown "$SERVER_PID" 2>/dev/null || true
+echo "Starting server (pid $SERVER_PID)..."
 
 for i in $(seq 1 45); do
   sleep 1

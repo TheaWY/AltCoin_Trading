@@ -10,12 +10,43 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
 # --- Paths ---
-DATA_DIR = _PROJECT_ROOT / "data"
+DATA_DIR = Path(os.getenv("DATA_DIR", str(_PROJECT_ROOT / "data")))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "trading.db"))
 
 # --- API server ---
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
+# Cloud hosts (Railway, Render, Fly) set PORT; local dev uses API_PORT.
+API_PORT = int(os.getenv("PORT", os.getenv("API_PORT", "8000")))
+
+
+def is_cloud_runtime() -> bool:
+    """True when running on a cloud host (no local Mac / ngrok needed)."""
+    if os.getenv("DEPLOYMENT_MODE", "").lower() == "cloud":
+        return True
+    return bool(
+        os.getenv("RAILWAY_ENVIRONMENT")
+        or os.getenv("RAILWAY_PUBLIC_DOMAIN")
+        or os.getenv("RENDER")
+        or os.getenv("RENDER_EXTERNAL_URL")
+        or os.getenv("FLY_APP_NAME")
+    )
+
+
+def public_base_url() -> str | None:
+    """HTTPS base URL for phone/browser access (cloud URL or ngrok)."""
+    explicit = os.getenv("PUBLIC_URL", "").strip().rstrip("/")
+    if explicit:
+        return explicit
+    railway = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+    if railway:
+        return f"https://{railway.rstrip('/')}"
+    render = os.getenv("RENDER_EXTERNAL_URL", "").strip().rstrip("/")
+    if render:
+        return render
+    fly_app = os.getenv("FLY_APP_NAME", "").strip()
+    if fly_app:
+        return f"https://{fly_app}.fly.dev"
+    return None
 
 # --- Binance / ccxt ---
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
@@ -75,8 +106,9 @@ SIGNAL_ACCURACY_ROLLING_DAYS = int(os.getenv("SIGNAL_ACCURACY_ROLLING_DAYS", "7"
 # --- Dashboard ---
 DASHBOARD_DIR = Path(__file__).resolve().parent / "dashboard"
 
-# --- Ngrok (public phone access) ---
-NGROK_ENABLED = os.getenv("NGROK_ENABLED", "false").lower() in ("true", "1", "yes")
+# --- Ngrok (public phone access — local Mac only; disabled on cloud) ---
+_ngrok_env = os.getenv("NGROK_ENABLED", "false").lower() in ("true", "1", "yes")
+NGROK_ENABLED = _ngrok_env and not is_cloud_runtime()
 NGROK_AUTHTOKEN = os.getenv("NGROK_AUTHTOKEN", "")  # optional if ngrok CLI is configured
 NGROK_USE_CLI = os.getenv("NGROK_USE_CLI", "true").lower() in ("true", "1", "yes")
 NGROK_BIN = os.getenv("NGROK_BIN", "")  # auto-detect homebrew ngrok if empty
