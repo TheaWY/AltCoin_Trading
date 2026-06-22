@@ -5,7 +5,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 WEB_HOST="${API_HOST:-0.0.0.0}"
-WEB_PORT="${PORT:-${API_PORT:-8000}}"
+if [[ -n "${PORT:-}" ]]; then
+  WEB_PORT="$PORT"
+elif [[ -n "${API_PORT:-}" ]]; then
+  WEB_PORT="$API_PORT"
+elif [[ "${DEPLOYMENT_MODE:-}" == "cloud" ]]; then
+  WEB_PORT="8080"
+else
+  WEB_PORT="8000"
+fi
 PYTHON="${PYTHON_BIN:-}"
 
 if [[ -z "$PYTHON" ]]; then
