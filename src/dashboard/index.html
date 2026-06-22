@@ -6,17 +6,16 @@
   <title>AltCoin Trading</title>
   <style>
     :root {
-      --bg: #070a0f;
-      --panel: #10151d;
-      --panel-strong: #141b25;
-      --border: #263141;
-      --text: #edf2f7;
-      --muted: #8b98a9;
-      --green: #3ddc84;
-      --red: #ff5c6c;
-      --blue: #62a8ff;
-      --amber: #f4bf50;
-      --cyan: #44d7d1;
+      --bg: #05070b;
+      --panel: #0f141c;
+      --panel-2: #151b24;
+      --line: #252d3a;
+      --text: #eef3f8;
+      --muted: #8a94a3;
+      --up: #f04452;
+      --down: #2878ff;
+      --green: #2fd27d;
+      --amber: #f0b84f;
     }
     * { box-sizing: border-box; }
     body {
@@ -27,429 +26,474 @@
       font-size: 14px;
       line-height: 1.35;
     }
-    .shell {
+    .app {
       width: 100%;
       max-width: 520px;
+      min-height: 100vh;
       margin: 0 auto;
-      padding: 12px 12px 48px;
+      padding: 12px 12px 86px;
     }
     .topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
+      margin-bottom: 14px;
     }
-    .title {
-      font-size: 17px;
-      font-weight: 800;
-      letter-spacing: 0;
-    }
+    .title { font-size: 18px; font-weight: 850; }
     .status {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       color: var(--muted);
       font-size: 12px;
-      white-space: nowrap;
     }
     .dot {
       width: 8px;
       height: 8px;
-      border-radius: 999px;
-      background: var(--red);
+      border-radius: 50%;
+      background: var(--up);
     }
     .dot.live { background: var(--green); }
-    .section { margin: 14px 0; }
-    .section-label {
+    .tab-page { display: none; }
+    .tab-page.active { display: block; }
+    .section { margin-bottom: 14px; }
+    .section-title {
+      margin: 0 0 8px 2px;
       color: var(--muted);
       font-size: 11px;
-      font-weight: 800;
+      font-weight: 850;
       letter-spacing: .08em;
       text-transform: uppercase;
-      margin: 0 0 8px 2px;
     }
-    .card {
+    .panel {
       background: var(--panel);
-      border: 1px solid var(--border);
+      border: 1px solid var(--line);
       border-radius: 8px;
       overflow: hidden;
     }
     .summary {
-      padding: 14px;
-      background: var(--panel-strong);
+      padding: 16px 14px 14px;
+      background: var(--panel-2);
     }
-    .summary-main {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      align-items: flex-start;
-      margin-bottom: 12px;
-    }
-    .label {
+    .summary-label {
       color: var(--muted);
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-    }
-    .total {
-      font-size: 28px;
-      font-weight: 850;
-      font-variant-numeric: tabular-nums;
-      margin-top: 3px;
-    }
-    .pnl {
-      text-align: right;
-      font-variant-numeric: tabular-nums;
+      font-size: 12px;
       font-weight: 750;
-      padding-top: 19px;
     }
-    .grid {
+    .summary-total {
+      margin-top: 3px;
+      font-size: 30px;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+    .summary-pnl {
+      margin-top: 5px;
+      font-size: 15px;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+    }
+    .metrics {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 10px;
+      gap: 1px;
+      background: var(--line);
+      border-top: 1px solid var(--line);
     }
     .metric {
       min-width: 0;
-      border-top: 1px solid rgba(255,255,255,.06);
-      padding-top: 10px;
+      padding: 11px 12px;
+      background: var(--panel);
+    }
+    .metric-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 750;
     }
     .metric-value {
-      margin-top: 3px;
-      font-weight: 750;
+      margin-top: 4px;
+      font-weight: 800;
       font-variant-numeric: tabular-nums;
       overflow-wrap: anywhere;
     }
     .market-line {
-      padding: 12px 14px;
-      font-size: 14px;
-      font-weight: 700;
-      color: #d9e3ee;
+      padding: 13px 14px;
+      font-weight: 850;
+      color: #dfe7f0;
     }
-    .table-wrap {
+    .scroll-table {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 760px;
+      min-width: 620px;
     }
+    .market-table { min-width: 700px; }
     th, td {
-      padding: 9px 8px;
+      padding: 10px 9px;
       border-bottom: 1px solid rgba(255,255,255,.06);
       text-align: right;
-      font-variant-numeric: tabular-nums;
       white-space: nowrap;
+      font-variant-numeric: tabular-nums;
     }
     th {
       color: var(--muted);
+      background: #0a0e14;
       font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      background: #0c1118;
+      font-weight: 850;
       position: sticky;
       top: 0;
       z-index: 1;
     }
-    th:first-child, td:first-child { text-align: left; position: sticky; left: 0; }
-    th:first-child { background: #0c1118; }
+    th:first-child, td:first-child {
+      position: sticky;
+      left: 0;
+      text-align: left;
+    }
+    th:first-child { background: #0a0e14; }
     td:first-child { background: var(--panel); }
-    tr.worth td { background: rgba(61,220,132,.08); }
-    tr.worth td:first-child { background: #13231d; }
-    .coin {
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      font-weight: 800;
-    }
-    .vol-mark {
-      display: inline-grid;
-      grid-template-columns: repeat(3, 3px);
-      align-items: end;
-      gap: 2px;
-      width: 13px;
-      height: 12px;
-    }
-    .vol-mark i {
+    tr.hot td { background: rgba(47,210,125,.08); }
+    tr.hot td:first-child { background: #112119; }
+    .coin { font-weight: 850; }
+    .sub {
       display: block;
-      width: 3px;
-      background: var(--amber);
-      border-radius: 1px;
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
     }
-    .vol-mark i:nth-child(1) { height: 5px; }
-    .vol-mark i:nth-child(2) { height: 9px; }
-    .vol-mark i:nth-child(3) { height: 12px; }
     .pill {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-width: 50px;
+      min-width: 48px;
       height: 22px;
       padding: 0 8px;
       border-radius: 999px;
       font-size: 11px;
-      font-weight: 850;
+      font-weight: 900;
       border: 1px solid transparent;
     }
-    .pill.long { color: var(--green); background: rgba(61,220,132,.13); border-color: rgba(61,220,132,.22); }
-    .pill.short { color: var(--red); background: rgba(255,92,108,.12); border-color: rgba(255,92,108,.22); }
-    .pill.none, .pill.hold { color: var(--muted); background: rgba(139,152,169,.12); border-color: rgba(139,152,169,.2); }
-    .pill.scalp { color: var(--cyan); background: rgba(68,215,209,.12); border-color: rgba(68,215,209,.22); }
-    .pill.swing { color: var(--blue); background: rgba(98,168,255,.13); border-color: rgba(98,168,255,.22); }
-    .pos { color: var(--green); }
-    .neg { color: var(--red); }
+    .pill.long { color: var(--up); background: rgba(240,68,82,.12); border-color: rgba(240,68,82,.22); }
+    .pill.short { color: var(--down); background: rgba(40,120,255,.14); border-color: rgba(40,120,255,.24); }
+    .pill.none, .pill.hold { color: var(--muted); background: rgba(138,148,163,.12); border-color: rgba(138,148,163,.22); }
+    .pill.scalp { color: var(--amber); background: rgba(240,184,79,.13); border-color: rgba(240,184,79,.24); }
+    .pill.swing { color: var(--green); background: rgba(47,210,125,.12); border-color: rgba(47,210,125,.22); }
+    .pos { color: var(--up); }
+    .neg { color: var(--down); }
     .muted { color: var(--muted); }
-    .history table { min-width: 560px; }
     .empty {
       padding: 18px;
       color: var(--muted);
       text-align: center;
     }
+    .bottom-tabs {
+      position: fixed;
+      left: 50%;
+      bottom: 0;
+      width: 100%;
+      max-width: 520px;
+      transform: translateX(-50%);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+      background: rgba(5,7,11,.94);
+      border-top: 1px solid var(--line);
+      backdrop-filter: blur(12px);
+    }
+    .tab-btn {
+      height: 44px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 900;
+    }
+    .tab-btn.active {
+      background: var(--panel-2);
+      color: var(--text);
+    }
     @media (max-width: 380px) {
-      .shell { padding-left: 10px; padding-right: 10px; }
-      .total { font-size: 24px; }
-      .summary-main { display: block; }
-      .pnl { text-align: left; padding-top: 8px; }
+      .app { padding-left: 10px; padding-right: 10px; }
+      .summary-total { font-size: 25px; }
+      th, td { padding-left: 7px; padding-right: 7px; }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
+  <main class="app">
     <div class="topbar">
       <div class="title">AltCoin Trading</div>
       <div class="status"><span class="dot" id="ws-dot"></span><span id="ws-text">연결 중</span></div>
     </div>
 
-    <section class="section">
-      <div class="section-label">Paper Trading</div>
-      <div class="card summary">
-        <div class="summary-main">
-          <div>
-            <div class="label">총 평가금액</div>
-            <div class="total" id="total-value">—</div>
-            <div class="muted" id="starting-capital">시작 자본 —</div>
+    <section class="tab-page active" id="tab-portfolio">
+      <div class="section">
+        <div class="panel">
+          <div class="summary">
+            <div class="summary-label">총 평가금액</div>
+            <div class="summary-total" id="total-value">—</div>
+            <div class="summary-pnl" id="total-pnl">—</div>
           </div>
-          <div class="pnl" id="pnl-value">—</div>
+          <div class="metrics">
+            <div class="metric">
+              <div class="metric-label">보유 KRW</div>
+              <div class="metric-value" id="cash-value">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">총 매수금액</div>
+              <div class="metric-value" id="buy-amount">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">오픈 포지션</div>
+              <div class="metric-value" id="open-count">—</div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">BTC 보유 대비</div>
+              <div class="metric-value" id="btc-compare">—</div>
+            </div>
+          </div>
         </div>
-        <div class="grid">
-          <div class="metric">
-            <div class="label">현금</div>
-            <div class="metric-value" id="cash-value">—</div>
-          </div>
-          <div class="metric">
-            <div class="label">오픈 포지션</div>
-            <div class="metric-value" id="open-positions">—</div>
-          </div>
-          <div class="metric">
-            <div class="label">BTC 보유 대비</div>
-            <div class="metric-value" id="btc-compare">—</div>
-          </div>
-          <div class="metric">
-            <div class="label">BTC 단순 보유</div>
-            <div class="metric-value" id="btc-hold">—</div>
-          </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Open Positions</div>
+        <div class="panel scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>코인</th>
+                <th>방향</th>
+                <th>매수평균</th>
+                <th>현재가</th>
+                <th>평가손익</th>
+                <th>수익률</th>
+              </tr>
+            </thead>
+            <tbody id="positions-body">
+              <tr><td colspan="6" class="empty">오픈 포지션 없음</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">Recent Closed Trades</div>
+        <div class="panel scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>코인</th>
+                <th>방향</th>
+                <th>진입가</th>
+                <th>청산가</th>
+                <th>수익률</th>
+                <th>보유</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <tr><td colspan="6" class="empty">청산 내역 없음</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </section>
 
-    <section class="section">
-      <div class="section-label">Quant Market</div>
-      <div class="card market-line" id="market-summary">데이터 대기 중</div>
-    </section>
-
-    <section class="section">
-      <div class="section-label">Altcoin Universe</div>
-      <div class="card table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>코인</th>
-              <th>현재가</th>
-              <th>24h</th>
-              <th>7d</th>
-              <th>펀딩비</th>
-              <th>Vol</th>
-              <th>Signal</th>
-              <th>Action</th>
-              <th>Conf</th>
-            </tr>
-          </thead>
-          <tbody id="alts-body">
-            <tr><td colspan="9" class="empty">데이터 대기 중</td></tr>
-          </tbody>
-        </table>
+    <section class="tab-page" id="tab-market">
+      <div class="section">
+        <div class="section-title">Market Summary</div>
+        <div class="panel market-line" id="market-summary">데이터 대기 중</div>
       </div>
-    </section>
-
-    <section class="section history">
-      <div class="section-label">Position History</div>
-      <div class="card table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>코인</th>
-              <th>방향</th>
-              <th>진입가</th>
-              <th>청산가</th>
-              <th>수익률</th>
-              <th>보유</th>
-            </tr>
-          </thead>
-          <tbody id="history-body">
-            <tr><td colspan="6" class="empty">청산된 포지션 없음</td></tr>
-          </tbody>
-        </table>
+      <div class="section">
+        <div class="section-title">All Symbols</div>
+        <div class="panel scroll-table">
+          <table class="market-table">
+            <thead>
+              <tr>
+                <th>코인</th>
+                <th>현재가</th>
+                <th>24h</th>
+                <th>펀딩비</th>
+                <th>신호</th>
+                <th>추천</th>
+                <th>Conf</th>
+              </tr>
+            </thead>
+            <tbody id="market-body">
+              <tr><td colspan="7" class="empty">마켓 데이터 없음</td></tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   </main>
 
+  <nav class="bottom-tabs" aria-label="Dashboard tabs">
+    <button class="tab-btn active" type="button" data-tab="portfolio">포트폴리오</button>
+    <button class="tab-btn" type="button" data-tab="market">마켓</button>
+  </nav>
+
   <script>
     const KRW_RATE = 1400;
+    const $ = id => document.getElementById(id);
+    const num = value => Number(value ?? 0);
     const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[ch]));
-    const num = value => Number(value ?? 0);
-    const fmtUsd = value => value == null ? '—' : '$' + num(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
-    const fmtKrw = value => value == null ? '—' : '₩' + Math.round(num(value) * KRW_RATE).toLocaleString('ko-KR');
-    const fmtPrice = value => value == null ? '—' : '$' + num(value).toLocaleString(undefined, { maximumFractionDigits: value >= 10 ? 2 : 4 });
-    const fmtPct = value => value == null ? '—' : `${num(value) >= 0 ? '+' : ''}${num(value).toFixed(2)}%`;
-    const cls = value => num(value) > 0 ? 'pos' : num(value) < 0 ? 'neg' : 'muted';
-    const confidencePct = value => value == null ? '—' : Math.round(num(value) * 100) + '%';
+    const krw = value => value == null ? '—' : '₩' + Math.round(num(value) * KRW_RATE).toLocaleString('ko-KR');
+    const usd = value => value == null ? '—' : '$' + num(value).toLocaleString(undefined, { maximumFractionDigits: value >= 10 ? 2 : 4 });
+    const pct = value => value == null ? '—' : `${num(value) >= 0 ? '+' : ''}${num(value).toFixed(2)}%`;
+    const tone = value => num(value) > 0 ? 'pos' : num(value) < 0 ? 'neg' : 'muted';
+    const confidence = value => value == null ? '—' : Math.round(num(value) * 100) + '%';
 
-    function setLive(isLive) {
-      document.getElementById('ws-dot').className = 'dot' + (isLive ? ' live' : '');
-      document.getElementById('ws-text').textContent = isLive ? 'Live' : 'Offline';
+    function setLive(isLive, label) {
+      $('ws-dot').className = 'dot' + (isLive ? ' live' : '');
+      $('ws-text').textContent = label || (isLive ? 'Live' : 'Offline');
     }
 
-    function renderSummary(data) {
+    function pill(value) {
+      const text = value || 'NONE';
+      return `<span class="pill ${text.toLowerCase()}">${esc(text)}</span>`;
+    }
+
+    function recPill(alt) {
+      if (!alt.worth_investing || !alt.recommended_style) {
+        return '<span class="pill hold">HOLD</span>';
+      }
+      const isShort = alt.recommended_style === 'short_term';
+      return `<span class="pill ${isShort ? 'scalp' : 'swing'}">${isShort ? '단타' : '스윙'}</span>`;
+    }
+
+    function renderPortfolio(data) {
       const p = data.portfolio || {};
       const start = p.starting_capital ?? 0;
       const value = p.paper_value ?? null;
       const pnl = p.pnl_vs_start ?? (value == null ? null : value - start);
-      const pnlPct = start ? (pnl / start) * 100 : null;
-      const buyHold = p.buy_and_hold_value ?? null;
-      const btcVs = p.pnl_vs_buy_hold ?? (value != null && buyHold != null ? value - buyHold : null);
-      const btcVsPct = buyHold ? (btcVs / buyHold) * 100 : null;
+      const pnlPct = start ? pnl / start * 100 : null;
+      const btcHold = p.buy_and_hold_value ?? null;
+      const btcDiff = p.pnl_vs_buy_hold ?? (value != null && btcHold != null ? value - btcHold : null);
+      const btcDiffPct = btcHold ? btcDiff / btcHold * 100 : null;
 
-      document.getElementById('total-value').textContent = fmtKrw(value);
-      document.getElementById('starting-capital').textContent = `시작 자본 ${fmtKrw(start)}`;
-      const pnlEl = document.getElementById('pnl-value');
-      pnlEl.className = 'pnl ' + cls(pnl);
-      pnlEl.innerHTML = `${fmtKrw(pnl)}<br><span>${fmtPct(pnlPct)}</span>`;
-      document.getElementById('cash-value').textContent = fmtKrw(p.cash);
-      document.getElementById('open-positions').textContent = `${p.open_trades ?? 0} / ${p.max_open_positions ?? '—'}`;
-      const btcEl = document.getElementById('btc-compare');
-      btcEl.className = 'metric-value ' + cls(btcVs);
-      btcEl.textContent = btcVs == null ? '—' : `${fmtPct(btcVsPct)} (${fmtKrw(btcVs)})`;
-      document.getElementById('btc-hold').textContent = buyHold == null ? '—' : fmtKrw(buyHold);
+      $('total-value').textContent = krw(value);
+      $('total-pnl').className = 'summary-pnl ' + tone(pnl);
+      $('total-pnl').textContent = `${pct(pnlPct)} · ${krw(pnl)} 평가손익`;
+      $('cash-value').textContent = krw(p.cash);
+      $('buy-amount').textContent = krw(p.total_invested_open);
+      $('open-count').textContent = `${p.open_trades ?? 0} / ${p.max_open_positions ?? '—'}`;
+      $('btc-compare').className = 'metric-value ' + tone(btcDiff);
+      $('btc-compare').textContent = btcDiff == null ? '—' : `${pct(btcDiffPct)} · ${krw(btcDiff)}`;
     }
 
-    function renderMarket(data) {
-      const alts = data.alts || [];
-      const positiveFunding = alts.filter(a => num(a.funding_rate) > 0).length;
-      const negativeFunding = alts.filter(a => num(a.funding_rate) < 0).length;
-      const bias = positiveFunding > negativeFunding ? '롱 우세' : negativeFunding > positiveFunding ? '숏 우세' : '중립';
-      const btc = alts.find(a => a.symbol === 'BTC/USDT') || {};
-      const spikes = alts.filter(a => a.volume_spike).length;
-      document.getElementById('market-summary').textContent =
-        `${bias} (${positiveFunding}/${alts.length} 양수 펀딩비) · BTC 24h ${fmtPct(btc.pct_24h)} · 거래량 spike ${spikes}개`;
-    }
-
-    function signalPill(direction) {
-      const d = direction || 'NONE';
-      return `<span class="pill ${d.toLowerCase()}">${esc(d)}</span>`;
-    }
-
-    function actionPill(alt) {
-      if (!alt.worth_investing || !alt.recommended_style) {
-        return '<span class="pill hold">HOLD</span>';
-      }
-      const label = alt.recommended_style === 'short_term' ? '단타' : '스윙';
-      const klass = alt.recommended_style === 'short_term' ? 'scalp' : 'swing';
-      return `<span class="pill ${klass}">${label}</span>`;
-    }
-
-    function renderAlts(data) {
-      const alts = data.alts || [];
-      const body = document.getElementById('alts-body');
-      if (!alts.length) {
-        body.innerHTML = '<tr><td colspan="9" class="empty">알트 데이터 없음</td></tr>';
+    function renderPositions(data) {
+      const rows = (data.alts || []).filter(alt => alt.investment?.status === 'open');
+      if (!rows.length) {
+        $('positions-body').innerHTML = '<tr><td colspan="6" class="empty">오픈 포지션 없음</td></tr>';
         return;
       }
-      body.innerHTML = alts.map(alt => `
-        <tr class="${alt.worth_investing ? 'worth' : ''}">
-          <td>
-            <div class="coin">
-              ${alt.volume_spike ? '<span class="vol-mark"><i></i><i></i><i></i></span>' : ''}
-              <span>${esc(alt.base || alt.symbol)}</span>
-            </div>
-          </td>
-          <td>${fmtPrice(alt.price)}</td>
-          <td class="${cls(alt.pct_24h)}">${fmtPct(alt.pct_24h)}</td>
-          <td class="${cls(alt.pct_7d)}">${fmtPct(alt.pct_7d)}</td>
-          <td class="${cls(alt.funding_rate_pct)}">${fmtPct(alt.funding_rate_pct)}</td>
-          <td>${alt.volume_ratio == null ? '—' : num(alt.volume_ratio).toFixed(2) + 'x'}</td>
-          <td>${signalPill(alt.direction)}</td>
-          <td>${actionPill(alt)}</td>
-          <td>${confidencePct(alt.confidence)}</td>
-        </tr>
-      `).join('');
-    }
-
-    function tradeReturn(trade) {
-      const entry = num(trade.entry_price);
-      const qty = num(trade.quantity);
-      const notional = entry * qty;
-      return notional ? (num(trade.pnl) / notional) * 100 : null;
-    }
-
-    function holdDuration(trade) {
-      if (!trade.opened_at || !trade.closed_at) return '—';
-      const seconds = Math.max(0, num(trade.closed_at) - num(trade.opened_at));
-      const hours = seconds / 3600;
-      if (hours < 24) return `${hours.toFixed(1)}h`;
-      return `${(hours / 24).toFixed(1)}d`;
-    }
-
-    function renderHistory(data) {
-      const trades = (data.closed_trades || data.recent_trades || [])
-        .filter(t => t.status === 'closed')
-        .sort((a, b) => num(b.closed_at) - num(a.closed_at))
-        .slice(0, 20);
-      const body = document.getElementById('history-body');
-      if (!trades.length) {
-        body.innerHTML = '<tr><td colspan="6" class="empty">청산된 포지션 없음</td></tr>';
-        return;
-      }
-      body.innerHTML = trades.map(trade => {
-        const ret = tradeReturn(trade);
+      $('positions-body').innerHTML = rows.map(alt => {
+        const inv = alt.investment || {};
         return `
           <tr>
-            <td>${esc((trade.symbol || '').split('/')[0])}</td>
-            <td>${signalPill(trade.direction)}</td>
-            <td>${fmtPrice(trade.entry_price)}</td>
-            <td>${fmtPrice(trade.exit_price)}</td>
-            <td class="${cls(ret)}">${fmtPct(ret)}</td>
-            <td>${holdDuration(trade)}</td>
+            <td><span class="coin">${esc(alt.base || alt.symbol)}</span><span class="sub">${esc(alt.symbol)}</span></td>
+            <td>${pill(inv.direction)}</td>
+            <td>${usd(inv.entry_price)}</td>
+            <td>${usd(inv.current_price ?? alt.price)}</td>
+            <td class="${tone(inv.unrealized_pnl)}">${krw(inv.unrealized_pnl)}</td>
+            <td class="${tone(inv.unrealized_pnl_pct)}">${pct(inv.unrealized_pnl_pct)}</td>
           </tr>
         `;
       }).join('');
     }
 
-    function render(data) {
-      renderSummary(data);
-      renderMarket(data);
-      renderAlts(data);
-      renderHistory(data);
-      const status = data.health?.status;
-      if (status) document.getElementById('ws-text').textContent = status === 'ok' ? 'Live' : `Live · ${status}`;
+    function tradeReturn(trade) {
+      const notional = num(trade.entry_price) * num(trade.quantity);
+      return notional ? num(trade.pnl) / notional * 100 : null;
     }
+
+    function holdTime(trade) {
+      if (!trade.opened_at || !trade.closed_at) return '—';
+      const hours = Math.max(0, num(trade.closed_at) - num(trade.opened_at)) / 3600;
+      return hours < 24 ? `${hours.toFixed(1)}h` : `${(hours / 24).toFixed(1)}d`;
+    }
+
+    function renderHistory(data) {
+      const trades = (data.closed_trades || data.recent_trades || [])
+        .filter(trade => trade.status === 'closed')
+        .sort((a, b) => num(b.closed_at) - num(a.closed_at))
+        .slice(0, 20);
+      if (!trades.length) {
+        $('history-body').innerHTML = '<tr><td colspan="6" class="empty">청산 내역 없음</td></tr>';
+        return;
+      }
+      $('history-body').innerHTML = trades.map(trade => {
+        const ret = tradeReturn(trade);
+        return `
+          <tr>
+            <td><span class="coin">${esc((trade.symbol || '').split('/')[0])}</span></td>
+            <td>${pill(trade.direction)}</td>
+            <td>${usd(trade.entry_price)}</td>
+            <td>${usd(trade.exit_price)}</td>
+            <td class="${tone(ret)}">${pct(ret)}</td>
+            <td>${holdTime(trade)}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderMarketSummary(data) {
+      const alts = data.alts || [];
+      const positive = alts.filter(alt => num(alt.funding_rate) > 0).length;
+      const negative = alts.filter(alt => num(alt.funding_rate) < 0).length;
+      const bias = positive > negative ? '롱 우세' : negative > positive ? '숏 우세' : '중립';
+      const btc = alts.find(alt => alt.symbol === 'BTC/USDT') || {};
+      const spikes = alts.filter(alt => alt.volume_spike).length;
+      $('market-summary').textContent = `${bias} ${positive}/${alts.length} · BTC ${pct(btc.pct_24h)} · 거래량 spike ${spikes}개`;
+    }
+
+    function renderMarketTable(data) {
+      const rows = data.alts || [];
+      if (!rows.length) {
+        $('market-body').innerHTML = '<tr><td colspan="7" class="empty">마켓 데이터 없음</td></tr>';
+        return;
+      }
+      $('market-body').innerHTML = rows.map(alt => `
+        <tr class="${alt.worth_investing ? 'hot' : ''}">
+          <td><span class="coin">${esc(alt.base || alt.symbol)}</span><span class="sub">${esc(alt.symbol)}</span></td>
+          <td>${usd(alt.price)}</td>
+          <td class="${tone(alt.pct_24h)}">${pct(alt.pct_24h)}</td>
+          <td class="${tone(alt.funding_rate_pct)}">${pct(alt.funding_rate_pct)}</td>
+          <td>${pill(alt.direction)}</td>
+          <td>${recPill(alt)}</td>
+          <td>${confidence(alt.confidence)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function render(data) {
+      renderPortfolio(data);
+      renderPositions(data);
+      renderHistory(data);
+      renderMarketSummary(data);
+      renderMarketTable(data);
+      const status = data.health?.status;
+      if (status) setLive(true, status === 'ok' ? 'Live' : `Live · ${status}`);
+    }
+
+    document.querySelectorAll('.tab-btn').forEach(button => {
+      button.addEventListener('click', () => {
+        const target = button.dataset.tab;
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.toggle('active', btn === button));
+        document.querySelectorAll('.tab-page').forEach(page => page.classList.toggle('active', page.id === `tab-${target}`));
+      });
+    });
 
     async function loadInitial() {
       try {
-        const res = await fetch('/api/alts');
-        render(await res.json());
+        const response = await fetch('/api/alts');
+        render(await response.json());
       } catch {
         setLive(false);
       }
