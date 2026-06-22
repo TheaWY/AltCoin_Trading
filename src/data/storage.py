@@ -217,29 +217,37 @@ class Storage:
         symbol: str,
         limit: int = 100,
         since: int | None = None,
+        before: int | None = None,
         timeframe: str = "1h",
     ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?", "timeframe = ?"]
+        params: list[Any] = [symbol, timeframe]
         if since is not None:
-            sql = """
-                SELECT * FROM prices
-                WHERE symbol = ? AND timeframe = ? AND timestamp >= ?
-                ORDER BY timestamp ASC
-                LIMIT ?
-            """
-            params: tuple[Any, ...] = (symbol, timeframe, since, limit)
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        if since is not None:
+            order = "ASC"
+            reverse_result = False
         else:
-            sql = """
-                SELECT * FROM prices
-                WHERE symbol = ? AND timeframe = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """
-            params = (symbol, timeframe, limit)
+            order = "DESC"
+            reverse_result = True
+
+        sql = f"""
+            SELECT * FROM prices
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp {order}
+            LIMIT ?
+        """
+        params.append(limit)
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             result = [dict(r) for r in rows]
-            if since is None:
+            if reverse_result:
                 result.reverse()
             return result
 
@@ -301,29 +309,40 @@ class Storage:
             return dict(row) if row else None
 
     def get_funding_rates(
-        self, symbol: str, limit: int = 100, since: int | None = None
+        self,
+        symbol: str,
+        limit: int = 100,
+        since: int | None = None,
+        before: int | None = None,
     ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?"]
+        params: list[Any] = [symbol]
         if since is not None:
-            sql = """
-                SELECT * FROM funding_rates
-                WHERE symbol = ? AND timestamp >= ?
-                ORDER BY timestamp ASC
-                LIMIT ?
-            """
-            params: tuple[Any, ...] = (symbol, since, limit)
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        if since is not None:
+            order = "ASC"
+            reverse_result = False
         else:
-            sql = """
-                SELECT * FROM funding_rates
-                WHERE symbol = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """
-            params = (symbol, limit)
+            order = "DESC"
+            reverse_result = True
+
+        sql = f"""
+            SELECT * FROM funding_rates
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp {order}
+            LIMIT ?
+        """
+        params.append(limit)
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             result = [dict(r) for r in rows]
-            if since is None:
+            if reverse_result:
                 result.reverse()
             return result
 
