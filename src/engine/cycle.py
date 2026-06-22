@@ -50,25 +50,39 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
 
     signals_run = 0
     trades_opened = 0
+    signal_results_by_symbol: dict[str, dict[str, Any]] = {}
 
     for symbol in symbols:
         result = signal_engine.run_for_symbol(symbol)
         if not result.get("ok"):
             continue
         signals_run += 1
+        signal_results_by_symbol[symbol] = result
 
         market.register_from_signal(result)
 
-        analysis = analyzer.analyze(symbol)
+    ranked_candidates = [
+        analysis
+        for analysis in analyzer.analyze_all(symbols)
+        if analysis["worth_investing"]
+    ]
+    ranked_candidates.sort(key=lambda analysis: analysis["confidence"], reverse=True)
+    ranked_candidates = ranked_candidates[: config.MAX_OPEN_POSITIONS]
+
+    for analysis in ranked_candidates:
+        symbol = analysis["symbol"]
+        result = signal_results_by_symbol.get(symbol)
+        if not result or result.get("direction") not in ("LONG", "SHORT"):
+            continue
+
         price_row = storage.get_latest_price(symbol)
         if not price_row:
             continue
         price = float(price_row["close"])
 
-        if analysis["worth_investing"] and result.get("direction") in ("LONG", "SHORT"):
-            opened = trader.process_signal(result, price, require_worth=True)
-            if opened.get("opened"):
-                trades_opened += 1
+        opened = trader.process_signal(result, price, require_worth=True)
+        if opened.get("opened"):
+            trades_opened += 1
 
     market.backfill_missing_stubs()
     market.update_pending()
