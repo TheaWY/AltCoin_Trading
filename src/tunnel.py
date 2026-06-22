@@ -283,8 +283,33 @@ def is_ngrok_process_running() -> bool:
 
 
 def verify_public_url(base_url: str) -> bool:
+    """Check tunnel end-to-end; prefer curl (LibreSSL urllib often fails on ngrok)."""
+    url = f"{base_url.rstrip('/')}/api/health"
+    curl_bin = shutil.which("curl") or "/usr/bin/curl"
     try:
-        url = f"{base_url.rstrip('/')}/api/health"
+        out = subprocess.run(
+            [
+                curl_bin,
+                "-sf",
+                "-o",
+                "/dev/null",
+                "-w",
+                "%{http_code}",
+                "-H",
+                "ngrok-skip-browser-warning: 1",
+                "--max-time",
+                "15",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        if out.stdout.strip() == "200":
+            return True
+    except Exception:
+        pass
+    try:
         req = urllib.request.Request(
             url,
             headers={
