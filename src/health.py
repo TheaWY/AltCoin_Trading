@@ -103,7 +103,7 @@ class HealthMonitor:
         ngrok_url = state.get("ngrok_url")
         public_url = config.public_base_url() or ngrok_url
         ngrok_live = False
-        if is_cloud_runtime() and public_url:
+        if config.is_cloud_runtime() and public_url:
             ngrok_live = live
         elif ngrok_url or public_url:
             try:
