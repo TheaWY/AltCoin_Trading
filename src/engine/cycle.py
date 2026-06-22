@@ -27,6 +27,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         from src.data.collectors.binance import run_collection
 
         run_collection(symbols)
+        storage.cleanup_old_prices()
     except Exception as exc:
         cycle_ok = False
         cycle_error = str(exc)

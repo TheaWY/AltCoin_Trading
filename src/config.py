@@ -88,6 +88,11 @@ for part in os.getenv("SYMBOL_CCXT_MAP", "").split(","):
 
 # --- Scheduler ---
 COLLECTION_INTERVAL_MINUTES = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "5"))
+OHLCV_TIMEFRAMES = [
+    s.strip()
+    for s in os.getenv("OHLCV_TIMEFRAMES", "15m,1h,1d").split(",")
+    if s.strip()
+]
 OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
 OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "100"))
 
