@@ -15,7 +15,8 @@ DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "trading.db"))
 
 # --- API server ---
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("API_PORT", "8000"))
+# Railway provides PORT; API_PORT remains the local/manual override.
+API_PORT = int(os.getenv("API_PORT") or os.getenv("PORT") or "8000")
 
 # --- Binance / ccxt ---
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
