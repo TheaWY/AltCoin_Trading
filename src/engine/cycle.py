@@ -73,6 +73,14 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     market.backfill_missing_stubs()
     market.update_pending()
 
+    if config.NGROK_ENABLED:
+        try:
+            from src.tunnel import ensure_ngrok_running
+
+            ensure_ngrok_running()
+        except Exception:
+            logger.exception("Ngrok keepalive check failed")
+
     return {
         "ok": cycle_ok,
         "error": cycle_error,

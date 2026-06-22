@@ -169,3 +169,57 @@ def get_saved_public_url() -> str | None:
         return None
     line = NGROK_URL_FILE.read_text().strip()
     return line or None
+
+
+def is_ngrok_process_running() -> bool:
+    global _process
+    if _process is not None and _process.poll() is None:
+        return True
+    # Fallback: any ngrok http child for our port
+    try:
+        import subprocess
+
+        out = subprocess.run(
+            ["pgrep", "-f", f"ngrok http {config.API_PORT}"],
+            capture_output=True,
+            text=True,
+        )
+        return out.returncode == 0
+    except Exception:
+        return False
+
+
+def verify_public_url(base_url: str) -> bool:
+    try:
+        url = f"{base_url.rstrip('/')}/api/health"
+        with urllib.request.urlopen(url, timeout=12) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
+
+
+def ensure_ngrok_running() -> str | None:
+    """Restart ngrok if enabled but tunnel is missing or unreachable."""
+    if not config.NGROK_ENABLED:
+        return None
+
+    from src.health import get_health
+
+    health = get_health()
+    state = health.get_status()
+    existing = state.get("ngrok_url") or get_saved_public_url()
+    if existing:
+        existing = existing.replace("/dashboard", "").rstrip("/")
+
+    if existing and is_ngrok_process_running() and verify_public_url(existing):
+        return existing
+
+    logger.warning("Ngrok tunnel down or stale — restarting")
+    stop_ngrok()
+    try:
+        public_url = start_ngrok(config.API_PORT)
+        get_health().mark_ngrok(public_url)
+        return public_url
+    except Exception:
+        logger.exception("Ngrok restart failed")
+        return None

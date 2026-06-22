@@ -104,6 +104,11 @@
   <p class="sub">
     <span class="status-dot" id="ws-status"></span><span id="ws-label">Connecting…</span>
   </p>
+  <div id="url-banner" class="card" style="padding:10px 12px;margin-bottom:12px;font-size:0.78rem;display:none">
+    <div class="label">Phone link (ngrok)</div>
+    <a class="health-link" id="url-banner-link" href="#" target="_blank" rel="noopener"></a>
+    <div class="muted" style="margin-top:4px">URL changes when the app restarts. Tap through ngrok’s “Visit Site” once.</div>
+  </div>
 
   <div class="section-title">Your positions</div>
   <div class="card" id="holdings-card">
@@ -270,11 +275,16 @@
       const h = data.health;
       if (h) {
         setConnectionDot(h.live, h.status);
-        if (h.ngrok_url) {
+        const ngrok = h.ngrok_url;
+        if (ngrok) {
+          document.getElementById('url-banner').style.display = 'block';
+          const a = document.getElementById('url-banner-link');
+          a.href = ngrok + '/dashboard';
+          a.textContent = ngrok + '/dashboard';
           document.getElementById('ngrok-wrap').hidden = false;
-          const a = document.getElementById('ngrok-url');
-          a.href = h.ngrok_url + '/dashboard';
-          a.textContent = h.ngrok_url + '/dashboard';
+          const a2 = document.getElementById('ngrok-url');
+          a2.href = ngrok + '/dashboard';
+          a2.textContent = ngrok + '/dashboard';
         }
       }
     }
