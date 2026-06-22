@@ -27,7 +27,13 @@ def _find_ngrok_bin() -> str | None:
         path = Path(config.NGROK_BIN)
         if path.is_file():
             return str(path)
-    return shutil.which("ngrok") or shutil.which("/opt/homebrew/bin/ngrok")
+    for candidate in (
+        "/opt/homebrew/bin/ngrok",
+        "/usr/local/bin/ngrok",
+    ):
+        if Path(candidate).is_file():
+            return candidate
+    return shutil.which("ngrok")
 
 
 def _authtoken_from_ngrok_config() -> str:
@@ -55,7 +61,7 @@ def _save_public_url(url: str) -> None:
 
 
 def _fetch_https_url() -> str | None:
-    for web_port in (config.NGROK_WEB_PORT, 4040, 4041, 4042):
+    for web_port in range(4040, 4055):
         api = f"http://127.0.0.1:{web_port}/api/tunnels"
         try:
             with urllib.request.urlopen(api, timeout=2) as resp:
