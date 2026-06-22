@@ -9,6 +9,13 @@ import os
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in ("true", "1", "yes", "on")
+
 # --- Paths ---
 DATA_DIR = Path(os.getenv("DATA_DIR", str(_PROJECT_ROOT / "data")))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "trading.db"))
@@ -90,6 +97,12 @@ for part in os.getenv("SYMBOL_CCXT_MAP", "").split(","):
 COLLECTION_INTERVAL_MINUTES = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "5"))
 OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
 OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "100"))
+# Keep cloud web deployments purely HTTP by default. Run the trading loop in a
+# separate worker/service, or set RUN_TRADING_SCHEDULER=true intentionally.
+RUN_TRADING_SCHEDULER = _env_bool(
+    "RUN_TRADING_SCHEDULER",
+    default=not is_cloud_runtime(),
+)
 
 # --- Funding Rate Reversal strategy thresholds ---
 # Rates are expressed as decimals (0.001 = 0.1%)
