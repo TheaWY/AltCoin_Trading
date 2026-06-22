@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.error
 import urllib.request
@@ -29,7 +30,11 @@ def _env_value(key: str) -> str | None:
 
 
 def main() -> int:
-    port = int(sys.argv[1] if len(sys.argv) > 1 else (_env_value("API_PORT") or DEFAULT_PORT))
+    port = int(
+        sys.argv[1]
+        if len(sys.argv) > 1
+        else (os.getenv("API_PORT") or _env_value("API_PORT") or DEFAULT_PORT)
+    )
     url = f"http://127.0.0.1:{port}/api/health"
     now = int(datetime.now(timezone.utc).timestamp())
 
