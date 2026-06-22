@@ -104,9 +104,9 @@ class HealthMonitor:
         ngrok_live = False
         if ngrok_url:
             try:
-                from src.tunnel import verify_public_url
+                from src.tunnel import is_tunnel_live_local
 
-                ngrok_live = verify_public_url(str(ngrok_url).rstrip("/"))
+                ngrok_live = is_tunnel_live_local()
             except Exception:
                 ngrok_live = False
 

@@ -187,11 +187,23 @@ def _expected_base_url() -> str | None:
     return None
 
 
-def is_tunnel_healthy() -> bool:
-    base = _expected_base_url()
-    if not base:
+def is_tunnel_live_local() -> bool:
+    """True when ngrok process is up, local API reports a tunnel, and app responds."""
+    if not is_ngrok_process_running():
         return False
-    return is_ngrok_process_running() and verify_public_url(base)
+    tunnel_url = _fetch_https_url()
+    if not tunnel_url:
+        return False
+    expected = _expected_base_url()
+    if expected and tunnel_url.rstrip("/") != expected.rstrip("/"):
+        return False
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{config.API_PORT}/api/health", timeout=3
+        ) as resp:
+            return resp.status == 200
+    except Exception:
+        return False
 
 
 def start_ngrok(port: int | None = None) -> str:
@@ -200,7 +212,7 @@ def start_ngrok(port: int | None = None) -> str:
     port = port or config.API_PORT
 
     existing = _expected_base_url()
-    if existing and is_ngrok_process_running() and verify_public_url(existing):
+    if existing and is_tunnel_live_local():
         logger.info("Ngrok tunnel already healthy: %s", existing)
         _save_public_url(existing)
         return existing
@@ -329,7 +341,7 @@ def ensure_ngrok_running() -> str | None:
         return _expected_base_url()
 
     existing = _expected_base_url()
-    if existing and is_ngrok_process_running() and verify_public_url(existing):
+    if existing and is_tunnel_live_local():
         return existing
 
     logger.warning("Ngrok tunnel down or stale — restarting")
