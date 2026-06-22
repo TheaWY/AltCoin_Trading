@@ -22,6 +22,24 @@ _tunnel_started = False
 NGROK_URL_FILE = config.DATA_DIR / "ngrok.url"
 
 
+def _static_endpoint_url() -> str | None:
+    """Normalized https URL for the configured static ngrok domain."""
+    raw = config.NGROK_STATIC_DOMAIN
+    if not raw:
+        return None
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw.rstrip("/")
+    return f"https://{raw.rstrip('/')}"
+
+
+def _ngrok_http_cmd(ngrok_bin: str, port: int) -> list[str]:
+    cmd = [ngrok_bin, "http", str(port), "--log=stdout"]
+    static_url = _static_endpoint_url()
+    if static_url:
+        cmd.extend(["--url", static_url])
+    return cmd
+
+
 def _find_ngrok_bin() -> str | None:
     if config.NGROK_BIN:
         path = Path(config.NGROK_BIN)
@@ -87,9 +105,13 @@ def _start_ngrok_cli(port: int) -> str:
             "ngrok not found. Install with: brew install ngrok/ngrok/ngrok"
         )
 
-    cmd = [ngrok_bin, "http", str(port), "--log=stdout"]
+    cmd = _ngrok_http_cmd(ngrok_bin, port)
 
-    logger.info("Starting ngrok CLI: %s http %s", ngrok_bin, port)
+    logger.info(
+        "Starting ngrok CLI: %s (static=%s)",
+        " ".join(cmd[:4]),
+        _static_endpoint_url() or "random",
+    )
     _process = subprocess.Popen(
         cmd,
         stdout=subprocess.PIPE,
@@ -106,6 +128,12 @@ def _start_ngrok_cli(port: int) -> str:
         if url:
             return url
 
+    static = _static_endpoint_url()
+    if static:
+        raise RuntimeError(
+            f"ngrok started but static URL {static} was not ready. "
+            "Check the domain at https://dashboard.ngrok.com/domains"
+        )
     raise RuntimeError("ngrok started but public URL was not ready in time")
 
 
@@ -122,7 +150,12 @@ def _start_pyngrok(port: int) -> str:
     if config.NGROK_REGION:
         conf.get_default().region = config.NGROK_REGION
 
-    tunnel = ngrok.connect(str(port), bind_tls=True)
+    static = _static_endpoint_url()
+    if static:
+        hostname = static.replace("https://", "").replace("http://", "")
+        tunnel = ngrok.connect(str(port), hostname=hostname, bind_tls=True)
+    else:
+        tunnel = ngrok.connect(str(port), bind_tls=True)
     return tunnel.public_url.rstrip("/")
 
 
@@ -141,6 +174,14 @@ def start_ngrok(port: int | None = None) -> str:
     if not _tunnel_started:
         atexit.register(stop_ngrok)
         _tunnel_started = True
+
+    expected = _static_endpoint_url()
+    if expected and public_url.rstrip("/") != expected.rstrip("/"):
+        logger.warning(
+            "Tunnel URL %s does not match NGROK_STATIC_DOMAIN %s — update .env",
+            public_url,
+            expected,
+        )
 
     logger.info("Ngrok tunnel active: %s", public_url)
     return public_url
@@ -208,7 +249,10 @@ def ensure_ngrok_running() -> str | None:
     health = get_health()
     state = health.get_status()
     existing = state.get("ngrok_url") or get_saved_public_url()
-    if existing:
+    static = _static_endpoint_url()
+    if static:
+        existing = static
+    elif existing:
         existing = existing.replace("/dashboard", "").rstrip("/")
 
     if existing and is_ngrok_process_running() and verify_public_url(existing):

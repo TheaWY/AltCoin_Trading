@@ -82,6 +82,9 @@ NGROK_USE_CLI = os.getenv("NGROK_USE_CLI", "true").lower() in ("true", "1", "yes
 NGROK_BIN = os.getenv("NGROK_BIN", "")  # auto-detect homebrew ngrok if empty
 NGROK_REGION = os.getenv("NGROK_REGION", "")  # e.g. us, eu, ap, au, sa, jp, in
 NGROK_WEB_PORT = int(os.getenv("NGROK_WEB_PORT", "4042"))
+# Permanent URL — your free static domain from https://dashboard.ngrok.com/domains
+# Example: your-name.ngrok-free.app  or  https://your-name.ngrok-free.app
+NGROK_STATIC_DOMAIN = os.getenv("NGROK_STATIC_DOMAIN", "").strip()
 
 # --- Health monitoring ---
 # Mark degraded if no cycle within this many seconds
