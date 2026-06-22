@@ -102,6 +102,7 @@ FUNDING_RATE_SHORT_THRESHOLD = float(os.getenv("FUNDING_RATE_SHORT_THRESHOLD", "
 FUNDING_RATE_LONG_THRESHOLD = float(os.getenv("FUNDING_RATE_LONG_THRESHOLD", "-0.0005"))
 
 # --- Paper trading ---
+LIVE_TRADING = os.getenv("LIVE_TRADING", "false").lower() in ("true", "1", "yes")
 PAPER_STARTING_CAPITAL = float(os.getenv("PAPER_STARTING_CAPITAL", "10000.0"))
 MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", "0.20"))
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))

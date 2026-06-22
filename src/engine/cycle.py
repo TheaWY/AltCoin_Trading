@@ -33,7 +33,12 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         cycle_error = str(exc)
         logger.exception("Data collection failed")
 
-    trader = PaperTrader(storage)
+    if config.LIVE_TRADING:
+        from src.engine.live_trader import LiveTrader
+
+        trader = LiveTrader(storage)
+    else:
+        trader = PaperTrader(storage)
     signal_engine = SignalEngine(storage)
     analyzer = AltAnalyzer(storage)
     market = MarketCompare(storage)
