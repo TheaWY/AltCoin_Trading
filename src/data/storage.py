@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -85,6 +86,14 @@ CREATE INDEX IF NOT EXISTS idx_prices_symbol_ts ON prices(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
+
+CREATE TABLE IF NOT EXISTS portfolio_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    cash REAL NOT NULL,
+    benchmark_btc_price REAL,
+    benchmark_started_at INTEGER,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -244,6 +253,33 @@ class Storage:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
 
+    def get_latest_signal(
+        self, symbol: str | None = None, strategy: str | None = None
+    ) -> dict[str, Any] | None:
+        clauses = []
+        params: list[Any] = []
+        if symbol:
+            clauses.append("symbol = ?")
+            params.append(symbol)
+        if strategy:
+            clauses.append("strategy = ?")
+            params.append(strategy)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        sql = f"""
+            SELECT * FROM signals
+            {where}
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+            return dict(row) if row else None
+
+    def get_signal(self, signal_id: int) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM signals WHERE id = ?", (signal_id,)).fetchone()
+            return dict(row) if row else None
+
     # --- paper trades ---
 
     def insert_paper_trade(self, row: dict[str, Any]) -> int:
@@ -275,6 +311,14 @@ class Storage:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
 
+    def update_paper_trade(self, trade_id: int, fields: dict[str, Any]) -> None:
+        if not fields:
+            return
+        columns = ", ".join(f"{key} = ?" for key in fields)
+        sql = f"UPDATE paper_trades SET {columns} WHERE id = ?"
+        with self._connect() as conn:
+            conn.execute(sql, (*fields.values(), trade_id))
+
     # --- market outcomes ---
 
     def insert_market_outcome(self, row: dict[str, Any]) -> int:
@@ -292,6 +336,99 @@ class Storage:
             cursor = conn.execute(sql, row)
             return int(cursor.lastrowid)
 
+    def get_market_outcome_by_signal(self, signal_id: int) -> dict[str, Any] | None:
+        sql = "SELECT * FROM market_outcomes WHERE signal_id = ? LIMIT 1"
+        with self._connect() as conn:
+            row = conn.execute(sql, (signal_id,)).fetchone()
+            return dict(row) if row else None
+
+    def update_market_outcome(self, outcome_id: int, fields: dict[str, Any]) -> None:
+        if not fields:
+            return
+        columns = ", ".join(f"{key} = ?" for key in fields)
+        sql = f"UPDATE market_outcomes SET {fields and columns} WHERE id = ?"
+        with self._connect() as conn:
+            conn.execute(sql, (*fields.values(), outcome_id))
+
+    def get_actionable_signals_without_outcomes(self) -> list[dict[str, Any]]:
+        sql = """
+            SELECT s.*
+            FROM signals s
+            LEFT JOIN market_outcomes mo ON mo.signal_id = s.id
+            WHERE s.direction IN ('LONG', 'SHORT')
+              AND mo.id IS NULL
+            ORDER BY s.timestamp ASC
+        """
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql).fetchall()]
+
+    def get_incomplete_market_outcomes(self) -> list[dict[str, Any]]:
+        sql = """
+            SELECT mo.*, s.timestamp AS signal_timestamp
+            FROM market_outcomes mo
+            JOIN signals s ON s.id = mo.signal_id
+            WHERE mo.price_24h IS NULL
+               OR mo.price_4h IS NULL
+               OR mo.price_1h IS NULL
+            ORDER BY s.timestamp ASC
+        """
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql).fetchall()]
+
+    def get_price_at_or_after(self, symbol: str, timestamp: int) -> dict[str, Any] | None:
+        sql = """
+            SELECT * FROM prices
+            WHERE symbol = ? AND timestamp >= ?
+            ORDER BY timestamp ASC
+            LIMIT 1
+        """
+        with self._connect() as conn:
+            row = conn.execute(sql, (symbol, timestamp)).fetchone()
+            return dict(row) if row else None
+
+    # --- portfolio ---
+
+    def init_portfolio_state(
+        self, cash: float, benchmark_btc_price: float | None = None
+    ) -> dict[str, Any]:
+        sql = """
+            INSERT OR IGNORE INTO portfolio_state
+                (id, cash, benchmark_btc_price, benchmark_started_at, updated_at)
+            VALUES (1, ?, ?, ?, datetime('now'))
+        """
+        started_at = int(datetime.now(timezone.utc).timestamp()) if benchmark_btc_price else None
+        with self._connect() as conn:
+            conn.execute(sql, (cash, benchmark_btc_price, started_at))
+        state = self.get_portfolio_state()
+        assert state is not None
+        return state
+
+    def get_portfolio_state(self) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM portfolio_state WHERE id = 1").fetchone()
+            return dict(row) if row else None
+
+    def update_portfolio_cash(self, cash: float) -> None:
+        sql = """
+            UPDATE portfolio_state
+            SET cash = ?, updated_at = datetime('now')
+            WHERE id = 1
+        """
+        with self._connect() as conn:
+            conn.execute(sql, (cash,))
+
+    def set_benchmark_price(self, price: float) -> None:
+        sql = """
+            UPDATE portfolio_state
+            SET benchmark_btc_price = ?,
+                benchmark_started_at = ?,
+                updated_at = datetime('now')
+            WHERE id = 1
+        """
+        ts = int(datetime.now(timezone.utc).timestamp())
+        with self._connect() as conn:
+            conn.execute(sql, (price, ts))
+
     def get_signal_accuracy(self, days: int = 7) -> dict[str, Any]:
         """Rolling accuracy over the given window (uses 24h correctness when available)."""
         sql = """
@@ -308,6 +445,22 @@ class Storage:
             correct = int(row["correct"] or 0)
             accuracy = (correct / total * 100.0) if total > 0 else None
             return {"total": total, "correct": correct, "accuracy_pct": accuracy, "days": days}
+
+
+def signal_row_from_result(
+    strategy_name: str, signal: Any, timestamp: int, funding_rate: float | None = None
+) -> dict[str, Any]:
+    """Build a DB row dict from a Signal dataclass."""
+    return {
+        "strategy": strategy_name,
+        "symbol": signal.symbol,
+        "timestamp": timestamp,
+        "direction": signal.direction.value,
+        "reason": signal.reason,
+        "entry_price": signal.entry_price,
+        "funding_rate": funding_rate,
+        "metadata": json.dumps(signal.metadata),
+    }
 
 
 # Module-level singleton for convenience

@@ -42,6 +42,12 @@ MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", "0.20"))
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "0.06"))
 
+# --- Strategy ---
+ACTIVE_STRATEGY = os.getenv("ACTIVE_STRATEGY", "funding_rate")
+
 # --- Market comparison ---
 MARKET_COMPARE_HORIZONS_HOURS = (1, 4, 24)
 SIGNAL_ACCURACY_ROLLING_DAYS = int(os.getenv("SIGNAL_ACCURACY_ROLLING_DAYS", "7"))
+
+# --- Dashboard ---
+DASHBOARD_DIR = Path(__file__).resolve().parent / "dashboard"

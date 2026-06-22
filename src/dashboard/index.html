@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>BTC Paper Trading</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --blue: #58a6ff;
+      --border: #30363d;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 12px;
+      padding-bottom: 32px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.1rem; margin-bottom: 4px; }
+    .sub { color: var(--muted); font-size: 0.8rem; margin-bottom: 16px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .price { font-size: 1.8rem; font-weight: 700; }
+    .row { display: flex; justify-content: space-between; gap: 8px; }
+    .label { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; }
+    .value { font-size: 1rem; font-weight: 600; }
+    .signal {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .signal.LONG { background: rgba(63,185,80,.2); color: var(--green); }
+    .signal.SHORT { background: rgba(248,81,73,.2); color: var(--red); }
+    .signal.NONE { background: rgba(139,148,158,.2); color: var(--muted); }
+    .reason { margin-top: 8px; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+    th, td { padding: 6px 4px; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: 500; }
+    .pos { color: var(--green); }
+    .neg { color: var(--red); }
+    .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      background: var(--muted);
+    }
+    .status-dot.live { background: var(--green); }
+    #chart-wrap { height: 180px; }
+  </style>
+</head>
+<body>
+  <h1>BTC Paper Trading</h1>
+  <p class="sub"><span class="status-dot" id="ws-status"></span><span id="ws-label">Connecting…</span></p>
+
+  <div class="card">
+    <div class="label">BTC Price</div>
+    <div class="price" id="price">—</div>
+    <div class="row" style="margin-top:10px">
+      <div>
+        <div class="label">Funding Rate</div>
+        <div class="value" id="funding">—</div>
+      </div>
+      <div style="text-align:right">
+        <div class="label">Signal Accuracy (7d)</div>
+        <div class="value" id="accuracy">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Active Signal</div>
+    <div style="margin-top:6px"><span class="signal NONE" id="signal-dir">NONE</span></div>
+    <div class="reason" id="signal-reason">Waiting for data…</div>
+  </div>
+
+  <div class="card">
+    <div class="label">Portfolio</div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <div class="label">Paper Value</div>
+        <div class="value" id="paper-value">—</div>
+      </div>
+      <div style="text-align:right">
+        <div class="label">Buy &amp; Hold</div>
+        <div class="value" id="buy-hold">—</div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <div class="label">vs Start</div>
+        <div class="value" id="pnl-start">—</div>
+      </div>
+      <div style="text-align:right">
+        <div class="label">vs Buy &amp; Hold</div>
+        <div class="value" id="pnl-bh">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="label">Price Chart</div>
+    <div id="chart-wrap"><canvas id="price-chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <div class="label">Recent Trades</div>
+    <table>
+      <thead>
+        <tr><th>Dir</th><th>Entry</th><th>Exit</th><th>PnL</th></tr>
+      </thead>
+      <tbody id="trades-body">
+        <tr><td colspan="4">No trades yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const fmt = (n, d = 2) => n == null ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+    const fmtUsd = (n) => n == null ? '—' : '$' + fmt(n);
+    const pnlClass = (n) => n == null ? '' : n >= 0 ? 'pos' : 'neg';
+
+    let chart;
+    function initChart() {
+      const ctx = document.getElementById('price-chart').getContext('2d');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: 'BTC',
+            data: [],
+            borderColor: '#58a6ff',
+            backgroundColor: 'rgba(88,166,255,.1)',
+            fill: true,
+            tension: 0.2,
+            pointRadius: 0,
+            borderWidth: 2,
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { display: false },
+            y: {
+              ticks: { color: '#8b949e', maxTicksLimit: 4 },
+              grid: { color: '#30363d' }
+            }
+          }
+        }
+      });
+    }
+
+    function updateChart(prices, trades) {
+      if (!chart || !prices?.length) return;
+      const labels = prices.map(p => new Date(p.timestamp * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      const data = prices.map(p => p.close);
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = data;
+      chart.update('none');
+    }
+
+    function renderTrades(trades) {
+      const body = document.getElementById('trades-body');
+      if (!trades?.length) {
+        body.innerHTML = '<tr><td colspan="4">No trades yet</td></tr>';
+        return;
+      }
+      body.innerHTML = trades.map(t => `
+        <tr>
+          <td>${t.direction}</td>
+          <td>${fmt(t.entry_price)}</td>
+          <td>${t.exit_price ? fmt(t.exit_price) : '—'}</td>
+          <td class="${pnlClass(t.pnl)}">${t.pnl != null ? fmtUsd(t.pnl) : '—'}</td>
+        </tr>
+      `).join('');
+    }
+
+    function render(data) {
+      document.getElementById('price').textContent = fmtUsd(data.price);
+      document.getElementById('funding').textContent =
+        data.funding_rate_pct != null ? data.funding_rate_pct.toFixed(4) + '%' : '—';
+
+      const acc = data.accuracy;
+      document.getElementById('accuracy').textContent =
+        acc?.accuracy_pct != null ? acc.accuracy_pct.toFixed(1) + '%' : '—';
+
+      const sig = data.signal;
+      const dirEl = document.getElementById('signal-dir');
+      const direction = sig?.direction || 'NONE';
+      dirEl.textContent = direction;
+      dirEl.className = 'signal ' + direction;
+      document.getElementById('signal-reason').textContent = sig?.reason || 'No signal yet';
+
+      const p = data.portfolio || {};
+      document.getElementById('paper-value').textContent = fmtUsd(p.paper_value);
+      document.getElementById('buy-hold').textContent = fmtUsd(p.buy_and_hold_value);
+      const pnlStart = document.getElementById('pnl-start');
+      pnlStart.textContent = p.pnl_vs_start != null ? fmtUsd(p.pnl_vs_start) : '—';
+      pnlStart.className = 'value ' + pnlClass(p.pnl_vs_start);
+      const pnlBh = document.getElementById('pnl-bh');
+      pnlBh.textContent = p.pnl_vs_buy_hold != null ? fmtUsd(p.pnl_vs_buy_hold) : '—';
+      pnlBh.className = 'value ' + pnlClass(p.pnl_vs_buy_hold);
+
+      updateChart(data.prices, data.trades);
+      renderTrades(data.trades);
+    }
+
+    function connect() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+      const dot = document.getElementById('ws-status');
+      const label = document.getElementById('ws-label');
+
+      ws.onopen = () => { dot.classList.add('live'); label.textContent = 'Live'; };
+      ws.onclose = () => {
+        dot.classList.remove('live');
+        label.textContent = 'Reconnecting…';
+        setTimeout(connect, 3000);
+      };
+      ws.onmessage = (e) => {
+        try { render(JSON.parse(e.data)); } catch (_) {}
+      };
+    }
+
+    initChart();
+    connect();
+  </script>
+</body>
+</html>
