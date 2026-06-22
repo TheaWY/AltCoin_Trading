@@ -6,7 +6,8 @@ export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 export HOME="${HOME:-$(eval echo ~$(whoami))}"
 
 lsof -ti :8000 | xargs kill -9 2>/dev/null || true
-pkill -f "ngrok http" 2>/dev/null || true
+pkill -f "\.venv/bin/python main.py" 2>/dev/null || true
+pkill -f "ngrok http.*8000" 2>/dev/null || true
 sleep 1
 
 mkdir -p logs data
@@ -29,6 +30,11 @@ echo ""
 echo "Local:  http://localhost:8000/dashboard"
 if [[ -n "$NGROK" ]]; then
   echo "Phone:  ${NGROK}/dashboard"
+  NGROK_LIVE=$(echo "$HEALTH" | python3 -c "import sys,json; print('yes' if json.load(sys.stdin).get('ngrok_live') else 'no')" 2>/dev/null || echo "no")
+  if [[ "$NGROK_LIVE" != "yes" ]]; then
+    echo "Warning: ngrok tunnel not reachable yet — wait 10s and run ./scripts/show-url.sh"
+    tail -8 logs/ngrok.log 2>/dev/null || tail -5 logs/trading.stderr.log 2>/dev/null || true
+  fi
 elif [[ -n "$URL" ]]; then
   echo "Phone:  $URL"
 else

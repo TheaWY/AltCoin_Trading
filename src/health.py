@@ -100,6 +100,16 @@ class HealthMonitor:
 
         live = status in ("online", "degraded", "starting") and bool(state.get("pid"))
 
+        ngrok_url = state.get("ngrok_url")
+        ngrok_live = False
+        if ngrok_url:
+            try:
+                from src.tunnel import verify_public_url
+
+                ngrok_live = verify_public_url(str(ngrok_url).rstrip("/"))
+            except Exception:
+                ngrok_live = False
+
         return {
             "live": live,
             "status": status,
@@ -112,7 +122,8 @@ class HealthMonitor:
             "last_cycle_ok": state.get("last_cycle_ok"),
             "last_cycle_error": state.get("last_cycle_error"),
             "cycle_count": state.get("cycle_count", 0),
-            "ngrok_url": state.get("ngrok_url"),
+            "ngrok_url": ngrok_url,
+            "ngrok_live": ngrok_live,
             "launchd": state.get("launchd", False),
             "probe_ok": probe.get("ok"),
             "probe_at": probe.get("checked_at"),

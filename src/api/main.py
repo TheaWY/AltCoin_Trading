@@ -29,6 +29,9 @@ def _start_ngrok_tunnel() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if config.NGROK_ENABLED:
+        from src.tunnel import set_api_ready
+
+        set_api_ready(True)
         await asyncio.sleep(0.5)
         try:
             loop = asyncio.get_running_loop()
@@ -37,8 +40,9 @@ async def lifespan(app: FastAPI):
             logger.exception("Ngrok tunnel failed — running local only")
     yield
     if config.NGROK_ENABLED:
-        from src.tunnel import stop_ngrok
+        from src.tunnel import set_api_ready, stop_ngrok
 
+        set_api_ready(False)
         stop_ngrok()
 
 

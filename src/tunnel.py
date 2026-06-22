@@ -19,7 +19,14 @@ logger = logging.getLogger(__name__)
 
 _process: subprocess.Popen | None = None
 _tunnel_started = False
+_api_ready = False
 NGROK_URL_FILE = config.DATA_DIR / "ngrok.url"
+
+
+def set_api_ready(ready: bool = True) -> None:
+    """Call once the FastAPI server is listening (before starting ngrok)."""
+    global _api_ready
+    _api_ready = ready
 
 
 def _static_endpoint_url() -> str | None:
@@ -112,18 +119,29 @@ def _start_ngrok_cli(port: int) -> str:
         " ".join(cmd[:4]),
         _static_endpoint_url() or "random",
     )
+    log_path = config.DATA_DIR.parent / "logs" / "ngrok.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = open(log_path, "a", encoding="utf-8")
+    log_file.write(f"\n--- ngrok start {time.strftime('%Y-%m-%d %H:%M:%S')} ---\n")
+    log_file.flush()
+
     _process = subprocess.Popen(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
         text=True,
+        start_new_session=True,
     )
 
     for _ in range(40):
         time.sleep(0.25)
         if _process.poll() is not None:
-            err = (_process.stderr.read() if _process.stderr else "") or "unknown error"
-            raise RuntimeError(f"ngrok process exited: {err.strip()}")
+            tail = ""
+            if log_path.exists():
+                tail = log_path.read_text(encoding="utf-8")[-2000:]
+            raise RuntimeError(
+                f"ngrok process exited early. Log tail:\n{tail.strip() or 'unknown error'}"
+            )
         url = _fetch_https_url()
         if url:
             return url
@@ -159,10 +177,35 @@ def _start_pyngrok(port: int) -> str:
     return tunnel.public_url.rstrip("/")
 
 
+def _expected_base_url() -> str | None:
+    static = _static_endpoint_url()
+    if static:
+        return static.rstrip("/")
+    saved = get_saved_public_url()
+    if saved:
+        return saved.replace("/dashboard", "").rstrip("/")
+    return None
+
+
+def is_tunnel_healthy() -> bool:
+    base = _expected_base_url()
+    if not base:
+        return False
+    return is_ngrok_process_running() and verify_public_url(base)
+
+
 def start_ngrok(port: int | None = None) -> str:
     """Start ngrok and return the public HTTPS base URL."""
     global _tunnel_started
     port = port or config.API_PORT
+
+    existing = _expected_base_url()
+    if existing and is_ngrok_process_running() and verify_public_url(existing):
+        logger.info("Ngrok tunnel already healthy: %s", existing)
+        _save_public_url(existing)
+        return existing
+
+    stop_ngrok()
 
     if config.NGROK_USE_CLI and _find_ngrok_bin():
         public_url = _start_ngrok_cli(port)
@@ -196,6 +239,15 @@ def stop_ngrok() -> None:
         except subprocess.TimeoutExpired:
             _process.kill()
         _process = None
+
+    try:
+        subprocess.run(
+            ["pkill", "-f", f"ngrok http {config.API_PORT}"],
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        pass
 
     try:
         from pyngrok import ngrok
@@ -241,26 +293,18 @@ def verify_public_url(base_url: str) -> bool:
 
 def ensure_ngrok_running() -> str | None:
     """Restart ngrok if enabled but tunnel is missing or unreachable."""
-    if not config.NGROK_ENABLED:
-        return None
+    if not config.NGROK_ENABLED or not _api_ready:
+        return _expected_base_url()
 
-    from src.health import get_health
-
-    health = get_health()
-    state = health.get_status()
-    existing = state.get("ngrok_url") or get_saved_public_url()
-    static = _static_endpoint_url()
-    if static:
-        existing = static
-    elif existing:
-        existing = existing.replace("/dashboard", "").rstrip("/")
-
+    existing = _expected_base_url()
     if existing and is_ngrok_process_running() and verify_public_url(existing):
         return existing
 
     logger.warning("Ngrok tunnel down or stale — restarting")
     stop_ngrok()
     try:
+        from src.health import get_health
+
         public_url = start_ngrok(config.API_PORT)
         get_health().mark_ngrok(public_url)
         return public_url
