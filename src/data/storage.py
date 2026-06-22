@@ -447,6 +447,16 @@ class Storage:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
 
+    def get_recent_closed_trades(self, limit: int = 20) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM paper_trades
+            WHERE status = 'closed'
+            ORDER BY closed_at DESC
+            LIMIT ?
+        """
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
+
     def get_closed_trades_for_symbol(self, symbol: str) -> list[dict[str, Any]]:
         sql = """
             SELECT * FROM paper_trades

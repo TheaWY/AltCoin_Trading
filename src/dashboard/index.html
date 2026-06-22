@@ -1,309 +1,477 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Altcoin Portfolio</title>
+  <title>AltCoin Trading</title>
   <style>
     :root {
-      --bg: #0d1117; --card: #161b22; --text: #e6edf3; --muted: #8b949e;
-      --green: #3fb950; --red: #f85149; --blue: #58a6ff; --border: #30363d;
-      --amber: #d29922;
+      --bg: #070a0f;
+      --panel: #10151d;
+      --panel-strong: #141b25;
+      --border: #263141;
+      --text: #edf2f7;
+      --muted: #8b98a9;
+      --green: #3ddc84;
+      --red: #ff5c6c;
+      --blue: #62a8ff;
+      --amber: #f4bf50;
+      --cyan: #44d7d1;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; }
     body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg); color: var(--text);
-      padding: 12px 12px 48px; max-width: 520px; margin: 0 auto;
+      font-size: 14px;
+      line-height: 1.35;
     }
-    h1 { font-size: 1.15rem; }
-    .sub { color: var(--muted); font-size: 0.78rem; margin: 4px 0 16px; }
-    .section-title {
-      font-size: 0.72rem; font-weight: 600; text-transform: uppercase;
-      letter-spacing: 0.06em; color: var(--muted); margin: 0 0 8px 2px;
+    .shell {
+      width: 100%;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 12px 12px 48px;
+    }
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .title {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--red);
+    }
+    .dot.live { background: var(--green); }
+    .section { margin: 14px 0; }
+    .section-label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin: 0 0 8px 2px;
     }
     .card {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 12px; margin-bottom: 12px; overflow: hidden;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
     }
-    .status-dot {
-      display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-      margin-right: 5px; background: var(--muted);
+    .summary {
+      padding: 14px;
+      background: var(--panel-strong);
     }
-    .status-dot.live { background: var(--green); }
-    .status-dot.offline { background: var(--red); }
-
-    /* Holdings table */
-    .holdings-head, .holding-row {
+    .summary-main {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      margin-bottom: 12px;
+    }
+    .label {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .total {
+      font-size: 28px;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+      margin-top: 3px;
+    }
+    .pnl {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-weight: 750;
+      padding-top: 19px;
+    }
+    .grid {
       display: grid;
-      grid-template-columns: 1.4fr 1fr 1fr 1fr;
-      gap: 4px; padding: 10px 12px; align-items: center;
-      font-size: 0.8rem;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
     }
-    .holdings-head {
-      color: var(--muted); font-size: 0.65rem; text-transform: uppercase;
-      letter-spacing: 0.04em; border-bottom: 1px solid var(--border);
-      padding-top: 8px; padding-bottom: 6px;
+    .metric {
+      min-width: 0;
+      border-top: 1px solid rgba(255,255,255,.06);
+      padding-top: 10px;
     }
-    .holding-row { border-bottom: 1px solid var(--border); }
-    .holding-row:last-child { border-bottom: none; }
-    .holding-row.active { background: rgba(88,166,255,.06); }
-    .holding-row.flat .asset-name { color: var(--muted); }
-    .asset-cell { display: flex; flex-direction: column; gap: 2px; }
-    .asset-name { font-weight: 700; font-size: 0.9rem; }
-    .asset-meta { font-size: 0.68rem; color: var(--muted); }
+    .metric-value {
+      margin-top: 3px;
+      font-weight: 750;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
+    .market-line {
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #d9e3ee;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+    th, td {
+      padding: 9px 8px;
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    th {
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      background: #0c1118;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    th:first-child, td:first-child { text-align: left; position: sticky; left: 0; }
+    th:first-child { background: #0c1118; }
+    td:first-child { background: var(--panel); }
+    tr.worth td { background: rgba(61,220,132,.08); }
+    tr.worth td:first-child { background: #13231d; }
+    .coin {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-weight: 800;
+    }
+    .vol-mark {
+      display: inline-grid;
+      grid-template-columns: repeat(3, 3px);
+      align-items: end;
+      gap: 2px;
+      width: 13px;
+      height: 12px;
+    }
+    .vol-mark i {
+      display: block;
+      width: 3px;
+      background: var(--amber);
+      border-radius: 1px;
+    }
+    .vol-mark i:nth-child(1) { height: 5px; }
+    .vol-mark i:nth-child(2) { height: 9px; }
+    .vol-mark i:nth-child(3) { height: 12px; }
     .pill {
-      display: inline-block; padding: 1px 6px; border-radius: 4px;
-      font-size: 0.62rem; font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 50px;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 850;
+      border: 1px solid transparent;
     }
-    .pill.LONG { background: rgba(63,185,80,.2); color: var(--green); }
-    .pill.SHORT { background: rgba(248,81,73,.2); color: var(--red); }
-    .num { text-align: right; font-variant-numeric: tabular-nums; }
-    .num-label { font-size: 0.62rem; color: var(--muted); display: none; }
+    .pill.long { color: var(--green); background: rgba(61,220,132,.13); border-color: rgba(61,220,132,.22); }
+    .pill.short { color: var(--red); background: rgba(255,92,108,.12); border-color: rgba(255,92,108,.22); }
+    .pill.none, .pill.hold { color: var(--muted); background: rgba(139,152,169,.12); border-color: rgba(139,152,169,.2); }
+    .pill.scalp { color: var(--cyan); background: rgba(68,215,209,.12); border-color: rgba(68,215,209,.22); }
+    .pill.swing { color: var(--blue); background: rgba(98,168,255,.13); border-color: rgba(98,168,255,.22); }
     .pos { color: var(--green); }
     .neg { color: var(--red); }
-    .zero { color: var(--muted); }
-
-    /* Portfolio footer */
-    .portfolio-card { padding: 16px; }
-    .portfolio-total { font-size: 1.75rem; font-weight: 700; margin: 4px 0; }
-    .portfolio-pnl { font-size: 0.95rem; font-weight: 600; margin-bottom: 14px; }
-    .stat-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    .muted { color: var(--muted); }
+    .history table { min-width: 560px; }
+    .empty {
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
     }
-    .stat-label { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; }
-    .stat-value { font-size: 0.95rem; font-weight: 600; margin-top: 2px; }
-
-    /* Recommendations */
-    .rec-row {
-      padding: 12px; border-bottom: 1px solid var(--border);
-      display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
-    }
-    .rec-row:last-child { border-bottom: none; }
-    .rec-title { font-weight: 700; font-size: 0.9rem; }
-    .rec-detail { font-size: 0.75rem; color: var(--muted); margin-top: 4px; line-height: 1.4; }
-    .rec-badge {
-      flex-shrink: 0; padding: 4px 8px; border-radius: 6px;
-      font-size: 0.7rem; font-weight: 700; background: rgba(63,185,80,.15); color: var(--green);
-    }
-    .empty { padding: 16px; color: var(--muted); font-size: 0.85rem; text-align: center; }
-    .health-link { color: var(--blue); font-size: 0.78rem; word-break: break-all; }
-    @media (max-width: 360px) {
-      .holdings-head { display: none; }
-      .holding-row {
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: auto auto;
-      }
-      .asset-cell { grid-column: 1 / -1; }
-      .num-label { display: block; }
+    @media (max-width: 380px) {
+      .shell { padding-left: 10px; padding-right: 10px; }
+      .total { font-size: 24px; }
+      .summary-main { display: block; }
+      .pnl { text-align: left; padding-top: 8px; }
     }
   </style>
 </head>
 <body>
-  <h1>Portfolio</h1>
-  <p class="sub">
-    <span class="status-dot" id="ws-status"></span><span id="ws-label">Connecting…</span>
-  </p>
-  <div id="url-banner" class="card" style="padding:10px 12px;margin-bottom:12px;font-size:0.78rem;display:none">
-    <div class="label">Phone link (ngrok)</div>
-    <a class="health-link" id="url-banner-link" href="#" target="_blank" rel="noopener"></a>
-    <div class="muted" style="margin-top:4px" id="url-banner-hint">Bookmark this link — stays the same after restarts.</div>
-  </div>
-
-  <div class="section-title">Your positions</div>
-  <div class="card" id="holdings-card">
-    <div class="holdings-head">
-      <span>Asset</span>
-      <span class="num">Invested</span>
-      <span class="num">Value</span>
-      <span class="num">P&amp;L</span>
+  <main class="shell">
+    <div class="topbar">
+      <div class="title">AltCoin Trading</div>
+      <div class="status"><span class="dot" id="ws-dot"></span><span id="ws-text">연결 중</span></div>
     </div>
-    <div id="holdings-list"></div>
-  </div>
 
-  <div class="section-title" style="margin-top:20px">Portfolio</div>
-  <div class="card portfolio-card">
-    <div class="stat-label">Total value</div>
-    <div class="portfolio-total" id="total-value">—</div>
-    <div class="portfolio-pnl" id="total-pnl">—</div>
-    <div class="stat-grid">
-      <div>
-        <div class="stat-label">Cash available</div>
-        <div class="stat-value" id="cash">—</div>
+    <section class="section">
+      <div class="section-label">Paper Trading</div>
+      <div class="card summary">
+        <div class="summary-main">
+          <div>
+            <div class="label">총 평가금액</div>
+            <div class="total" id="total-value">—</div>
+            <div class="muted" id="starting-capital">시작 자본 —</div>
+          </div>
+          <div class="pnl" id="pnl-value">—</div>
+        </div>
+        <div class="grid">
+          <div class="metric">
+            <div class="label">현금</div>
+            <div class="metric-value" id="cash-value">—</div>
+          </div>
+          <div class="metric">
+            <div class="label">오픈 포지션</div>
+            <div class="metric-value" id="open-positions">—</div>
+          </div>
+          <div class="metric">
+            <div class="label">BTC 보유 대비</div>
+            <div class="metric-value" id="btc-compare">—</div>
+          </div>
+          <div class="metric">
+            <div class="label">BTC 단순 보유</div>
+            <div class="metric-value" id="btc-hold">—</div>
+          </div>
+        </div>
       </div>
-      <div>
-        <div class="stat-label">In positions</div>
-        <div class="stat-value" id="invested-open">—</div>
-      </div>
-      <div>
-        <div class="stat-label">Unrealized P&amp;L</div>
-        <div class="stat-value" id="unrealized">—</div>
-      </div>
-      <div>
-        <div class="stat-label">Realized P&amp;L</div>
-        <div class="stat-value" id="realized">—</div>
-      </div>
-      <div>
-        <div class="stat-label">vs Starting $10k</div>
-        <div class="stat-value" id="vs-start">—</div>
-      </div>
-      <div>
-        <div class="stat-label">Open / max</div>
-        <div class="stat-value" id="open-count">—</div>
-      </div>
-    </div>
-    <div id="ngrok-wrap" style="margin-top:14px" hidden>
-      <div class="stat-label">Phone URL</div>
-      <a class="health-link" id="ngrok-url" href="#" target="_blank" rel="noopener"></a>
-    </div>
-  </div>
+    </section>
 
-  <div class="section-title" style="margin-top:20px">Recommended positions</div>
-  <div class="card" id="rec-card">
-    <div id="rec-list"></div>
-  </div>
+    <section class="section">
+      <div class="section-label">Quant Market</div>
+      <div class="card market-line" id="market-summary">데이터 대기 중</div>
+    </section>
+
+    <section class="section">
+      <div class="section-label">Altcoin Universe</div>
+      <div class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>코인</th>
+              <th>현재가</th>
+              <th>24h</th>
+              <th>7d</th>
+              <th>펀딩비</th>
+              <th>Vol</th>
+              <th>Signal</th>
+              <th>Action</th>
+              <th>Conf</th>
+            </tr>
+          </thead>
+          <tbody id="alts-body">
+            <tr><td colspan="9" class="empty">데이터 대기 중</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section history">
+      <div class="section-label">Position History</div>
+      <div class="card table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>코인</th>
+              <th>방향</th>
+              <th>진입가</th>
+              <th>청산가</th>
+              <th>수익률</th>
+              <th>보유</th>
+            </tr>
+          </thead>
+          <tbody id="history-body">
+            <tr><td colspan="6" class="empty">청산된 포지션 없음</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
 
   <script>
-    const fmt = (n, d=2) => n == null ? '—' : Number(n).toLocaleString(undefined, {minimumFractionDigits: d, maximumFractionDigits: d});
-    const fmtUsd = n => n == null ? '—' : '$' + fmt(n);
-    const fmtPct = n => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
-    const pnlClass = n => n == null || n === 0 ? 'zero' : n > 0 ? 'pos' : 'neg';
-    const fmtPnl = (n, pct) => {
-      if (n == null || (n === 0 && !pct)) return '<span class="zero">$0.00</span>';
-      const cls = pnlClass(n);
-      const pctStr = pct != null ? ` <span class="${cls}" style="font-size:0.72rem">(${fmtPct(pct)})</span>` : '';
-      return `<span class="${cls}">${n >= 0 ? '+' : ''}$${fmt(Math.abs(n))}</span>${pctStr}`;
-    };
+    const KRW_RATE = 1400;
+    const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+    const num = value => Number(value ?? 0);
+    const fmtUsd = value => value == null ? '—' : '$' + num(value).toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const fmtKrw = value => value == null ? '—' : '₩' + Math.round(num(value) * KRW_RATE).toLocaleString('ko-KR');
+    const fmtPrice = value => value == null ? '—' : '$' + num(value).toLocaleString(undefined, { maximumFractionDigits: value >= 10 ? 2 : 4 });
+    const fmtPct = value => value == null ? '—' : `${num(value) >= 0 ? '+' : ''}${num(value).toFixed(2)}%`;
+    const cls = value => num(value) > 0 ? 'pos' : num(value) < 0 ? 'neg' : 'muted';
+    const confidencePct = value => value == null ? '—' : Math.round(num(value) * 100) + '%';
 
-    function setConnectionDot(live, status) {
-      const dot = document.getElementById('ws-status');
-      document.getElementById('ws-label').textContent =
-        live ? (status === 'degraded' ? 'Live (degraded)' : 'Live') : 'Offline';
-      dot.className = 'status-dot ' + (live ? 'live' : 'offline');
+    function setLive(isLive) {
+      document.getElementById('ws-dot').className = 'dot' + (isLive ? ' live' : '');
+      document.getElementById('ws-text').textContent = isLive ? 'Live' : 'Offline';
     }
 
-    function holdingRow(alt) {
-      const inv = alt.investment || {};
-      const isOpen = inv.status === 'open';
-      const isFlat = !isOpen && (inv.realized_pnl === 0 || inv.realized_pnl == null) && !inv.lifetime_invested;
-      const cls = isOpen ? 'holding-row active' : (isFlat ? 'holding-row flat' : 'holding-row');
+    function renderSummary(data) {
+      const p = data.portfolio || {};
+      const start = p.starting_capital ?? 0;
+      const value = p.paper_value ?? null;
+      const pnl = p.pnl_vs_start ?? (value == null ? null : value - start);
+      const pnlPct = start ? (pnl / start) * 100 : null;
+      const buyHold = p.buy_and_hold_value ?? null;
+      const btcVs = p.pnl_vs_buy_hold ?? (value != null && buyHold != null ? value - buyHold : null);
+      const btcVsPct = buyHold ? (btcVs / buyHold) * 100 : null;
 
-      const invested = inv.invested || 0;
-      const value = isOpen ? (inv.current_value || 0) : 0;
-      const pnl = isOpen ? inv.unrealized_pnl : (inv.realized_pnl || 0);
-      const pnlPct = isOpen ? inv.unrealized_pnl_pct : inv.total_pnl_pct;
-
-      const dir = inv.direction
-        ? `<span class="pill ${inv.direction}">${inv.direction}</span>`
-        : '';
-
-      const meta = isOpen
-        ? `${dir} · entry ${fmtUsd(inv.entry_price)}`
-        : (inv.closed_trades ? `${inv.closed_trades} closed trade(s)` : 'No position');
-
-      return `
-        <div class="${cls}">
-          <div class="asset-cell">
-            <span class="asset-name">${alt.base}</span>
-            <span class="asset-meta">${meta}</span>
-          </div>
-          <div class="num">
-            <span class="num-label">Invested</span>
-            ${fmtUsd(invested)}
-          </div>
-          <div class="num">
-            <span class="num-label">Value</span>
-            ${isOpen ? fmtUsd(value) : '<span class="zero">—</span>'}
-          </div>
-          <div class="num">
-            <span class="num-label">P&amp;L</span>
-            ${fmtPnl(pnl, pnlPct)}
-          </div>
-        </div>`;
+      document.getElementById('total-value').textContent = fmtKrw(value);
+      document.getElementById('starting-capital').textContent = `시작 자본 ${fmtKrw(start)}`;
+      const pnlEl = document.getElementById('pnl-value');
+      pnlEl.className = 'pnl ' + cls(pnl);
+      pnlEl.innerHTML = `${fmtKrw(pnl)}<br><span>${fmtPct(pnlPct)}</span>`;
+      document.getElementById('cash-value').textContent = fmtKrw(p.cash);
+      document.getElementById('open-positions').textContent = `${p.open_trades ?? 0} / ${p.max_open_positions ?? '—'}`;
+      const btcEl = document.getElementById('btc-compare');
+      btcEl.className = 'metric-value ' + cls(btcVs);
+      btcEl.textContent = btcVs == null ? '—' : `${fmtPct(btcVsPct)} (${fmtKrw(btcVs)})`;
+      document.getElementById('btc-hold').textContent = buyHold == null ? '—' : fmtKrw(buyHold);
     }
 
-    function recRow(r) {
-      const style = r.recommended_style === 'short_term' ? 'Short-term' : 'Swing';
-      return `
-        <div class="rec-row">
-          <div>
-            <div class="rec-title">${r.base} · ${r.recommended_action}</div>
-            <div class="rec-detail">
-              ${style} (${r.confidence ? Math.round(r.confidence*100)+'% conf' : ''})
-              · ${fmtUsd(r.price)}<br>
-              ${r.short_term?.reason || ''}
+    function renderMarket(data) {
+      const alts = data.alts || [];
+      const positiveFunding = alts.filter(a => num(a.funding_rate) > 0).length;
+      const negativeFunding = alts.filter(a => num(a.funding_rate) < 0).length;
+      const bias = positiveFunding > negativeFunding ? '롱 우세' : negativeFunding > positiveFunding ? '숏 우세' : '중립';
+      const btc = alts.find(a => a.symbol === 'BTC/USDT') || {};
+      const spikes = alts.filter(a => a.volume_spike).length;
+      document.getElementById('market-summary').textContent =
+        `${bias} (${positiveFunding}/${alts.length} 양수 펀딩비) · BTC 24h ${fmtPct(btc.pct_24h)} · 거래량 spike ${spikes}개`;
+    }
+
+    function signalPill(direction) {
+      const d = direction || 'NONE';
+      return `<span class="pill ${d.toLowerCase()}">${esc(d)}</span>`;
+    }
+
+    function actionPill(alt) {
+      if (!alt.worth_investing || !alt.recommended_style) {
+        return '<span class="pill hold">HOLD</span>';
+      }
+      const label = alt.recommended_style === 'short_term' ? '단타' : '스윙';
+      const klass = alt.recommended_style === 'short_term' ? 'scalp' : 'swing';
+      return `<span class="pill ${klass}">${label}</span>`;
+    }
+
+    function renderAlts(data) {
+      const alts = data.alts || [];
+      const body = document.getElementById('alts-body');
+      if (!alts.length) {
+        body.innerHTML = '<tr><td colspan="9" class="empty">알트 데이터 없음</td></tr>';
+        return;
+      }
+      body.innerHTML = alts.map(alt => `
+        <tr class="${alt.worth_investing ? 'worth' : ''}">
+          <td>
+            <div class="coin">
+              ${alt.volume_spike ? '<span class="vol-mark"><i></i><i></i><i></i></span>' : ''}
+              <span>${esc(alt.base || alt.symbol)}</span>
             </div>
-          </div>
-          <div class="rec-badge">${style}</div>
-        </div>`;
+          </td>
+          <td>${fmtPrice(alt.price)}</td>
+          <td class="${cls(alt.pct_24h)}">${fmtPct(alt.pct_24h)}</td>
+          <td class="${cls(alt.pct_7d)}">${fmtPct(alt.pct_7d)}</td>
+          <td class="${cls(alt.funding_rate_pct)}">${fmtPct(alt.funding_rate_pct)}</td>
+          <td>${alt.volume_ratio == null ? '—' : num(alt.volume_ratio).toFixed(2) + 'x'}</td>
+          <td>${signalPill(alt.direction)}</td>
+          <td>${actionPill(alt)}</td>
+          <td>${confidencePct(alt.confidence)}</td>
+        </tr>
+      `).join('');
+    }
+
+    function tradeReturn(trade) {
+      const entry = num(trade.entry_price);
+      const qty = num(trade.quantity);
+      const notional = entry * qty;
+      return notional ? (num(trade.pnl) / notional) * 100 : null;
+    }
+
+    function holdDuration(trade) {
+      if (!trade.opened_at || !trade.closed_at) return '—';
+      const seconds = Math.max(0, num(trade.closed_at) - num(trade.opened_at));
+      const hours = seconds / 3600;
+      if (hours < 24) return `${hours.toFixed(1)}h`;
+      return `${(hours / 24).toFixed(1)}d`;
+    }
+
+    function renderHistory(data) {
+      const trades = (data.closed_trades || data.recent_trades || [])
+        .filter(t => t.status === 'closed')
+        .sort((a, b) => num(b.closed_at) - num(a.closed_at))
+        .slice(0, 20);
+      const body = document.getElementById('history-body');
+      if (!trades.length) {
+        body.innerHTML = '<tr><td colspan="6" class="empty">청산된 포지션 없음</td></tr>';
+        return;
+      }
+      body.innerHTML = trades.map(trade => {
+        const ret = tradeReturn(trade);
+        return `
+          <tr>
+            <td>${esc((trade.symbol || '').split('/')[0])}</td>
+            <td>${signalPill(trade.direction)}</td>
+            <td>${fmtPrice(trade.entry_price)}</td>
+            <td>${fmtPrice(trade.exit_price)}</td>
+            <td class="${cls(ret)}">${fmtPct(ret)}</td>
+            <td>${holdDuration(trade)}</td>
+          </tr>
+        `;
+      }).join('');
     }
 
     function render(data) {
-      const alts = data.alts || [];
-      const p = data.portfolio || {};
+      renderSummary(data);
+      renderMarket(data);
+      renderAlts(data);
+      renderHistory(data);
+      const status = data.health?.status;
+      if (status) document.getElementById('ws-text').textContent = status === 'ok' ? 'Live' : `Live · ${status}`;
+    }
 
-      document.getElementById('holdings-list').innerHTML =
-        alts.map(holdingRow).join('');
-
-      document.getElementById('total-value').textContent = fmtUsd(p.paper_value);
-      const totalPnl = p.pnl_vs_start;
-      const tpnl = document.getElementById('total-pnl');
-      tpnl.innerHTML = totalPnl != null
-        ? `${totalPnl >= 0 ? '+' : ''}${fmtUsd(totalPnl)} all time`
-        : '—';
-      tpnl.className = 'portfolio-pnl ' + pnlClass(totalPnl);
-
-      document.getElementById('cash').textContent = fmtUsd(p.cash);
-      document.getElementById('invested-open').textContent = fmtUsd(p.total_invested_open);
-      const unr = document.getElementById('unrealized');
-      unr.textContent = (p.total_unrealized_pnl >= 0 ? '+' : '') + fmtUsd(p.total_unrealized_pnl);
-      unr.className = 'stat-value ' + pnlClass(p.total_unrealized_pnl);
-      const real = document.getElementById('realized');
-      real.textContent = (p.total_realized_pnl >= 0 ? '+' : '') + fmtUsd(p.total_realized_pnl);
-      real.className = 'stat-value ' + pnlClass(p.total_realized_pnl);
-      const vs = document.getElementById('vs-start');
-      vs.textContent = (p.pnl_vs_start >= 0 ? '+' : '') + fmtUsd(p.pnl_vs_start);
-      vs.className = 'stat-value ' + pnlClass(p.pnl_vs_start);
-      document.getElementById('open-count').textContent =
-        `${p.open_trades ?? 0} / ${p.max_open_positions ?? 5}`;
-
-      const recs = data.recommendations || [];
-      document.getElementById('rec-list').innerHTML = recs.length
-        ? recs.map(recRow).join('')
-        : '<div class="empty">No new recommendations — either fully invested or waiting for setups</div>';
-
-      const h = data.health;
-      if (h) {
-        setConnectionDot(h.live, h.status);
-        const phone = h.public_url || h.ngrok_url;
-        if (phone) {
-          document.getElementById('url-banner').style.display = 'block';
-          const hint = document.getElementById('url-banner-hint');
-          if (hint) {
-            hint.textContent = h.cloud
-              ? 'Cloud URL — runs 24/7, no Mac needed.'
-              : 'Bookmark this link — static domain stays the same after restarts.';
-          }
-          const a = document.getElementById('url-banner-link');
-          a.href = phone + '/dashboard';
-          a.textContent = phone + '/dashboard';
-          document.getElementById('ngrok-wrap').hidden = false;
-          const a2 = document.getElementById('ngrok-url');
-          a2.href = phone + '/dashboard';
-          a2.textContent = phone + '/dashboard';
-        }
+    async function loadInitial() {
+      try {
+        const res = await fetch('/api/alts');
+        render(await res.json());
+      } catch {
+        setLive(false);
       }
     }
 
-    function connect() {
-      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-      const ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.onmessage = e => { try { render(JSON.parse(e.data)); } catch(_){} };
-      ws.onclose = () => { setConnectionDot(false); setTimeout(connect, 3000); };
+    function connectWs() {
+      const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${protocol}://${location.host}/ws`);
+      ws.onopen = () => setLive(true);
+      ws.onmessage = event => {
+        setLive(true);
+        render(JSON.parse(event.data));
+      };
+      ws.onclose = () => {
+        setLive(false);
+        setTimeout(connectWs, 3000);
+      };
+      ws.onerror = () => setLive(false);
     }
 
-    fetch('/api/alts').then(r => r.json()).then(render).catch(() => {});
-    connect();
+    loadInitial();
+    connectWs();
   </script>
 </body>
 </html>
