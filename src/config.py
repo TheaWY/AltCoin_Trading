@@ -22,9 +22,32 @@ BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() in ("true", "1", "yes")
 
-# Default trading pair
+# Default trading pair (legacy / BTC focus)
 SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
 CCXT_SYMBOL = os.getenv("CCXT_SYMBOL", "BTC/USDT:USDT")  # perpetual futures
+
+# Multi-symbol universe (comma-separated spot pairs)
+_default_alts = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,DOGE/USDT,ADA/USDT,AVAX/USDT,LINK/USDT,DOT/USDT"
+TRADING_SYMBOLS = [
+    s.strip() for s in os.getenv("TRADING_SYMBOLS", _default_alts).split(",") if s.strip()
+]
+MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
+
+# --- Analysis thresholds (not hardcoded in analyzer) ---
+MOMENTUM_24H_STRONG_PCT = float(os.getenv("MOMENTUM_24H_STRONG_PCT", "3.0"))
+MOMENTUM_7D_STRONG_PCT = float(os.getenv("MOMENTUM_7D_STRONG_PCT", "5.0"))
+MOMENTUM_COUNTER_TREND_PCT = float(os.getenv("MOMENTUM_COUNTER_TREND_PCT", "5.0"))
+SHORT_TERM_MIN_CONFIDENCE = float(os.getenv("SHORT_TERM_MIN_CONFIDENCE", "0.55"))
+SWING_MIN_CONFIDENCE = float(os.getenv("SWING_MIN_CONFIDENCE", "0.55"))
+PAPER_MIN_CONFIDENCE = float(os.getenv("PAPER_MIN_CONFIDENCE", "0.60"))
+
+# Optional overrides: BTC/USDT=BTC/USDT:USDT,ETH/USDT=ETH/USDT:USDT
+SYMBOL_CCXT_MAP: dict[str, str] = {}
+for part in os.getenv("SYMBOL_CCXT_MAP", "").split(","):
+    part = part.strip()
+    if "=" in part:
+        spot, ccxt_sym = part.split("=", 1)
+        SYMBOL_CCXT_MAP[spot.strip()] = ccxt_sym.strip()
 
 # --- Scheduler ---
 COLLECTION_INTERVAL_MINUTES = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "5"))
@@ -51,3 +74,20 @@ SIGNAL_ACCURACY_ROLLING_DAYS = int(os.getenv("SIGNAL_ACCURACY_ROLLING_DAYS", "7"
 
 # --- Dashboard ---
 DASHBOARD_DIR = Path(__file__).resolve().parent / "dashboard"
+
+# --- Ngrok (public phone access) ---
+NGROK_ENABLED = os.getenv("NGROK_ENABLED", "false").lower() in ("true", "1", "yes")
+NGROK_AUTHTOKEN = os.getenv("NGROK_AUTHTOKEN", "")  # optional if ngrok CLI is configured
+NGROK_USE_CLI = os.getenv("NGROK_USE_CLI", "true").lower() in ("true", "1", "yes")
+NGROK_BIN = os.getenv("NGROK_BIN", "")  # auto-detect homebrew ngrok if empty
+NGROK_REGION = os.getenv("NGROK_REGION", "")  # e.g. us, eu, ap, au, sa, jp, in
+NGROK_WEB_PORT = int(os.getenv("NGROK_WEB_PORT", "4042"))
+
+# --- Health monitoring ---
+# Mark degraded if no cycle within this many seconds
+HEALTH_STALE_SECONDS = int(
+    os.getenv(
+        "HEALTH_STALE_SECONDS",
+        str(COLLECTION_INTERVAL_MINUTES * 60 * 2 + 120),
+    )
+)

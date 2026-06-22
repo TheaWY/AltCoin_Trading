@@ -35,16 +35,20 @@ class SignalEngine:
             data[key] = fetcher(self.storage, symbol)
         return data
 
-    def run(self, strategy_name: str | None = None) -> dict[str, Any]:
+    def run(self, strategy_name: str | None = None, symbol: str | None = None) -> dict[str, Any]:
+        return self.run_for_symbol(symbol or config.SYMBOL, strategy_name)
+
+    def run_for_symbol(
+        self, symbol: str, strategy_name: str | None = None
+    ) -> dict[str, Any]:
         strategy_name = strategy_name or config.ACTIVE_STRATEGY
-        symbol = config.SYMBOL
         strategy = get_strategy(strategy_name)
 
         data = self.gather_data(strategy_name, symbol)
         missing = strategy.validate_data(data)
         if missing:
-            logger.warning("Signal run skipped — missing data: %s", missing)
-            return {"ok": False, "error": f"Missing data: {missing}"}
+            logger.warning("Signal skipped for %s — missing: %s", symbol, missing)
+            return {"ok": False, "symbol": symbol, "error": f"Missing data: {missing}"}
 
         signal = strategy.generate_signal(data)
         now_ts = int(datetime.now(timezone.utc).timestamp())
@@ -65,13 +69,19 @@ class SignalEngine:
             "timestamp": now_ts,
         }
         logger.info(
-            "Signal generated [%s] %s @ %s — %s",
+            "Signal [%s] %s %s @ %s",
             strategy_name,
+            symbol,
             signal.direction.value,
             signal.entry_price,
-            signal.reason,
         )
         return result
+
+    def run_all(self, symbols: list[str] | None = None) -> list[dict[str, Any]]:
+        from src.symbols import trading_symbols
+
+        symbols = symbols or trading_symbols()
+        return [self.run_for_symbol(sym) for sym in symbols]
 
 
 def signal_to_dict(signal: Signal) -> dict[str, Any]:

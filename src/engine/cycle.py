@@ -1,0 +1,82 @@
+"""Multi-symbol trading cycle orchestration."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from src import config
+from src.data.storage import Storage, get_storage
+from src.engine.analyzer import AltAnalyzer
+from src.engine.market_compare import MarketCompare
+from src.engine.paper_trader import PaperTrader
+from src.engine.signal import SignalEngine
+from src.symbols import trading_symbols
+
+logger = logging.getLogger(__name__)
+
+
+def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
+    """Full cycle: collect → signal → analyze → paper trade → outcomes."""
+    storage = storage or get_storage()
+    symbols = trading_symbols()
+    cycle_ok = True
+    cycle_error = None
+
+    try:
+        from src.data.collectors.binance import run_collection
+
+        run_collection(symbols)
+    except Exception as exc:
+        cycle_ok = False
+        cycle_error = str(exc)
+        logger.exception("Data collection failed")
+
+    trader = PaperTrader(storage)
+    signal_engine = SignalEngine(storage)
+    analyzer = AltAnalyzer(storage)
+    market = MarketCompare(storage)
+
+    btc = storage.get_latest_price(config.SYMBOL)
+    if btc:
+        trader.ensure_portfolio(float(btc["close"]))
+
+    # Check exits per open trade with correct symbol price
+    for trade in storage.get_open_trades():
+        sym = trade["symbol"]
+        row = storage.get_latest_price(sym)
+        if row:
+            trader.check_open_trades_for_symbol(sym, float(row["close"]))
+
+    signals_run = 0
+    trades_opened = 0
+
+    for symbol in symbols:
+        result = signal_engine.run_for_symbol(symbol)
+        if not result.get("ok"):
+            continue
+        signals_run += 1
+
+        market.register_from_signal(result)
+
+        analysis = analyzer.analyze(symbol)
+        price_row = storage.get_latest_price(symbol)
+        if not price_row:
+            continue
+        price = float(price_row["close"])
+
+        if analysis["worth_investing"] and result.get("direction") in ("LONG", "SHORT"):
+            opened = trader.process_signal(result, price, require_worth=True)
+            if opened.get("opened"):
+                trades_opened += 1
+
+    market.backfill_missing_stubs()
+    market.update_pending()
+
+    return {
+        "ok": cycle_ok,
+        "error": cycle_error,
+        "symbols": len(symbols),
+        "signals_run": signals_run,
+        "trades_opened": trades_opened,
+    }

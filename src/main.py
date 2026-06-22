@@ -11,11 +11,8 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from src import config
 from src.api.main import app
 from src.api.websocket import broadcast_snapshot
-from src.data.collectors.binance import run_collection
-from src.data.storage import get_storage
-from src.engine.market_compare import MarketCompare
-from src.engine.paper_trader import PaperTrader
-from src.engine.signal import SignalEngine
+from src.health import get_health
+from src.engine.cycle import run_trading_cycle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -27,28 +24,9 @@ logger = logging.getLogger(__name__)
 
 def trading_cycle() -> None:
     """Collect data, generate signals, manage paper trades, update outcomes."""
+    health = get_health()
     logger.info("Trading cycle started")
-    try:
-        run_collection()
-    except Exception:
-        logger.exception("Data collection failed")
-
-    storage = get_storage()
-    latest = storage.get_latest_price(config.SYMBOL)
-    current_price = float(latest["close"]) if latest else None
-
-    trader = PaperTrader(storage)
-    if current_price:
-        trader.ensure_portfolio(current_price)
-        trader.check_open_trades(current_price)
-
-    signal_result = SignalEngine(storage).run()
-    if signal_result.get("ok") and current_price:
-        MarketCompare(storage).register_from_signal(signal_result)
-        trader.process_signal(signal_result, current_price)
-
-    MarketCompare(storage).backfill_missing_stubs()
-    MarketCompare(storage).update_pending()
+    result = run_trading_cycle()
 
     try:
         import asyncio
@@ -59,10 +37,20 @@ def trading_cycle() -> None:
     except Exception:
         logger.debug("WebSocket broadcast skipped", exc_info=True)
 
-    logger.info("Trading cycle finished")
+    health.mark_cycle(result.get("ok", False), result.get("error"))
+    logger.info(
+        "Trading cycle finished — %s symbols, %s signals, %s new trades",
+        result.get("symbols", 0),
+        result.get("signals_run", 0),
+        result.get("trades_opened", 0),
+    )
 
 
 def main() -> None:
+    import os
+
+    health = get_health()
+    health.mark_started(os.getpid())
     scheduler = BackgroundScheduler()
     scheduler.add_job(
         trading_cycle,
@@ -80,7 +68,11 @@ def main() -> None:
     # Run once at startup so dashboard has data immediately
     trading_cycle()
 
-    logger.info("Dashboard: http://%s:%s/dashboard", config.API_HOST, config.API_PORT)
+    local_url = f"http://localhost:{config.API_PORT}/dashboard"
+    logger.info("Local dashboard: %s", local_url)
+    logger.info("Ngrok will start after the API is listening (if NGROK_ENABLED=true)")
+
+    health.mark_running()
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="info")
 
 

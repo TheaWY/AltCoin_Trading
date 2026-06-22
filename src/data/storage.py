@@ -297,10 +297,29 @@ class Storage:
             cursor = conn.execute(sql, row)
             return int(cursor.lastrowid)
 
-    def get_open_trades(self) -> list[dict[str, Any]]:
+    def get_open_trades(self, symbol: str | None = None) -> list[dict[str, Any]]:
+        if symbol:
+            sql = """
+                SELECT * FROM paper_trades
+                WHERE status = 'open' AND symbol = ?
+                ORDER BY opened_at DESC
+            """
+            with self._connect() as conn:
+                return [dict(r) for r in conn.execute(sql, (symbol,)).fetchall()]
         sql = "SELECT * FROM paper_trades WHERE status = 'open' ORDER BY opened_at DESC"
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql).fetchall()]
+
+    def get_open_trade_for_symbol(self, symbol: str) -> dict[str, Any] | None:
+        trades = self.get_open_trades(symbol)
+        return trades[0] if trades else None
+
+    def count_open_trades(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM paper_trades WHERE status = 'open'"
+            ).fetchone()
+            return int(row["n"])
 
     def get_recent_trades(self, limit: int = 10) -> list[dict[str, Any]]:
         sql = """
@@ -310,6 +329,24 @@ class Storage:
         """
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
+
+    def get_closed_trades_for_symbol(self, symbol: str) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM paper_trades
+            WHERE symbol = ? AND status = 'closed'
+            ORDER BY closed_at DESC
+        """
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql, (symbol,)).fetchall()]
+
+    def get_all_trades_for_symbol(self, symbol: str) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM paper_trades
+            WHERE symbol = ?
+            ORDER BY opened_at DESC
+        """
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql, (symbol,)).fetchall()]
 
     def update_paper_trade(self, trade_id: int, fields: dict[str, Any]) -> None:
         if not fields:

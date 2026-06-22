@@ -32,13 +32,28 @@ class PaperTrader:
         assert state is not None
         return state
 
-    def portfolio_value(self, current_price: float) -> float:
-        state = self.ensure_portfolio(current_price)
-        cash = float(state["cash"])
-        return cash + sum(
-            self._position_value(trade, current_price)
-            for trade in self.storage.get_open_trades()
-        )
+    def portfolio_value(self, prices_by_symbol: dict[str, float] | None = None) -> float:
+        """Total portfolio value using latest price per open position."""
+        prices_by_symbol = prices_by_symbol or {}
+        state = self.storage.get_portfolio_state()
+        if state is None:
+            self.ensure_portfolio()
+            state = self.storage.get_portfolio_state()
+        cash = float(state["cash"]) if state else config.PAPER_STARTING_CAPITAL
+
+        total = cash
+        for trade in self.storage.get_open_trades():
+            sym = trade["symbol"]
+            price = prices_by_symbol.get(sym)
+            if price is None:
+                row = self.storage.get_latest_price(sym)
+                price = float(row["close"]) if row else float(trade["entry_price"])
+            total += self._position_value(trade, price)
+        return total
+
+    def portfolio_value_legacy(self, current_price: float) -> float:
+        """Legacy single-symbol estimate (BTC price proxy)."""
+        return self.portfolio_value({config.SYMBOL: current_price})
 
     def buy_and_hold_value(self, current_price: float) -> float | None:
         state = self.ensure_portfolio(current_price)
@@ -48,28 +63,43 @@ class PaperTrader:
         shares = config.PAPER_STARTING_CAPITAL / float(benchmark_price)
         return shares * current_price
 
-    def process_signal(self, signal_result: dict[str, Any], current_price: float) -> dict[str, Any]:
+    def process_signal(
+        self,
+        signal_result: dict[str, Any],
+        current_price: float,
+        require_worth: bool = False,
+    ) -> dict[str, Any]:
         direction = signal_result.get("direction")
+        symbol = signal_result.get("symbol", config.SYMBOL)
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return {"opened": False, "reason": "non-actionable signal"}
 
-        open_trades = self.storage.get_open_trades()
-        if open_trades:
-            return {"opened": False, "reason": "position already open"}
+        if self.storage.get_open_trade_for_symbol(symbol):
+            return {"opened": False, "reason": f"position already open for {symbol}"}
+
+        if self.storage.count_open_trades() >= config.MAX_OPEN_POSITIONS:
+            return {"opened": False, "reason": "max open positions reached"}
 
         return self._open_trade(signal_result, current_price)
 
-    def check_open_trades(self, current_price: float) -> list[dict[str, Any]]:
+    def check_open_trades_for_symbol(
+        self, symbol: str, current_price: float
+    ) -> list[dict[str, Any]]:
         closed = []
-        for trade in self.storage.get_open_trades():
+        for trade in self.storage.get_open_trades(symbol):
             exit_reason = self._check_exit(trade, current_price)
             if exit_reason:
                 closed.append(self._close_trade(trade, current_price, exit_reason))
         return closed
 
+    def check_open_trades(self, current_price: float) -> list[dict[str, Any]]:
+        """Legacy — check all open trades using one price (BTC only)."""
+        return self.check_open_trades_for_symbol(config.SYMBOL, current_price)
+
     def _open_trade(self, signal_result: dict[str, Any], current_price: float) -> dict[str, Any]:
+        symbol = signal_result.get("symbol", config.SYMBOL)
         state = self.ensure_portfolio(current_price)
-        portfolio = self.portfolio_value(current_price)
+        portfolio = self.portfolio_value()
         notional = portfolio * config.MAX_POSITION_PCT
         quantity = notional / current_price
         direction = signal_result["direction"]
@@ -85,7 +115,7 @@ class PaperTrader:
         trade_id = self.storage.insert_paper_trade(
             {
                 "signal_id": signal_result.get("signal_id"),
-                "symbol": signal_result.get("symbol", config.SYMBOL),
+                "symbol": symbol,
                 "direction": direction,
                 "entry_price": current_price,
                 "exit_price": None,
@@ -103,8 +133,9 @@ class PaperTrader:
         self.storage.update_portfolio_cash(new_cash)
 
         logger.info(
-            "Paper trade opened id=%s %s qty=%.6f @ %.2f",
+            "Paper trade opened id=%s %s %s qty=%.6f @ %.2f",
             trade_id,
+            symbol,
             direction,
             quantity,
             current_price,
@@ -169,6 +200,35 @@ class PaperTrader:
             return qty * price
         return notional + (entry - price) * qty
 
+    def summary(self, current_price: float | None = None) -> dict[str, Any]:
+        state = self.ensure_portfolio(current_price)
+        prices: dict[str, float] = {}
+        if current_price:
+            prices[config.SYMBOL] = current_price
+        for trade in self.storage.get_open_trades():
+            sym = trade["symbol"]
+            if sym not in prices:
+                row = self.storage.get_latest_price(sym)
+                if row:
+                    prices[sym] = float(row["close"])
+
+        paper_value = self.portfolio_value(prices)
+        btc_price = prices.get(config.SYMBOL) or current_price
+        buy_hold = self.buy_and_hold_value(btc_price) if btc_price else None
+        return {
+            "cash": float(state["cash"]),
+            "paper_value": paper_value,
+            "starting_capital": config.PAPER_STARTING_CAPITAL,
+            "buy_and_hold_value": buy_hold,
+            "open_trades": self.storage.count_open_trades(),
+            "max_open_positions": config.MAX_OPEN_POSITIONS,
+            "pnl_vs_start": paper_value - config.PAPER_STARTING_CAPITAL,
+            "pnl_vs_buy_hold": (paper_value - buy_hold) if buy_hold is not None else None,
+            "total_invested_open": self._total_invested_open(),
+            "total_unrealized_pnl": self._total_unrealized_pnl(prices),
+            "total_realized_pnl": self._total_realized_pnl(),
+        }
+
     def _realized_pnl(self, trade: dict[str, Any], exit_price: float) -> float:
         qty = float(trade["quantity"])
         entry = float(trade["entry_price"])
@@ -176,16 +236,96 @@ class PaperTrader:
             return (exit_price - entry) * qty
         return (entry - exit_price) * qty
 
-    def summary(self, current_price: float) -> dict[str, Any]:
-        state = self.ensure_portfolio(current_price)
-        paper_value = self.portfolio_value(current_price)
-        buy_hold = self.buy_and_hold_value(current_price)
+    def _total_invested_open(self) -> float:
+        total = 0.0
+        for trade in self.storage.get_open_trades():
+            total += float(trade["quantity"]) * float(trade["entry_price"])
+        return total
+
+    def _total_unrealized_pnl(self, prices: dict[str, float]) -> float:
+        total = 0.0
+        for trade in self.storage.get_open_trades():
+            sym = trade["symbol"]
+            price = prices.get(sym)
+            if price is None:
+                row = self.storage.get_latest_price(sym)
+                price = float(row["close"]) if row else float(trade["entry_price"])
+            total += self._realized_pnl(trade, price)
+        return total
+
+    def _total_realized_pnl(self) -> float:
+        total = 0.0
+        for sym in {t["symbol"] for t in self.storage.get_recent_trades(500)}:
+            for trade in self.storage.get_closed_trades_for_symbol(sym):
+                if trade.get("pnl") is not None:
+                    total += float(trade["pnl"])
+        return total
+
+    def investment_for_symbol(
+        self, symbol: str, current_price: float | None = None
+    ) -> dict[str, Any]:
+        """Per-coin invested amount, value, and P&L (open + realized)."""
+        open_trade = self.storage.get_open_trade_for_symbol(symbol)
+        closed = self.storage.get_closed_trades_for_symbol(symbol)
+        realized_pnl = sum(float(t["pnl"] or 0) for t in closed)
+        closed_invested = sum(
+            float(t["quantity"]) * float(t["entry_price"]) for t in closed
+        )
+
+        if not open_trade:
+            return {
+                "status": "flat",
+                "direction": None,
+                "invested": 0.0,
+                "current_value": 0.0,
+                "unrealized_pnl": 0.0,
+                "unrealized_pnl_pct": None,
+                "realized_pnl": round(realized_pnl, 2),
+                "total_pnl": round(realized_pnl, 2),
+                "total_pnl_pct": None,
+                "entry_price": None,
+                "current_price": current_price,
+                "quantity": 0.0,
+                "closed_trades": len(closed),
+                "lifetime_invested": round(closed_invested, 2),
+            }
+
+        price = current_price
+        if price is None:
+            row = self.storage.get_latest_price(symbol)
+            price = float(row["close"]) if row else float(open_trade["entry_price"])
+
+        invested = float(open_trade["quantity"]) * float(open_trade["entry_price"])
+        unrealized = self._realized_pnl(open_trade, price)
+        current_value = invested + unrealized
+        unrealized_pct = (unrealized / invested * 100.0) if invested else None
+        total_pnl = realized_pnl + unrealized
+        total_pnl_pct = (total_pnl / invested * 100.0) if invested else None
+
         return {
-            "cash": float(state["cash"]),
-            "paper_value": paper_value,
-            "starting_capital": config.PAPER_STARTING_CAPITAL,
-            "buy_and_hold_value": buy_hold,
-            "open_trades": len(self.storage.get_open_trades()),
-            "pnl_vs_start": paper_value - config.PAPER_STARTING_CAPITAL,
-            "pnl_vs_buy_hold": (paper_value - buy_hold) if buy_hold is not None else None,
+            "status": "open",
+            "direction": open_trade["direction"],
+            "invested": round(invested, 2),
+            "current_value": round(current_value, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "unrealized_pnl_pct": round(unrealized_pct, 2) if unrealized_pct is not None else None,
+            "realized_pnl": round(realized_pnl, 2),
+            "total_pnl": round(total_pnl, 2),
+            "total_pnl_pct": round(total_pnl_pct, 2) if total_pnl_pct is not None else None,
+            "entry_price": float(open_trade["entry_price"]),
+            "current_price": price,
+            "quantity": float(open_trade["quantity"]),
+            "stop_loss": float(open_trade["stop_loss"]),
+            "take_profit": float(open_trade["take_profit"]),
+            "trade_id": open_trade["id"],
+            "closed_trades": len(closed),
+            "lifetime_invested": round(closed_invested + invested, 2),
         }
+
+    def holdings_for_symbols(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        result = {}
+        for symbol in symbols:
+            row = self.storage.get_latest_price(symbol)
+            price = float(row["close"]) if row else None
+            result[symbol] = self.investment_for_symbol(symbol, price)
+        return result

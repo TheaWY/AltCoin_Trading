@@ -117,7 +117,26 @@ def _funding_to_row(symbol: str, funding: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def run_collection() -> dict[str, Any]:
-    """Convenience entry point for scheduler / manual runs."""
-    collector = BinanceCollector()
-    return collector.collect_all()
+def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
+    """Collect OHLCV + funding for all configured symbols."""
+    from src.symbols import ccxt_symbol, trading_symbols
+
+    symbols = symbols or trading_symbols()
+    exchange = _build_exchange()
+    storage = get_storage()
+    results: dict[str, Any] = {}
+
+    for spot in symbols:
+        try:
+            collector = BinanceCollector(
+                storage=storage,
+                exchange=exchange,
+                symbol=spot,
+                futures_symbol=ccxt_symbol(spot),
+            )
+            results[spot] = collector.collect_all()
+        except Exception:
+            logger.exception("Collection failed for %s", spot)
+            results[spot] = {"error": True}
+
+    return results

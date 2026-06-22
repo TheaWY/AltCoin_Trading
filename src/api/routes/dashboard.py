@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from src import config
 from src.data.storage import get_storage
+from src.health import get_health
 from src.engine.paper_trader import PaperTrader
 
 router = APIRouter(tags=["dashboard"])
@@ -36,4 +37,5 @@ def get_dashboard() -> dict:
         "accuracy": accuracy,
         "prices": prices,
         "trades": trades,
+        "health": get_health().get_status(),
     }
