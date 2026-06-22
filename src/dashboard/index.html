@@ -107,7 +107,7 @@
   <div id="url-banner" class="card" style="padding:10px 12px;margin-bottom:12px;font-size:0.78rem;display:none">
     <div class="label">Phone link (ngrok)</div>
     <a class="health-link" id="url-banner-link" href="#" target="_blank" rel="noopener"></a>
-    <div class="muted" style="margin-top:4px">Bookmark this link — static domain stays the same after restarts.</div>
+    <div class="muted" style="margin-top:4px" id="url-banner-hint">Bookmark this link — stays the same after restarts.</div>
   </div>
 
   <div class="section-title">Your positions</div>
@@ -275,16 +275,22 @@
       const h = data.health;
       if (h) {
         setConnectionDot(h.live, h.status);
-        const ngrok = h.ngrok_url;
-        if (ngrok) {
+        const phone = h.public_url || h.ngrok_url;
+        if (phone) {
           document.getElementById('url-banner').style.display = 'block';
+          const hint = document.getElementById('url-banner-hint');
+          if (hint) {
+            hint.textContent = h.cloud
+              ? 'Cloud URL — runs 24/7, no Mac needed.'
+              : 'Bookmark this link — static domain stays the same after restarts.';
+          }
           const a = document.getElementById('url-banner-link');
-          a.href = ngrok + '/dashboard';
-          a.textContent = ngrok + '/dashboard';
+          a.href = phone + '/dashboard';
+          a.textContent = phone + '/dashboard';
           document.getElementById('ngrok-wrap').hidden = false;
           const a2 = document.getElementById('ngrok-url');
-          a2.href = ngrok + '/dashboard';
-          a2.textContent = ngrok + '/dashboard';
+          a2.href = phone + '/dashboard';
+          a2.textContent = phone + '/dashboard';
         }
       }
     }

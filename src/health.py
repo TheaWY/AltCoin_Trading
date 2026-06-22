@@ -101,8 +101,11 @@ class HealthMonitor:
         live = status in ("online", "degraded", "starting") and bool(state.get("pid"))
 
         ngrok_url = state.get("ngrok_url")
+        public_url = config.public_base_url() or ngrok_url
         ngrok_live = False
-        if ngrok_url:
+        if config.is_cloud_runtime() and public_url:
+            ngrok_live = live
+        elif ngrok_url or public_url:
             try:
                 from src.tunnel import is_tunnel_live_local
 
@@ -122,7 +125,9 @@ class HealthMonitor:
             "last_cycle_ok": state.get("last_cycle_ok"),
             "last_cycle_error": state.get("last_cycle_error"),
             "cycle_count": state.get("cycle_count", 0),
-            "ngrok_url": ngrok_url,
+            "ngrok_url": public_url or ngrok_url,
+            "public_url": public_url,
+            "cloud": config.is_cloud_runtime(),
             "ngrok_live": ngrok_live,
             "launchd": state.get("launchd", False),
             "probe_ok": probe.get("ok"),

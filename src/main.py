@@ -21,7 +21,14 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     local_url = f"http://localhost:{config.API_PORT}/dashboard"
     logger.info("Local dashboard: %s", local_url)
-    logger.info("Ngrok will start after the API is listening (if NGROK_ENABLED=true)")
+    if config.is_cloud_runtime():
+        pub = config.public_base_url()
+        if pub:
+            logger.info("Cloud dashboard (24/7): %s/dashboard", pub)
+        else:
+            logger.info("Cloud mode — public URL will appear after host assigns a domain")
+    else:
+        logger.info("Ngrok will start after the API is listening (if NGROK_ENABLED=true)")
 
     uvicorn.run(app, host=config.API_HOST, port=config.API_PORT, log_level="info")
 
