@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import datetime, timezone
 
 import uvicorn
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -58,15 +59,15 @@ def main() -> None:
         minutes=config.COLLECTION_INTERVAL_MINUTES,
         id="trading_cycle",
         replace_existing=True,
+        next_run_time=datetime.now(timezone.utc),
+        max_instances=1,
+        coalesce=True,
     )
     scheduler.start()
     logger.info(
         "Scheduler started — collecting every %s min",
         config.COLLECTION_INTERVAL_MINUTES,
     )
-
-    # Run once at startup so dashboard has data immediately
-    trading_cycle()
 
     local_url = f"http://localhost:{config.API_PORT}/dashboard"
     logger.info("Local dashboard: %s", local_url)
