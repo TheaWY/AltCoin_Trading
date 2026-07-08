@@ -3,17 +3,72 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timezone
+import json
 from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
 from src.engine import indicators
 from src.strategies.base import SignalDirection
+from src.strategies.funding_carry import settlement_rates
 
 logger = logging.getLogger(__name__)
 
 ROUND_TRIP_COST_PCT = 2 * (config.FEE_PCT_PER_SIDE + config.SLIPPAGE_PCT_PER_SIDE)
+
+_SETTLEMENT_SECONDS = 8 * 3600
+
+
+@dataclass(frozen=True)
+class _CarryPnL:
+    funding: float
+    basis_drift: float
+
+
+def _execution_mode_from_trade(storage: Storage, trade: dict[str, Any]) -> str | None:
+    signal_id = trade.get("signal_id")
+    if signal_id is not None:
+        try:
+            signal_row = storage.get_signal(int(signal_id))
+        except (TypeError, ValueError):
+            signal_row = None
+        if signal_row and signal_row.get("metadata"):
+            try:
+                metadata = json.loads(signal_row["metadata"])
+                mode = (metadata or {}).get("execution_mode")
+                return str(mode) if mode is not None else None
+            except Exception:
+                return None
+    # Fallback: allow direct tagging via trade dict (used by some callers/tests)
+    mode = trade.get("execution_mode")
+    return str(mode) if mode is not None else None
+
+
+def _carry_pnl(storage: Storage, symbol: str, opened_at: int, notional: float) -> _CarryPnL:
+    """Accrued carry PnL approximation: funding minus basis drift.
+
+    Funding is summed over *complete* settlements observed after entry.
+    Basis drift is modeled as 0.0 here (spot/perp basis not tracked in storage).
+    """
+    rows = storage.get_funding_rates(symbol, limit=800, since=opened_at) or []
+    if not rows:
+        return _CarryPnL(funding=0.0, basis_drift=0.0)
+
+    opened_bucket = int(opened_at) // _SETTLEMENT_SECONDS
+    buckets: dict[int, float] = {}
+    for row in rows:
+        try:
+            bucket = int(row["timestamp"]) // _SETTLEMENT_SECONDS
+            buckets[bucket] = float(row["funding_rate"])
+        except Exception:
+            continue
+
+    settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
+    complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
+    funding = sum(complete_after_entry) * notional
+    return _CarryPnL(funding=funding, basis_drift=0.0)
 
 
 class PaperTrader:
@@ -242,7 +297,11 @@ class PaperTrader:
         self, trade: dict[str, Any], current_price: float, reason: str
     ) -> dict[str, Any]:
         notional = float(trade["quantity"]) * float(trade["entry_price"])
-        fees = notional * ROUND_TRIP_COST_PCT
+        execution_mode = _execution_mode_from_trade(self.storage, trade)
+        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
+            fees = notional * config.CARRY_FEE_ROUNDTRIP
+        else:
+            fees = notional * ROUND_TRIP_COST_PCT
         pnl = self._realized_pnl(trade, current_price) - fees
         state = self.storage.get_portfolio_state()
         cash = float(state["cash"]) if state else 0.0
@@ -269,6 +328,24 @@ class PaperTrader:
         return {"trade_id": trade["id"], "pnl": pnl, "reason": reason}
 
     def _check_exit(self, trade: dict[str, Any], price: float) -> str | None:
+        execution_mode = _execution_mode_from_trade(self.storage, trade)
+        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
+            opened_at = trade.get("opened_at")
+            if opened_at is None:
+                return None
+            rates = settlement_rates(
+                self.storage.get_funding_rates(trade["symbol"], limit=800, since=int(opened_at))
+                or []
+            )
+            if not rates:
+                return None
+            if rates[-1] < 0:
+                return "carry_negative_funding"
+            need = int(config.CARRY_EXIT_CONSECUTIVE)
+            if len(rates) >= need and all(rate < config.CARRY_EXIT_RATE for rate in rates[-need:]):
+                return "carry_funding_cooled"
+            return None
+
         direction = trade["direction"]
         stop = float(trade["stop_loss"])
         target = float(trade["take_profit"])
@@ -302,6 +379,13 @@ class PaperTrader:
         qty = float(trade["quantity"])
         entry = float(trade["entry_price"])
         notional = qty * entry
+        execution_mode = _execution_mode_from_trade(self.storage, trade)
+        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
+            opened_at = trade.get("opened_at")
+            if opened_at is None:
+                return notional
+            carry = _carry_pnl(self.storage, trade["symbol"], int(opened_at), notional)
+            return notional + carry.funding - carry.basis_drift
         if trade["direction"] == SignalDirection.LONG.value:
             return qty * price
         return notional + (entry - price) * qty
@@ -338,6 +422,14 @@ class PaperTrader:
     def _realized_pnl(self, trade: dict[str, Any], exit_price: float) -> float:
         qty = float(trade["quantity"])
         entry = float(trade["entry_price"])
+        execution_mode = _execution_mode_from_trade(self.storage, trade)
+        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
+            opened_at = trade.get("opened_at")
+            notional = qty * entry
+            if opened_at is None:
+                return 0.0
+            carry = _carry_pnl(self.storage, trade["symbol"], int(opened_at), notional)
+            return carry.funding - carry.basis_drift
         if trade["direction"] == SignalDirection.LONG.value:
             return (exit_price - entry) * qty
         return (entry - exit_price) * qty

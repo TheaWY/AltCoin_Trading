@@ -43,6 +43,24 @@ CREATE TABLE IF NOT EXISTS funding_rates (
     UNIQUE(symbol, timestamp)
 );
 
+CREATE TABLE IF NOT EXISTS long_short_ratio (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    ratio REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(symbol, timestamp)
+);
+
+CREATE TABLE IF NOT EXISTS open_interest (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    open_interest REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(symbol, timestamp)
+);
+
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     strategy TEXT NOT NULL,
@@ -140,6 +158,24 @@ CREATE TABLE IF NOT EXISTS funding_rates (
     symbol TEXT NOT NULL,
     timestamp BIGINT NOT NULL,
     funding_rate DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(symbol, timestamp)
+);
+
+CREATE TABLE IF NOT EXISTS long_short_ratio (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    ratio DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(symbol, timestamp)
+);
+
+CREATE TABLE IF NOT EXISTS open_interest (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    open_interest DOUBLE PRECISION NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(symbol, timestamp)
 );
@@ -588,6 +624,94 @@ class Storage:
             result = [dict(r) for r in rows]
             if reverse_result:
                 result.reverse()
+            return result
+
+    # --- positioning data (long/short ratio, open interest) ---
+
+    def insert_ls_ratios(self, rows: Iterable[dict[str, Any]]) -> int:
+        rows = list(rows)
+        if not rows:
+            return 0
+        sql = """
+            INSERT OR IGNORE INTO long_short_ratio
+                (symbol, timestamp, ratio)
+            VALUES
+                (:symbol, :timestamp, :ratio)
+        """
+        with self._connect() as conn:
+            cursor = conn.executemany(sql, rows)
+            return cursor.rowcount
+
+    def get_ls_ratio_history(
+        self,
+        symbol: str,
+        limit: int = 2160,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?"]
+        params: list[Any] = [symbol]
+        if since is not None:
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        sql = f"""
+            SELECT * FROM long_short_ratio
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            result = [dict(r) for r in rows]
+            result.reverse()
+            return result
+
+    def insert_open_interest(self, rows: Iterable[dict[str, Any]]) -> int:
+        rows = list(rows)
+        if not rows:
+            return 0
+        sql = """
+            INSERT OR IGNORE INTO open_interest
+                (symbol, timestamp, open_interest)
+            VALUES
+                (:symbol, :timestamp, :open_interest)
+        """
+        with self._connect() as conn:
+            cursor = conn.executemany(sql, rows)
+            return cursor.rowcount
+
+    def get_open_interest_history(
+        self,
+        symbol: str,
+        limit: int = 720,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?"]
+        params: list[Any] = [symbol]
+        if since is not None:
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        sql = f"""
+            SELECT * FROM open_interest
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            result = [dict(r) for r in rows]
+            result.reverse()
             return result
 
     # --- signals ---

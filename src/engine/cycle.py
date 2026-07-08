@@ -34,6 +34,15 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         cycle_error = str(exc)
         logger.exception("Data collection failed")
 
+    # Positioning data (long/short ratio, open interest) for positioning_short.
+    # Enrichment only: failures are logged inside and never break the cycle.
+    try:
+        from src.data.collectors.positioning import run_positioning_collection
+
+        run_positioning_collection(symbols, storage)
+    except Exception:
+        logger.exception("Positioning collection failed")
+
     if config.LIVE_TRADING:
         from src.engine.live_trader import LiveTrader
 

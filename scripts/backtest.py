@@ -20,6 +20,7 @@ from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
 from src.strategies.base import SignalDirection  # noqa: E402
+from src.strategies.funding_carry import settlement_rates  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
 
@@ -35,6 +36,8 @@ class BacktestTrade:
     stop_loss: float
     take_profit: float
     opened_at: int
+    strategy: str | None = None
+    metadata: dict[str, Any] | None = None
     exit_price: float | None = None
     closed_at: int | None = None
     pnl: float | None = None
@@ -48,11 +51,19 @@ class BacktestTrade:
 @dataclass
 class BacktestPortfolio:
     cash: float = config.PAPER_STARTING_CAPITAL
+    storage: Storage | None = None
     open_trades: list[BacktestTrade] = field(default_factory=list)
     closed_trades: list[BacktestTrade] = field(default_factory=list)
 
     def open_trade(
-        self, symbol: str, direction: str, price: float, timestamp: int
+        self,
+        symbol: str,
+        direction: str,
+        price: float,
+        timestamp: int,
+        *,
+        strategy: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> BacktestTrade | None:
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return None
@@ -63,7 +74,7 @@ class BacktestPortfolio:
         if len(self.open_trades) >= config.MAX_OPEN_POSITIONS:
             return None
 
-        portfolio_value = self.value({})
+        portfolio_value = self.value({}, timestamp)
         notional = portfolio_value * config.MAX_POSITION_PCT
         if notional <= 0 or self.cash < notional:
             return None
@@ -84,6 +95,8 @@ class BacktestPortfolio:
             stop_loss=stop_loss,
             take_profit=take_profit,
             opened_at=timestamp,
+            strategy=strategy,
+            metadata=metadata,
         )
         self.cash -= notional
         self.open_trades.append(trade)
@@ -93,12 +106,10 @@ class BacktestPortfolio:
         still_open = []
         for trade in self.open_trades:
             price = prices.get(trade.symbol)
-            if price is None:
-                still_open.append(trade)
-                continue
-            reason = self._exit_reason(trade, price)
+            reason = self._exit_reason(trade, price, timestamp)
             if reason:
-                self.close_trade(trade, price, timestamp, reason)
+                close_price = price if price is not None else trade.entry_price
+                self.close_trade(trade, close_price, timestamp, reason)
             else:
                 still_open.append(trade)
         self.open_trades = still_open
@@ -112,7 +123,12 @@ class BacktestPortfolio:
     def close_trade(
         self, trade: BacktestTrade, price: float, timestamp: int, reason: str
     ) -> None:
-        pnl = self._realized_pnl(trade, price)
+        pnl = self._realized_pnl(trade, price, timestamp)
+        if (
+            trade.strategy == "funding_carry"
+            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
+        ):
+            pnl -= trade.notional * config.CARRY_FEE_ROUNDTRIP
         trade.exit_price = price
         trade.closed_at = timestamp
         trade.pnl = pnl
@@ -120,27 +136,54 @@ class BacktestPortfolio:
         self.cash += trade.notional + pnl
         self.closed_trades.append(trade)
 
-    def value(self, prices: dict[str, float]) -> float:
+    def value(self, prices: dict[str, float], timestamp: int | None) -> float:
         total = self.cash
         for trade in self.open_trades:
             price = prices.get(trade.symbol, trade.entry_price)
-            total += self._position_value(trade, price)
+            total += self._position_value(trade, price, timestamp=timestamp)
         return total
 
-    def pnl_by_symbol(self, prices: dict[str, float]) -> dict[str, float]:
+    def pnl_by_symbol(self, prices: dict[str, float], timestamp: int | None) -> dict[str, float]:
         symbols = {trade.symbol for trade in self.closed_trades + self.open_trades}
         result: dict[str, float] = {}
         for symbol in symbols:
             realized = sum(float(t.pnl or 0.0) for t in self.closed_trades if t.symbol == symbol)
             unrealized = sum(
-                self._realized_pnl(t, prices.get(symbol, t.entry_price))
+                self._realized_pnl(
+                    t, prices.get(symbol, t.entry_price), timestamp=timestamp
+                )
                 for t in self.open_trades
                 if t.symbol == symbol
             )
             result[symbol] = realized + unrealized
         return result
 
-    def _exit_reason(self, trade: BacktestTrade, price: float) -> str | None:
+    def _exit_reason(
+        self, trade: BacktestTrade, price: float | None, timestamp: int
+    ) -> str | None:
+        if (
+            trade.strategy == "funding_carry"
+            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
+        ):
+            if self.storage is None:
+                return None
+            rates = settlement_rates(
+                self.storage.get_funding_rates(
+                    trade.symbol, limit=800, since=trade.opened_at, before=timestamp
+                )
+                or []
+            )
+            if not rates:
+                return None
+            if rates[-1] < 0:
+                return "carry_negative_funding"
+            need = int(config.CARRY_EXIT_CONSECUTIVE)
+            if len(rates) >= need and all(rate < config.CARRY_EXIT_RATE for rate in rates[-need:]):
+                return "carry_funding_cooled"
+            return None
+
+        if price is None:
+            return None
         if trade.direction == SignalDirection.LONG.value:
             if price <= trade.stop_loss:
                 return "stop_loss"
@@ -153,12 +196,60 @@ class BacktestPortfolio:
                 return "take_profit"
         return None
 
-    def _realized_pnl(self, trade: BacktestTrade, price: float) -> float:
+    def _realized_pnl(
+        self, trade: BacktestTrade, price: float, timestamp: int | None
+    ) -> float:
+        if (
+            trade.strategy == "funding_carry"
+            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
+            and self.storage is not None
+        ):
+            rows = self.storage.get_funding_rates(
+                trade.symbol, limit=800, since=trade.opened_at, before=timestamp
+            ) or []
+            # funding over complete settlements after entry
+            opened_bucket = int(trade.opened_at) // (8 * 3600)
+            buckets: dict[int, float] = {}
+            for row in rows:
+                try:
+                    bucket = int(row["timestamp"]) // (8 * 3600)
+                    buckets[bucket] = float(row["funding_rate"])
+                except Exception:
+                    continue
+            settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
+            complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
+            funding = sum(complete_after_entry) * trade.notional
+            basis_drift = 0.0
+            return funding - basis_drift
         if trade.direction == SignalDirection.LONG.value:
             return (price - trade.entry_price) * trade.quantity
         return (trade.entry_price - price) * trade.quantity
 
-    def _position_value(self, trade: BacktestTrade, price: float) -> float:
+    def _position_value(
+        self, trade: BacktestTrade, price: float, timestamp: int | None
+    ) -> float:
+        if (
+            trade.strategy == "funding_carry"
+            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
+            and self.storage is not None
+        ):
+            before = timestamp if timestamp is not None else None
+            rows = self.storage.get_funding_rates(
+                trade.symbol, limit=800, since=trade.opened_at, before=before
+            ) or []
+            opened_bucket = int(trade.opened_at) // (8 * 3600)
+            buckets: dict[int, float] = {}
+            for row in rows:
+                try:
+                    bucket = int(row["timestamp"]) // (8 * 3600)
+                    buckets[bucket] = float(row["funding_rate"])
+                except Exception:
+                    continue
+            settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
+            complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
+            funding = sum(complete_after_entry) * trade.notional
+            basis_drift = 0.0
+            return trade.notional + funding - basis_drift
         if trade.direction == SignalDirection.LONG.value:
             return trade.quantity * price
         return trade.notional + (trade.entry_price - price) * trade.quantity
@@ -231,6 +322,48 @@ class SnapshotStorage:
     def get_open_trade_for_symbol(self, symbol: str) -> None:
         return None
 
+    def get_funding_rates(
+        self,
+        symbol: str,
+        limit: int = 100,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        effective_before = min(
+            value for value in (before, self.timestamp) if value is not None
+        )
+        return self.storage.get_funding_rates(
+            symbol, limit=limit, since=since, before=effective_before
+        )
+
+    def get_ls_ratio_history(
+        self,
+        symbol: str,
+        limit: int = 2160,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        effective_before = min(
+            value for value in (before, self.timestamp) if value is not None
+        )
+        return self.storage.get_ls_ratio_history(
+            symbol, limit=limit, since=since, before=effective_before
+        )
+
+    def get_open_interest_history(
+        self,
+        symbol: str,
+        limit: int = 720,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        effective_before = min(
+            value for value in (before, self.timestamp) if value is not None
+        )
+        return self.storage.get_open_interest_history(
+            symbol, limit=limit, since=since, before=effective_before
+        )
+
 
 class BacktestEngine:
     def __init__(
@@ -260,7 +393,7 @@ class BacktestEngine:
             }
         )
 
-        portfolio = BacktestPortfolio()
+        portfolio = BacktestPortfolio(storage=self.storage)
         signal_count = 0
         confidence_pass_count = 0
         opened_count = 0
@@ -316,12 +449,14 @@ class BacktestEngine:
                         signal.direction.value,
                         float(price_row["close"]),
                         ts,
+                        strategy=self.strategy_name,
+                        metadata=signal.metadata,
                     )
                     if opened:
                         opened_count += 1
 
-            equity_curve.append({"timestamp": ts, "value": portfolio.value(last_prices)})
-            symbol_pnl = portfolio.pnl_by_symbol(last_prices)
+            equity_curve.append({"timestamp": ts, "value": portfolio.value(last_prices, ts)})
+            symbol_pnl = portfolio.pnl_by_symbol(last_prices, ts)
             for symbol in self.symbols:
                 symbol_curves[symbol].append(
                     config.PAPER_STARTING_CAPITAL + symbol_pnl.get(symbol, 0.0)
@@ -330,7 +465,7 @@ class BacktestEngine:
         if timeline:
             portfolio.close_all(last_prices, timeline[-1])
 
-        final_value = portfolio.value(last_prices)
+        final_value = portfolio.value(last_prices, timeline[-1] if timeline else None)
         return {
             "params": {
                 "start": self.start.isoformat(),

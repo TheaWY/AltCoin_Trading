@@ -13,6 +13,19 @@ from src.strategies.registry import get_strategy
 
 logger = logging.getLogger(__name__)
 
+
+def _pair_symbol(symbol: str) -> str:
+    """Choose a benchmark leg for pair-trading sandbox.
+
+    The engine remains symbol-centric, so this defaults to BTC/USDT except when
+    the symbol itself is BTC, in which case ETH/USDT is used.
+    """
+    explicit = getattr(config, "PAIR_TRADING_BENCHMARK", "BTC/USDT")
+    if symbol == explicit:
+        return getattr(config, "PAIR_TRADING_ALT_BENCHMARK", "ETH/USDT")
+    return explicit
+
+
 # Data keys a strategy may declare in get_required_data(). Each fetcher works
 # against any storage-like object (live Storage or the backtester's
 # SnapshotStorage), so live trading and backtests share one data path.
@@ -20,18 +33,33 @@ _DATA_FETCHERS = {
     "funding_rate": lambda storage, symbol: storage.get_latest_funding_rate(symbol),
     "latest_price": lambda storage, symbol: storage.get_latest_price(symbol),
     "recent_prices": lambda storage, symbol: storage.get_prices(symbol, limit=48) or None,
+    "recent_prices_720": lambda storage, symbol: storage.get_prices(symbol, limit=720) or None,
     "volume_stats": lambda storage, symbol: storage.get_volume_stats(symbol),
+    # funding_carry: enough collection-frequency rows to cover 6+ settlements
+    # (rows are bucketed into 8h windows inside the strategy)
+    "funding_history": lambda storage, symbol: storage.get_funding_rates(symbol, limit=800) or None,
+    # positioning_short: 90d of hourly ratio rows, 30d of hourly OI rows
+    "ls_ratio_history": lambda storage, symbol: storage.get_ls_ratio_history(symbol, limit=2160) or None,
+    "open_interest_history": lambda storage, symbol: storage.get_open_interest_history(symbol, limit=720) or None,
+    # paper-only research sandboxes. Empty list/dict is intentional: it lets the
+    # strategy persist an explicit NONE signal instead of the engine skipping it.
+    "pair_recent_prices": lambda storage, symbol: storage.get_prices(_pair_symbol(symbol), limit=720) or [],
+    "listing_event": lambda storage, symbol: getattr(storage, "get_latest_listing_event", lambda _symbol: None)(symbol) or {},
 }
 
 
 def gather_strategy_data(storage: Any, strategy: BaseStrategy, symbol: str) -> dict[str, Any]:
     """Collect the data snapshot a strategy needs from a storage-like object."""
     data: dict[str, Any] = {"symbol": symbol}
-    for key in strategy.get_required_data():
+    pair_symbol = _pair_symbol(symbol)
+    required = strategy.get_required_data()
+    for key in required:
         fetcher = _DATA_FETCHERS.get(key)
         if fetcher is None:
             raise KeyError(f"No data fetcher registered for '{key}'")
         data[key] = fetcher(storage, symbol)
+    if "pair_recent_prices" in required:
+        data["pair_symbol"] = pair_symbol
     return data
 
 
@@ -76,6 +104,7 @@ class SignalEngine:
             "direction": signal.direction.value,
             "reason": signal.reason,
             "entry_price": signal.entry_price,
+            "metadata": signal.metadata,
             "symbol": signal.symbol,
             "timestamp": now_ts,
         }
