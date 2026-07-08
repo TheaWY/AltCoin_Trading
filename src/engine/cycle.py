@@ -59,13 +59,16 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     signal_results_by_symbol: dict[str, dict[str, Any]] = {}
 
     for symbol in symbols:
-        result = signal_engine.run_for_symbol(symbol)
-        if not result.get("ok"):
-            continue
-        signals_run += 1
-        signal_results_by_symbol[symbol] = result
-
-        market.register_from_signal(result)
+        # Run every active strategy so their signal accuracy can be compared;
+        # only the primary (first listed) strategy drives trading decisions.
+        for strategy_name in config.ACTIVE_STRATEGIES:
+            result = signal_engine.run_for_symbol(symbol, strategy_name)
+            if not result.get("ok"):
+                continue
+            signals_run += 1
+            if strategy_name == config.PRIMARY_STRATEGY:
+                signal_results_by_symbol[symbol] = result
+                market.register_from_signal(result)
 
     ranked_candidates = [
         analysis

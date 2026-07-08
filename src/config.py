@@ -126,7 +126,23 @@ STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "0.06"))
 
 # --- Strategy ---
+# ACTIVE_STRATEGIES: comma-separated list. The first entry is the primary
+# strategy that drives trades; the others also record signals every cycle so
+# their accuracy can be compared on real data before promoting one.
 ACTIVE_STRATEGY = os.getenv("ACTIVE_STRATEGY", "funding_rate")
+ACTIVE_STRATEGIES = [
+    s.strip()
+    for s in os.getenv("ACTIVE_STRATEGIES", ACTIVE_STRATEGY).split(",")
+    if s.strip()
+]
+PRIMARY_STRATEGY = ACTIVE_STRATEGIES[0]
+
+# --- Momentum strategy thresholds ---
+MOMENTUM_ENTRY_PCT = float(os.getenv("MOMENTUM_ENTRY_PCT", "3.0"))
+
+# --- Volume spike strategy thresholds ---
+VOLUME_SPIKE_RATIO = float(os.getenv("VOLUME_SPIKE_RATIO", "2.0"))
+VOLUME_SPIKE_MIN_CANDLES = int(os.getenv("VOLUME_SPIKE_MIN_CANDLES", "12"))
 
 # --- Market comparison ---
 MARKET_COMPARE_HORIZONS_HOURS = (1, 4, 24)

@@ -11,7 +11,7 @@ router = APIRouter(prefix="/signals", tags=["signals"])
 @router.get("/current")
 def current_signal() -> dict:
     storage = get_storage()
-    signal = storage.get_latest_signal(symbol=config.SYMBOL, strategy=config.ACTIVE_STRATEGY)
+    signal = storage.get_latest_signal(symbol=config.SYMBOL, strategy=config.PRIMARY_STRATEGY)
     return {"signal": signal}
 
 

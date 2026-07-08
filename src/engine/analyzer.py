@@ -251,7 +251,12 @@ class AltAnalyzer:
     def analyze(self, symbol: str, strategy_name: str | None = None) -> dict[str, Any]:
         latest_price = self.storage.get_latest_price(symbol)
         latest_funding = self.storage.get_latest_funding_rate(symbol)
-        latest_signal = self.storage.get_latest_signal(symbol=symbol)
+        # Only the primary strategy's signal drives the trading view; secondary
+        # strategies record signals for accuracy comparison but must not flip
+        # the recommended direction.
+        latest_signal = self.storage.get_latest_signal(
+            symbol=symbol, strategy=strategy_name or config.PRIMARY_STRATEGY
+        )
 
         price = float(latest_price["close"]) if latest_price else None
         funding_rate = float(latest_funding["funding_rate"]) if latest_funding else None
