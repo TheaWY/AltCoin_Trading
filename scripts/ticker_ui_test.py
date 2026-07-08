@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""UI test: every visible price must live-tick when a Binance tick arrives.
+"""UI test: every visible price must live-tick when a price message arrives.
 
-Binance websockets are geo-blocked from CI/VMs, so instead of waiting for a
-real stream we call the page's own applyTick() with synthetic data and assert
-the DOM (home card price, 24h %, market table row) updates and flashes.
+Live prices are relayed by our own server over /ws ({type:"prices"} frames),
+so the browser never talks to an exchange. Exchange access is geo-blocked in
+CI/VMs anyway — we feed the page's own onPricesMessage() with synthetic data
+and assert the DOM (home card price, 24h %, market table row) updates.
 """
 
 from __future__ import annotations
@@ -29,13 +30,11 @@ def main() -> int:
                 tickEls: document.querySelectorAll('[data-tick]').length,
                 pctEls: document.querySelectorAll('[data-tick-pct]').length,
                 indexed: tickIndex.size,
-                subscribedKey: liveTicker.key.split(',').length,
             })"""
         )
         print("state:", state)
         assert state["tickEls"] > 0, "no data-tick elements rendered"
         assert state["indexed"] > 0, "tickIndex empty — syncLiveTicker not run"
-        assert state["subscribedKey"] >= state["indexed"], "subscription set too small"
 
         symbol = page.evaluate("() => [...tickIndex.keys()][0]")
         before = page.evaluate(
@@ -47,7 +46,7 @@ def main() -> int:
         )
 
         page.evaluate(
-            "(sym) => applyTick(sym, 123456.78, 100000)",
+            "(sym) => onPricesMessage({ type: 'prices', data: { [sym]: [123456.78, 23.46] } })",
             symbol,
         )
         page.wait_for_timeout(300)
@@ -61,6 +60,7 @@ def main() -> int:
                     flashed: el.classList.contains('tick'),
                     pct: idx.pct.length ? idx.pct[0].textContent : null,
                     pctTone: idx.pct.length ? idx.pct[0].className : null,
+                    status: document.querySelector('[data-ticker-status]').textContent,
                 };
             }""",
             symbol,
@@ -69,13 +69,17 @@ def main() -> int:
         assert after["price"] != before["price"], "price cell did not update"
         assert "123,456" in after["price"], after["price"]
         assert after["flashed"], "no flash animation class"
+        assert "실시간" in after["status"], after["status"]
         if after["pct"] is not None:
-            assert "23.4" in after["pct"], after["pct"]  # (123456.78-100000)/100000 = +23.46%
+            assert "23.46" in after["pct"], after["pct"]
             assert "pos" in (after["pctTone"] or ""), after["pctTone"]
 
         # Market tab rows must tick too.
         page.click(".tab-btn[data-tab='market']")
-        page.evaluate("(sym) => applyTick(sym, 111111.11, 100000)", symbol)
+        page.evaluate(
+            "(sym) => onPricesMessage({ type: 'prices', data: { [sym]: [111111.11, -1.5] } })",
+            symbol,
+        )
         page.wait_for_timeout(300)
         market_cell = page.evaluate(
             """(sym) => {
@@ -91,7 +95,7 @@ def main() -> int:
 
         assert not errors, errors
         browser.close()
-    print("OK — all visible prices tick live")
+    print("OK — all visible prices tick from relayed price messages")
     return 0
 
 

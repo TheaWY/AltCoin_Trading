@@ -1037,14 +1037,15 @@
       }).join('');
     }
 
-    // ---------- LIVE PRICES (Binance futures public websocket) ----------
-    // Every price on screen ticks in real time: after each render we collect
-    // all [data-tick] elements (home cards, market rows) plus open positions,
-    // and subscribe to the matching @miniTicker streams on one connection.
+    // ---------- LIVE PRICES (relayed by our own server) ----------
+    // Every price on screen ticks in real time. The server holds the single
+    // upstream exchange connection and pushes {type:"prices"} diffs down the
+    // same /ws the dashboard already uses — the browser never needs to reach
+    // the exchange directly (works behind blocked/corporate networks too).
 
     const livePositions = new Map();
     const tickIndex = new Map(); // 'BTCUSDT' -> { price: [els], pct: [els] }
-    const liveTicker = { ws: null, key: '', pending: new Map(), raf: 0, retries: 0 };
+    const liveTicker = { pending: new Map(), raf: 0, staleTimer: 0 };
 
     function setTickerStatus(text) {
       document.querySelectorAll('[data-ticker-status]').forEach(el => { el.textContent = text; });
@@ -1099,52 +1100,26 @@
       liveTicker.pending.clear();
     }
 
-    function applyTick(sym, close, open24) {
+    function applyTick(sym, close, pct24) {
       if (!close) return;
-      liveTicker.pending.set(sym, { close, pct: open24 ? (close - open24) / open24 * 100 : null });
+      liveTicker.pending.set(sym, { close, pct: pct24 ?? null });
       if (!liveTicker.raf) liveTicker.raf = requestAnimationFrame(flushTicks);
     }
 
     function syncLiveTicker() {
       rebuildTickIndex();
-      const symbols = [...new Set([...tickIndex.keys(), ...livePositions.keys()])].sort();
-      const key = symbols.join(',');
-      const wsAlive = liveTicker.ws && liveTicker.ws.readyState <= WebSocket.OPEN;
-      if (key === liveTicker.key && wsAlive) return;
-      liveTicker.key = key;
-      if (liveTicker.ws) { const old = liveTicker.ws; liveTicker.ws = null; try { old.close(); } catch (e) {} }
-      setTickerStatus('');
-      if (!symbols.length) return;
+    }
 
-      const ws = new WebSocket('wss://fstream.binance.com/stream');
-      liveTicker.ws = ws;
-      ws.onopen = () => {
-        // Binance caps inbound messages at ~10/sec — subscribe in spaced chunks.
-        for (let i = 0; i < symbols.length; i += 50) {
-          const params = symbols.slice(i, i + 50).map(s => s.toLowerCase() + '@miniTicker');
-          setTimeout(() => {
-            if (liveTicker.ws === ws && ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify({ method: 'SUBSCRIBE', params, id: i / 50 + 1 }));
-            }
-          }, (i / 50) * 250);
-        }
-      };
-      ws.onmessage = event => {
-        const msg = JSON.parse(event.data);
-        const d = msg && msg.data;
-        if (!d || d.e !== '24hrMiniTicker' || !d.s) return;
-        liveTicker.retries = 0;
-        setTickerStatus('● 실시간');
-        applyTick(d.s, parseFloat(d.c), parseFloat(d.o));
-      };
-      ws.onclose = () => {
-        if (liveTicker.ws !== ws) return;
-        setTickerStatus('');
-        const delay = Math.min(30000, 3000 * 2 ** liveTicker.retries++);
-        setTimeout(() => {
-          if (liveTicker.ws === ws) { liveTicker.ws = null; liveTicker.key = ''; syncLiveTicker(); }
-        }, delay);
-      };
+    // Server pushes {type:"prices", data:{ BTCUSDT: [price, pct24h], ... }}
+    function onPricesMessage(msg) {
+      const data = msg.data || {};
+      for (const sym in data) {
+        const [close, pct24] = data[sym];
+        applyTick(sym, close, pct24);
+      }
+      setTickerStatus('● 실시간');
+      clearTimeout(liveTicker.staleTimer);
+      liveTicker.staleTimer = setTimeout(() => setTickerStatus(''), 15000);
     }
 
     function updateLiveTotals() {
@@ -1295,7 +1270,9 @@
       ws.onopen = () => setLive(true);
       ws.onmessage = event => {
         setLive(true);
-        render(JSON.parse(event.data));
+        const msg = JSON.parse(event.data);
+        if (msg.type === 'prices') { onPricesMessage(msg); return; }
+        render(msg);
       };
       ws.onclose = () => {
         setLive(false);

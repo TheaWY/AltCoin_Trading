@@ -56,7 +56,13 @@ async def lifespan(app: FastAPI):
         loop = asyncio.get_running_loop()
         ngrok_future = loop.run_in_executor(None, _start_ngrok_tunnel)
         ngrok_future.add_done_callback(_log_background_failure)
+
+    from src.api.price_stream import relay
+    from src.api.websocket import manager
+
+    price_task = asyncio.create_task(relay.run(manager))
     yield
+    price_task.cancel()
     if scheduler:
         scheduler.shutdown(wait=False)
     if config.NGROK_ENABLED:
