@@ -11,5 +11,4 @@ data
 *.egg-info
 dist
 build
-launchd
-scripts/restart.sh
+scripts/local

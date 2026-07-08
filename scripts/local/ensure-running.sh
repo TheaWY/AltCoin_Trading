@@ -20,7 +20,7 @@ if pgrep -f "ngrok http.*${API_PORT}" >/dev/null 2>&1; then
 fi
 
 if $LOCAL_OK && $NGROK_OK; then
-  ./scripts/show-url.sh
+  ./scripts/local/show-url.sh
   exit 0
 fi
 
@@ -39,4 +39,4 @@ print(f'Tunnel: {url}/dashboard')
 fi
 
 echo "Service down (local=$LOCAL_OK ngrok=$NGROK_OK) — full restart..."
-./scripts/restart.sh
+./scripts/local/restart.sh

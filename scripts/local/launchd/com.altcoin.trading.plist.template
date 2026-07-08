@@ -8,7 +8,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>__PROJECT_DIR__/scripts/start-trading.sh</string>
+        <string>__PROJECT_DIR__/scripts/local/start-trading.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>__PROJECT_DIR__</string>

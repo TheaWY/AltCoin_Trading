@@ -49,5 +49,5 @@ echo "Permanent URL: https://$DOMAIN/dashboard"
 echo ""
 read -r -p "Restart app now? [Y/n] " restart
 if [[ "${restart:-Y}" =~ ^[Yy]?$ ]]; then
-  ./scripts/restart.sh
+  ./scripts/local/restart.sh
 fi

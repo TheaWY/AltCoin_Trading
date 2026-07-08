@@ -1,7 +1,7 @@
 #!/bin/bash
 # Shared runtime helpers for ops scripts.
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin:${PATH:-}"
 export HOME="${HOME:-$(eval echo ~$(whoami))}"
 
