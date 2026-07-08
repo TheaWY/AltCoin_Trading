@@ -29,6 +29,8 @@ REST_PRICE_URL = "https://fapi.binance.com/fapi/v1/ticker/price"  # weight 2
 BROADCAST_INTERVAL_SECONDS = 0.25
 IDLE_SLEEP_SECONDS = 3.0
 FAST_POLL_SECONDS = 1.0
+WS_FRESH_SECONDS = 3.0
+WS_SILENT_TIMEOUT_SECONDS = 10.0
 OPEN_REFRESH_SECONDS = 60.0
 REST_ERROR_BACKOFF_SECONDS = 5.0
 WS_RETRY_AFTER_SECONDS = 120.0
@@ -44,9 +46,10 @@ class PriceRelay:
         self.dirty: set[str] = set()
         # /ws client -> symbols it currently displays (drives aggTrade subs)
         self.watchers: dict[Any, set[str]] = {}
-        # True only while the upstream websocket actually delivers data;
-        # the REST poller stands down during that time.
-        self.ws_streaming = False
+        # monotonic time of the last upstream websocket message; the REST
+        # poller stands down only while this is fresh (the Railway<->Binance
+        # websocket can go silent without closing, so a boolean isn't enough)
+        self.last_ws_data = 0.0
 
     # ----- client watch lists -----
 
@@ -144,13 +147,14 @@ class PriceRelay:
             ) as ws:
                 subscribed: set[str] = set()
                 next_id = [1]
+                got_data = False
                 while True:
                     if not manager.active:
                         return  # nobody watching — drop the upstream connection
                     await self._sync_subscriptions(ws, subscribed, next_id)
                     # The all-market stream pushes every second; a silent socket
                     # means a half-open/blocked connection, so treat it as dead.
-                    raw = await asyncio.wait_for(ws.recv(), timeout=30)
+                    raw = await asyncio.wait_for(ws.recv(), timeout=WS_SILENT_TIMEOUT_SECONDS)
                     message = json.loads(raw)
                     if not isinstance(message, dict):
                         continue
@@ -159,11 +163,14 @@ class PriceRelay:
                         self.ingest(data)
                     elif isinstance(data, dict) and data.get("e") == "aggTrade":
                         self.ingest_trade(data)
-                    if not self.ws_streaming:
-                        self.ws_streaming = True
+                    else:
+                        continue  # subscribe acks etc. don't count as price data
+                    self.last_ws_data = time.monotonic()
+                    if not got_data:
+                        got_data = True
                         logger.info("Price relay: upstream websocket is delivering data")
         finally:
-            self.ws_streaming = False
+            self.last_ws_data = 0.0
 
     # ----- REST fallback -----
 
@@ -183,8 +190,9 @@ class PriceRelay:
         """
         opens_refreshed_at = 0.0
         while True:
-            if not manager.active or self.ws_streaming:
-                await asyncio.sleep(IDLE_SLEEP_SECONDS)
+            ws_fresh = time.monotonic() - self.last_ws_data < WS_FRESH_SECONDS
+            if not manager.active or ws_fresh:
+                await asyncio.sleep(FAST_POLL_SECONDS if manager.active else IDLE_SLEEP_SECONDS)
                 continue
             try:
                 now = time.monotonic()
