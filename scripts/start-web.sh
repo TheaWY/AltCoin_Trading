@@ -6,7 +6,6 @@ cd "$(dirname "$0")/.."
 
 WEB_HOST="${API_HOST:-0.0.0.0}"
 if [[ "${DEPLOYMENT_MODE:-}" == "cloud" ]]; then
-  export RUN_TRADING_SCHEDULER="${RUN_TRADING_SCHEDULER:-false}"
   export NGROK_ENABLED="${NGROK_ENABLED:-false}"
 fi
 
@@ -14,8 +13,6 @@ if [[ -n "${PORT:-}" ]]; then
   WEB_PORT="$PORT"
 elif [[ -n "${API_PORT:-}" ]]; then
   WEB_PORT="$API_PORT"
-elif [[ "${DEPLOYMENT_MODE:-}" == "cloud" ]]; then
-  WEB_PORT="8000"
 else
   WEB_PORT="8000"
 fi

@@ -102,12 +102,12 @@ OHLCV_TIMEFRAMES = [
 ]
 OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
 OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "100"))
-# Keep cloud web deployments purely HTTP by default. Run the trading loop in a
-# separate worker/service, or set RUN_TRADING_SCHEDULER=true intentionally.
-RUN_TRADING_SCHEDULER = _env_bool(
-    "RUN_TRADING_SCHEDULER",
-    default=not is_cloud_runtime(),
-)
+# The scheduler runs in a background thread and never blocks the web server,
+# so it is on by default everywhere — a single Railway service collects data
+# out of the box. When you add a dedicated worker service
+# (scripts/start-worker.sh), set RUN_TRADING_SCHEDULER=false on the web
+# service to split the roles.
+RUN_TRADING_SCHEDULER = _env_bool("RUN_TRADING_SCHEDULER", default=True)
 
 # --- Funding Rate Reversal strategy thresholds ---
 # Rates are expressed as decimals (0.001 = 0.1%)
