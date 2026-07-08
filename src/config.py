@@ -16,9 +16,13 @@ def _env_bool(name: str, default: bool) -> bool:
         return default
     return raw.lower() in ("true", "1", "yes", "on")
 
-# --- Paths ---
+# --- Paths / database ---
 DATA_DIR = Path(os.getenv("DATA_DIR", str(_PROJECT_ROOT / "data")))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "trading.db"))
+# When set (e.g. by Railway's Postgres plugin), storage uses Postgres instead
+# of the SQLite file above. Postgres survives redeploys and can be shared by
+# the web and worker services.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # --- API server ---
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
