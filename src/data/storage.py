@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -17,13 +18,14 @@ CREATE TABLE IF NOT EXISTS prices (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol TEXT NOT NULL,
     timestamp INTEGER NOT NULL,
+    timeframe TEXT NOT NULL DEFAULT '1h',
     open REAL NOT NULL,
     high REAL NOT NULL,
     low REAL NOT NULL,
     close REAL NOT NULL,
     volume REAL NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(symbol, timestamp)
+    UNIQUE(symbol, timestamp, timeframe)
 );
 
 CREATE TABLE IF NOT EXISTS funding_rates (
@@ -82,7 +84,6 @@ CREATE TABLE IF NOT EXISTS market_outcomes (
     FOREIGN KEY (signal_id) REFERENCES signals(id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_prices_symbol_ts ON prices(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
@@ -126,57 +127,162 @@ class Storage:
     def _init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(SCHEMA)
+            self._migrate_prices_timeframe(conn)
+            conn.execute("DROP INDEX IF EXISTS idx_prices_symbol_ts")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts "
+                "ON prices(symbol, timeframe, timestamp)"
+            )
+
+    def _migrate_prices_timeframe(self, conn: sqlite3.Connection) -> None:
+        columns = [row["name"] for row in conn.execute("PRAGMA table_info(prices)").fetchall()]
+        unique_columns: list[str] | None = None
+        for index in conn.execute("PRAGMA index_list(prices)").fetchall():
+            if not index["unique"]:
+                continue
+            info = conn.execute(f"PRAGMA index_info({index['name']})").fetchall()
+            names = [row["name"] for row in info]
+            if names in (["symbol", "timestamp"], ["symbol", "timestamp", "timeframe"]):
+                unique_columns = names
+                break
+
+        if "timeframe" in columns and unique_columns == ["symbol", "timestamp", "timeframe"]:
+            return
+
+        timeframe_expr = "COALESCE(timeframe, '1h')" if "timeframe" in columns else "'1h'"
+        conn.execute("ALTER TABLE prices RENAME TO prices_old")
+        conn.execute(
+            """
+            CREATE TABLE prices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                timeframe TEXT NOT NULL DEFAULT '1h',
+                open REAL NOT NULL,
+                high REAL NOT NULL,
+                low REAL NOT NULL,
+                close REAL NOT NULL,
+                volume REAL NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                UNIQUE(symbol, timestamp, timeframe)
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            INSERT OR IGNORE INTO prices
+                (id, symbol, timestamp, timeframe, open, high, low, close, volume, created_at)
+            SELECT
+                id, symbol, timestamp, {timeframe_expr}, open, high, low, close, volume, created_at
+            FROM prices_old
+            """
+        )
+        conn.execute("DROP TABLE prices_old")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts "
+            "ON prices(symbol, timeframe, timestamp)"
+        )
 
     # --- prices ---
 
-    def insert_prices(self, rows: Iterable[dict[str, Any]]) -> int:
+    def insert_prices(self, rows: Iterable[dict[str, Any]], timeframe: str = "1h") -> int:
+        prepared_rows = []
+        for row in rows:
+            prepared = dict(row)
+            prepared.setdefault("timeframe", timeframe)
+            prepared_rows.append(prepared)
         sql = """
             INSERT OR IGNORE INTO prices
-                (symbol, timestamp, open, high, low, close, volume)
+                (symbol, timestamp, timeframe, open, high, low, close, volume)
             VALUES
-                (:symbol, :timestamp, :open, :high, :low, :close, :volume)
+                (:symbol, :timestamp, :timeframe, :open, :high, :low, :close, :volume)
         """
         with self._connect() as conn:
-            cursor = conn.executemany(sql, list(rows))
+            cursor = conn.executemany(sql, prepared_rows)
             return cursor.rowcount
 
-    def get_latest_price(self, symbol: str) -> dict[str, Any] | None:
+    def get_latest_price(self, symbol: str, timeframe: str = "1h") -> dict[str, Any] | None:
         sql = """
             SELECT * FROM prices
-            WHERE symbol = ?
+            WHERE symbol = ? AND timeframe = ?
             ORDER BY timestamp DESC
             LIMIT 1
         """
         with self._connect() as conn:
-            row = conn.execute(sql, (symbol,)).fetchone()
+            row = conn.execute(sql, (symbol, timeframe)).fetchone()
             return dict(row) if row else None
 
     def get_prices(
-        self, symbol: str, limit: int = 100, since: int | None = None
+        self,
+        symbol: str,
+        limit: int = 100,
+        since: int | None = None,
+        before: int | None = None,
+        timeframe: str = "1h",
     ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?", "timeframe = ?"]
+        params: list[Any] = [symbol, timeframe]
         if since is not None:
-            sql = """
-                SELECT * FROM prices
-                WHERE symbol = ? AND timestamp >= ?
-                ORDER BY timestamp ASC
-                LIMIT ?
-            """
-            params: tuple[Any, ...] = (symbol, since, limit)
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        if since is not None:
+            order = "ASC"
+            reverse_result = False
         else:
-            sql = """
-                SELECT * FROM prices
-                WHERE symbol = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """
-            params = (symbol, limit)
+            order = "DESC"
+            reverse_result = True
+
+        sql = f"""
+            SELECT * FROM prices
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp {order}
+            LIMIT ?
+        """
+        params.append(limit)
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             result = [dict(r) for r in rows]
-            if since is None:
+            if reverse_result:
                 result.reverse()
             return result
+
+    def cleanup_old_prices(self) -> dict[str, int]:
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        policies = {
+            "15m": 14 * 24 * 60 * 60,
+            "1h": 180 * 24 * 60 * 60,
+        }
+        deleted: dict[str, int] = {}
+        with self._connect() as conn:
+            for timeframe, max_age_seconds in policies.items():
+                cutoff = now_ts - max_age_seconds
+                cursor = conn.execute(
+                    "DELETE FROM prices WHERE timeframe = ? AND timestamp < ?",
+                    (timeframe, cutoff),
+                )
+                deleted[timeframe] = cursor.rowcount
+        return deleted
+
+    def get_volume_stats(
+        self, symbol: str, timeframe: str = "1h", lookback: int = 24
+    ) -> dict[str, float | int | None]:
+        rows = self.get_prices(symbol, limit=lookback, timeframe=timeframe)
+        volumes = [float(row["volume"]) for row in rows]
+        if not volumes:
+            return {"avg": None, "stddev": None, "count": 0}
+
+        avg = sum(volumes) / len(volumes)
+        variance = sum((volume - avg) ** 2 for volume in volumes) / len(volumes)
+        return {
+            "avg": avg,
+            "stddev": math.sqrt(variance),
+            "count": len(volumes),
+        }
 
     # --- funding rates ---
 
@@ -203,29 +309,40 @@ class Storage:
             return dict(row) if row else None
 
     def get_funding_rates(
-        self, symbol: str, limit: int = 100, since: int | None = None
+        self,
+        symbol: str,
+        limit: int = 100,
+        since: int | None = None,
+        before: int | None = None,
     ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?"]
+        params: list[Any] = [symbol]
         if since is not None:
-            sql = """
-                SELECT * FROM funding_rates
-                WHERE symbol = ? AND timestamp >= ?
-                ORDER BY timestamp ASC
-                LIMIT ?
-            """
-            params: tuple[Any, ...] = (symbol, since, limit)
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        if since is not None:
+            order = "ASC"
+            reverse_result = False
         else:
-            sql = """
-                SELECT * FROM funding_rates
-                WHERE symbol = ?
-                ORDER BY timestamp DESC
-                LIMIT ?
-            """
-            params = (symbol, limit)
+            order = "DESC"
+            reverse_result = True
+
+        sql = f"""
+            SELECT * FROM funding_rates
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp {order}
+            LIMIT ?
+        """
+        params.append(limit)
 
         with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
             result = [dict(r) for r in rows]
-            if since is None:
+            if reverse_result:
                 result.reverse()
             return result
 
@@ -330,6 +447,16 @@ class Storage:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
 
+    def get_recent_closed_trades(self, limit: int = 20) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM paper_trades
+            WHERE status = 'closed'
+            ORDER BY closed_at DESC
+            LIMIT ?
+        """
+        with self._connect() as conn:
+            return [dict(r) for r in conn.execute(sql, (limit,)).fetchall()]
+
     def get_closed_trades_for_symbol(self, symbol: str) -> list[dict[str, Any]]:
         sql = """
             SELECT * FROM paper_trades
@@ -412,15 +539,17 @@ class Storage:
         with self._connect() as conn:
             return [dict(r) for r in conn.execute(sql).fetchall()]
 
-    def get_price_at_or_after(self, symbol: str, timestamp: int) -> dict[str, Any] | None:
+    def get_price_at_or_after(
+        self, symbol: str, timestamp: int, timeframe: str = "1h"
+    ) -> dict[str, Any] | None:
         sql = """
             SELECT * FROM prices
-            WHERE symbol = ? AND timestamp >= ?
+            WHERE symbol = ? AND timeframe = ? AND timestamp >= ?
             ORDER BY timestamp ASC
             LIMIT 1
         """
         with self._connect() as conn:
-            row = conn.execute(sql, (symbol, timestamp)).fetchone()
+            row = conn.execute(sql, (symbol, timeframe, timestamp)).fetchone()
             return dict(row) if row else None
 
     # --- portfolio ---

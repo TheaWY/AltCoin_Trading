@@ -95,6 +95,11 @@ for part in os.getenv("SYMBOL_CCXT_MAP", "").split(","):
 
 # --- Scheduler ---
 COLLECTION_INTERVAL_MINUTES = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "5"))
+OHLCV_TIMEFRAMES = [
+    s.strip()
+    for s in os.getenv("OHLCV_TIMEFRAMES", "15m,1h,1d").split(",")
+    if s.strip()
+]
 OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
 OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "100"))
 # Keep cloud web deployments purely HTTP by default. Run the trading loop in a
@@ -110,6 +115,7 @@ FUNDING_RATE_SHORT_THRESHOLD = float(os.getenv("FUNDING_RATE_SHORT_THRESHOLD", "
 FUNDING_RATE_LONG_THRESHOLD = float(os.getenv("FUNDING_RATE_LONG_THRESHOLD", "-0.0005"))
 
 # --- Paper trading ---
+LIVE_TRADING = os.getenv("LIVE_TRADING", "false").lower() in ("true", "1", "yes")
 PAPER_STARTING_CAPITAL = float(os.getenv("PAPER_STARTING_CAPITAL", "10000.0"))
 MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", "0.20"))
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))

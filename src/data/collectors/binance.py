@@ -37,29 +37,47 @@ class BinanceCollector:
         exchange: ccxt.binance | None = None,
         symbol: str | None = None,
         futures_symbol: str | None = None,
+        timeframe: str | None = None,
     ) -> None:
         self.storage = storage or get_storage()
         self.exchange = exchange or _build_exchange()
         self.symbol = symbol or config.SYMBOL
         self.futures_symbol = futures_symbol or config.CCXT_SYMBOL
+        self.timeframe = timeframe
 
     def collect_ohlcv(
         self,
         timeframe: str | None = None,
         limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict[str, Any]] | dict[str, list[dict[str, Any]]]:
         """Fetch OHLCV candles and persist raw rows to the prices table."""
-        timeframe = timeframe or config.OHLCV_TIMEFRAME
+        if timeframe is None and self.timeframe is None:
+            return {
+                tf: self._collect_ohlcv_for_timeframe(tf, limit)
+                for tf in config.OHLCV_TIMEFRAMES
+            }
+
+        return self._collect_ohlcv_for_timeframe(
+            timeframe or self.timeframe or config.OHLCV_TIMEFRAME,
+            limit,
+        )
+
+    def _collect_ohlcv_for_timeframe(
+        self,
+        timeframe: str,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         limit = limit or config.OHLCV_LIMIT
 
         candles = self.exchange.fetch_ohlcv(
             self.futures_symbol, timeframe=timeframe, limit=limit
         )
-        rows = [_candle_to_price_row(self.symbol, candle) for candle in candles]
-        inserted = self.storage.insert_prices(rows)
+        rows = [_candle_to_price_row(self.symbol, candle, timeframe) for candle in candles]
+        inserted = self.storage.insert_prices(rows, timeframe=timeframe)
         logger.info(
-            "OHLCV collected for %s: %d candles fetched, %d new rows",
+            "OHLCV collected for %s %s: %d candles fetched, %d new rows",
             self.symbol,
+            timeframe,
             len(rows),
             inserted,
         )
@@ -89,11 +107,12 @@ class BinanceCollector:
         return {"ohlcv": ohlcv, "funding_rate": funding}
 
 
-def _candle_to_price_row(symbol: str, candle: list) -> dict[str, Any]:
+def _candle_to_price_row(symbol: str, candle: list, timeframe: str) -> dict[str, Any]:
     ts_ms, open_, high, low, close, volume = candle
     return {
         "symbol": symbol,
         "timestamp": int(ts_ms // 1000),
+        "timeframe": timeframe,
         "open": float(open_),
         "high": float(high),
         "low": float(low),

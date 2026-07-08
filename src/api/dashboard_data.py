@@ -74,6 +74,7 @@ def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
         "portfolio": portfolio,
         "open_positions": storage.get_open_trades(),
         "recent_trades": storage.get_recent_trades(20),
+        "closed_trades": storage.get_recent_closed_trades(20),
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": get_health().get_status(),
     }

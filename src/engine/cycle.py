@@ -27,12 +27,18 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         from src.data.collectors.binance import run_collection
 
         run_collection(symbols)
+        storage.cleanup_old_prices()
     except Exception as exc:
         cycle_ok = False
         cycle_error = str(exc)
         logger.exception("Data collection failed")
 
-    trader = PaperTrader(storage)
+    if config.LIVE_TRADING:
+        from src.engine.live_trader import LiveTrader
+
+        trader = LiveTrader(storage)
+    else:
+        trader = PaperTrader(storage)
     signal_engine = SignalEngine(storage)
     analyzer = AltAnalyzer(storage)
     market = MarketCompare(storage)
