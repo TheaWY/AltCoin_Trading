@@ -13,6 +13,15 @@ from src.data.storage import Storage, get_storage
 
 logger = logging.getLogger(__name__)
 
+_TIMEFRAME_UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
+
+
+def _timeframe_seconds(timeframe: str) -> int | None:
+    try:
+        return int(timeframe[:-1]) * _TIMEFRAME_UNIT_SECONDS[timeframe[-1]]
+    except (KeyError, ValueError):
+        return None
+
 
 def _build_exchange() -> ccxt.binance:
     exchange = ccxt.binance(
@@ -67,7 +76,7 @@ class BinanceCollector:
         timeframe: str,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        limit = limit or config.OHLCV_LIMIT
+        limit = self._incremental_limit(timeframe, limit or config.OHLCV_LIMIT)
 
         candles = self.exchange.fetch_ohlcv(
             self.futures_symbol, timeframe=timeframe, limit=limit
@@ -82,6 +91,19 @@ class BinanceCollector:
             inserted,
         )
         return rows
+
+    def _incremental_limit(self, timeframe: str, max_limit: int) -> int:
+        """Only request the candles missing since the newest stored one."""
+        tf_seconds = _timeframe_seconds(timeframe)
+        if not tf_seconds:
+            return max_limit
+        latest = self.storage.get_latest_price(self.symbol, timeframe)
+        if not latest:
+            return max_limit
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        # +2 candle overlap: re-fetch the (mutable) current candle and its predecessor
+        missing = (now_ts - int(latest["timestamp"])) // tf_seconds + 2
+        return max(2, min(max_limit, int(missing)))
 
     def collect_funding_rate(self) -> dict[str, Any] | None:
         """Fetch the latest funding rate and persist it."""
@@ -100,10 +122,14 @@ class BinanceCollector:
         )
         return row
 
-    def collect_all(self) -> dict[str, Any]:
-        """Run all Binance collectors in one pass."""
+    def collect_all(self, funding_row: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Run all Binance collectors in one pass.
+
+        `funding_row` lets run_collection() pass a rate that was already
+        fetched in the batch call, skipping the per-symbol request.
+        """
         ohlcv = self.collect_ohlcv()
-        funding = self.collect_funding_rate()
+        funding = funding_row if funding_row is not None else self.collect_funding_rate()
         return {"ohlcv": ohlcv, "funding_rate": funding}
 
 
@@ -136,6 +162,39 @@ def _funding_to_row(symbol: str, funding: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _collect_funding_batch(
+    exchange: ccxt.binance, storage: Storage, symbols: list[str]
+) -> dict[str, dict[str, Any]]:
+    """Fetch funding rates for every symbol in one API call.
+
+    Returns spot symbol -> stored funding row. An empty dict means the batch
+    failed and callers should fall back to per-symbol requests.
+    """
+    from src.symbols import ccxt_symbol
+
+    mapping = {ccxt_symbol(spot): spot for spot in symbols}
+    try:
+        rates = exchange.fetch_funding_rates(list(mapping.keys()))
+    except Exception:
+        logger.warning(
+            "Batch funding-rate fetch failed; falling back to per-symbol requests",
+            exc_info=True,
+        )
+        return {}
+
+    rows: dict[str, dict[str, Any]] = {}
+    for market_symbol, funding in (rates or {}).items():
+        spot = mapping.get(market_symbol)
+        if not spot or not funding:
+            continue
+        rows[spot] = _funding_to_row(spot, funding)
+
+    if rows:
+        storage.insert_funding_rates(list(rows.values()))
+        logger.info("Funding rates collected in one batch call for %d symbols", len(rows))
+    return rows
+
+
 def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
     """Collect OHLCV + funding for all configured symbols."""
     from src.symbols import ccxt_symbol, trading_symbols
@@ -145,6 +204,8 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
     storage = get_storage()
     results: dict[str, Any] = {}
 
+    funding_batch = _collect_funding_batch(exchange, storage, symbols)
+
     for spot in symbols:
         try:
             collector = BinanceCollector(
@@ -153,7 +214,7 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
                 symbol=spot,
                 futures_symbol=ccxt_symbol(spot),
             )
-            results[spot] = collector.collect_all()
+            results[spot] = collector.collect_all(funding_row=funding_batch.get(spot))
         except Exception:
             logger.exception("Collection failed for %s", spot)
             results[spot] = {"error": True}
