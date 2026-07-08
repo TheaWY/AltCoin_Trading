@@ -235,6 +235,20 @@
       font-size: 10.5px;
       font-weight: 800;
     }
+    .conf-badge {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 5px;
+      font-size: 10.5px;
+      font-weight: 850;
+      font-variant-numeric: tabular-nums;
+      background: rgba(138,148,163,.12);
+      color: var(--muted);
+    }
+    .conf-badge.hi { background: rgba(52,211,153,.14); color: var(--pos); }
+    .conf-badge.mid { background: rgba(251,191,36,.14); color: #fbbf24; }
     .card-reason {
       margin-top: 7px;
       font-size: 13px;
@@ -512,6 +526,12 @@
       return '<span class="pill hold">대기</span>';
     }
 
+    function confBadge(score) {
+      if (score == null) return '';
+      const level = score >= 0.65 ? 'hi' : score >= 0.5 ? 'mid' : '';
+      return `<span class="conf-badge ${level}">확신 ${Math.round(num(score) * 100)}%</span>`;
+    }
+
     function recPill(alt) {
       if (!alt.worth_investing || !alt.recommended_style) {
         return '<span class="pill hold">HOLD</span>';
@@ -604,6 +624,7 @@
           ${v ? stylePill(v.style) : (showWhy ? stylePill(null) : '')}
           ${v ? pill(v.direction) : ''}
           ${v ? `<span class="tag">${esc(v.strategy)}</span>` : ''}
+          ${v ? confBadge(v.score) : ''}
           <span class="card-price">
             ${usd(m.last_price)}
             <span class="sub ${tone(m.pct_24h)}">${pct(m.pct_24h)} (24h)</span>
