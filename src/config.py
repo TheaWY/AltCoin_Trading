@@ -105,7 +105,9 @@ OHLCV_TIMEFRAMES = [
     if s.strip()
 ]
 OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
-OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "100"))
+# First fetch per symbol/timeframe pulls this many candles (720 x 1h = 30 days,
+# enough for the quant evaluation metrics); later fetches are incremental.
+OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "720"))
 # The scheduler runs in a background thread and never blocks the web server,
 # so it is on by default everywhere — a single Railway service collects data
 # out of the box. When you add a dedicated worker service
@@ -139,6 +141,15 @@ PRIMARY_STRATEGY = ACTIVE_STRATEGIES[0]
 
 # --- Momentum strategy thresholds ---
 MOMENTUM_ENTRY_PCT = float(os.getenv("MOMENTUM_ENTRY_PCT", "3.0"))
+
+# --- Trade evaluation gates (단타/스윙 verdict on the dashboard) ---
+EVAL_MIN_CANDLES = int(os.getenv("EVAL_MIN_CANDLES", "48"))
+# Below this 24h dollar volume the pair is treated as too illiquid to trade.
+EVAL_MIN_DOLLAR_VOLUME_24H = float(os.getenv("EVAL_MIN_DOLLAR_VOLUME_24H", "5000000"))
+# Minimum 1h ATR% — below this the expected move can't cover fees/slippage.
+EVAL_ATR_MIN_PCT = float(os.getenv("EVAL_ATR_MIN_PCT", "0.25"))
+# At/above this BTC correlation an alt has no independent edge.
+EVAL_BTC_CORR_MAX = float(os.getenv("EVAL_BTC_CORR_MAX", "0.9"))
 
 # --- Volume spike strategy thresholds ---
 VOLUME_SPIKE_RATIO = float(os.getenv("VOLUME_SPIKE_RATIO", "2.0"))

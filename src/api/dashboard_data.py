@@ -7,6 +7,7 @@ from typing import Any
 from src import config
 from src.data.storage import Storage, get_storage
 from src.engine.analyzer import AltAnalyzer
+from src.engine.evaluation import evaluate_all
 from src.engine.paper_trader import PaperTrader
 from src.health import get_health
 from src.symbols import trading_symbols
@@ -20,6 +21,12 @@ def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
 
     alts = analyzer.analyze_all(symbols)
     holdings = trader.holdings_for_symbols(symbols)
+
+    evaluation = evaluate_all(storage, symbols)
+    for entry in evaluation:
+        inv = holdings.get(entry["symbol"], {})
+        entry["has_position"] = inv.get("status") == "open"
+        entry["investment"] = inv if entry["has_position"] else {}
 
     for alt in alts:
         inv = holdings.get(alt["symbol"], {})
@@ -66,6 +73,7 @@ def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
 
     return {
         "symbols_tracked": len(symbols),
+        "evaluation": evaluation,
         "alts": alts,
         "holdings": holdings_list,
         "worth_investing_count": sum(1 for a in alts if a["worth_investing"]),

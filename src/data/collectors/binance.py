@@ -76,7 +76,10 @@ class BinanceCollector:
         timeframe: str,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        limit = self._incremental_limit(timeframe, limit or config.OHLCV_LIMIT)
+        if limit is None:
+            # Scheduled collection: only fetch candles missing since last run.
+            limit = self._incremental_limit(timeframe, config.OHLCV_LIMIT)
+        # Explicit limit (e.g. backfill) is honored as-is.
 
         candles = self.exchange.fetch_ohlcv(
             self.futures_symbol, timeframe=timeframe, limit=limit
