@@ -37,11 +37,16 @@ def _start_ngrok_tunnel() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from src.health import get_health
-    from src.runtime import start_scheduler
 
     health = get_health()
     health.mark_started(os.getpid())
-    scheduler = start_scheduler()
+    scheduler = None
+    if config.RUN_TRADING_SCHEDULER:
+        from src.runtime import start_scheduler
+
+        scheduler = start_scheduler()
+    else:
+        logger.info("Trading scheduler disabled for web process")
     health.mark_running()
 
     if config.NGROK_ENABLED:
@@ -52,7 +57,8 @@ async def lifespan(app: FastAPI):
         ngrok_future = loop.run_in_executor(None, _start_ngrok_tunnel)
         ngrok_future.add_done_callback(_log_background_failure)
     yield
-    scheduler.shutdown(wait=False)
+    if scheduler:
+        scheduler.shutdown(wait=False)
     if config.NGROK_ENABLED:
         from src.tunnel import set_api_ready, stop_ngrok
 
@@ -73,6 +79,16 @@ app.include_router(ws_router)
 @app.get("/")
 async def root() -> dict[str, str]:
     return {"status": "ok", "dashboard": "/dashboard"}
+
+
+@app.get("/healthz", include_in_schema=False)
+async def healthz() -> dict[str, bool]:
+    return {"ok": True}
+
+
+@app.get("/readyz", include_in_schema=False)
+async def readyz() -> dict[str, bool]:
+    return {"ok": True}
 
 
 @app.get("/dashboard")

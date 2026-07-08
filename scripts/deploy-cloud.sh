@@ -43,8 +43,17 @@ Required environment variables (Railway → Service → Variables):
   DATA_DIR=/data
   DATABASE_PATH=/data/trading.db
   NGROK_ENABLED=false
+  RUN_TRADING_SCHEDULER=false
+
+Railway public networking:
+
+  Target port must match the web server log. For Railway this is usually 8080.
+  If the app logs "Starting web server on 0.0.0.0:8080" but the public URL
+  returns 502 with x-railway-fallback=true, open Railway → Service → Networking
+  → Public Networking → edit the domain → set Target Port to 8080.
 
 Optional:
+  RUN_TRADING_SCHEDULER=true   # only on a separate worker/service
   TRADING_SYMBOLS=BTC/USDT,ETH/USDT,SOL/USDT,...
   PAPER_STARTING_CAPITAL=10000
 
