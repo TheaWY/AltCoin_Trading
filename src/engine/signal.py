@@ -21,6 +21,12 @@ _DATA_FETCHERS = {
     "latest_price": lambda storage, symbol: storage.get_latest_price(symbol),
     "recent_prices": lambda storage, symbol: storage.get_prices(symbol, limit=48) or None,
     "volume_stats": lambda storage, symbol: storage.get_volume_stats(symbol),
+    # funding_carry: enough collection-frequency rows to cover 6+ settlements
+    # (rows are bucketed into 8h windows inside the strategy)
+    "funding_history": lambda storage, symbol: storage.get_funding_rates(symbol, limit=800) or None,
+    # positioning_short: 90d of hourly ratio rows, 30d of hourly OI rows
+    "ls_ratio_history": lambda storage, symbol: storage.get_ls_ratio_history(symbol, limit=2160) or None,
+    "open_interest_history": lambda storage, symbol: storage.get_open_interest_history(symbol, limit=720) or None,
 }
 
 

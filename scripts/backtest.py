@@ -231,6 +231,48 @@ class SnapshotStorage:
     def get_open_trade_for_symbol(self, symbol: str) -> None:
         return None
 
+    def get_funding_rates(
+        self,
+        symbol: str,
+        limit: int = 100,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        effective_before = min(
+            value for value in (before, self.timestamp) if value is not None
+        )
+        return self.storage.get_funding_rates(
+            symbol, limit=limit, since=since, before=effective_before
+        )
+
+    def get_ls_ratio_history(
+        self,
+        symbol: str,
+        limit: int = 2160,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        effective_before = min(
+            value for value in (before, self.timestamp) if value is not None
+        )
+        return self.storage.get_ls_ratio_history(
+            symbol, limit=limit, since=since, before=effective_before
+        )
+
+    def get_open_interest_history(
+        self,
+        symbol: str,
+        limit: int = 720,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        effective_before = min(
+            value for value in (before, self.timestamp) if value is not None
+        )
+        return self.storage.get_open_interest_history(
+            symbol, limit=limit, since=since, before=effective_before
+        )
+
 
 class BacktestEngine:
     def __init__(

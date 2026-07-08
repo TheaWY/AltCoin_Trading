@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 from src.strategies.base import BaseStrategy
+from src.strategies.funding_carry import FundingCarryStrategy
 from src.strategies.funding_rate import FundingRateStrategy
+from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
+from src.strategies.positioning_short import PositioningShortStrategy
 from src.strategies.volume_spike import VolumeSpikeStrategy
 
 _REGISTRY: dict[str, type[BaseStrategy]] = {
+    FundingCarryStrategy.name: FundingCarryStrategy,
     FundingRateStrategy.name: FundingRateStrategy,
+    MeanReversionStrategy.name: MeanReversionStrategy,
     MomentumStrategy.name: MomentumStrategy,
+    PositioningShortStrategy.name: PositioningShortStrategy,
     VolumeSpikeStrategy.name: VolumeSpikeStrategy,
 }
 

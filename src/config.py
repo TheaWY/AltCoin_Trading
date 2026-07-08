@@ -130,6 +130,30 @@ RUN_TRADING_SCHEDULER = _env_bool("RUN_TRADING_SCHEDULER", default=True)
 FUNDING_RATE_SHORT_THRESHOLD = float(os.getenv("FUNDING_RATE_SHORT_THRESHOLD", "0.001"))
 FUNDING_RATE_LONG_THRESHOLD = float(os.getenv("FUNDING_RATE_LONG_THRESHOLD", "-0.0005"))
 
+# --- Mean Reversion strategy thresholds ---
+MEANREV_RSI_PERIOD = int(os.getenv("MEANREV_RSI_PERIOD", "14"))
+MEANREV_RSI_OVERSOLD = float(os.getenv("MEANREV_RSI_OVERSOLD", "30"))
+MEANREV_RSI_OVERBOUGHT = float(os.getenv("MEANREV_RSI_OVERBOUGHT", "70"))
+MEANREV_BB_PERIOD = int(os.getenv("MEANREV_BB_PERIOD", "20"))
+MEANREV_BB_STD = float(os.getenv("MEANREV_BB_STD", "2.0"))
+
+# --- Funding Carry strategy thresholds ---
+# Rates are per-8h-settlement decimals (0.0001 = 0.01%/8h)
+CARRY_ENTRY_RATE = float(os.getenv("CARRY_ENTRY_RATE", "0.0001"))
+CARRY_ENTRY_CONSECUTIVE = int(os.getenv("CARRY_ENTRY_CONSECUTIVE", "6"))
+CARRY_EXIT_RATE = float(os.getenv("CARRY_EXIT_RATE", "0.00005"))
+CARRY_MIN_HOLD_SETTLEMENTS = int(os.getenv("CARRY_MIN_HOLD_SETTLEMENTS", "21"))
+# spot taker in+out (0.1% x2) + futures taker in+out (0.05% x2) = 0.30% notional
+CARRY_FEE_ROUNDTRIP = float(os.getenv("CARRY_FEE_ROUNDTRIP", "0.003"))
+
+# --- Positioning Short strategy thresholds ---
+POS_SHORT_RATIO_PCTILE = float(os.getenv("POS_SHORT_RATIO_PCTILE", "0.95"))
+POS_SHORT_RATIO_ABS = float(os.getenv("POS_SHORT_RATIO_ABS", "2.5"))
+POS_SHORT_FUNDING_MIN = float(os.getenv("POS_SHORT_FUNDING_MIN", "0.0003"))
+POS_SHORT_OI_PROXIMITY = float(os.getenv("POS_SHORT_OI_PROXIMITY", "0.05"))
+POS_SHORT_MIN_HISTORY_DAYS = int(os.getenv("POS_SHORT_MIN_HISTORY_DAYS", "90"))
+POS_SHORT_OI_WINDOW_DAYS = int(os.getenv("POS_SHORT_OI_WINDOW_DAYS", "30"))
+
 # --- Direction policy ---
 # ALLOW_LONG=false (default): the engine never opens LONG positions and the
 # dashboard never recommends them — SHORT scalps and SHORT swings only.
