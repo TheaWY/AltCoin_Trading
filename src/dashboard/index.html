@@ -188,6 +188,108 @@
       color: var(--muted);
       text-align: center;
     }
+
+    /* --- Home (swing) cards --- */
+    .card {
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      padding: 12px 13px;
+    }
+    .card:last-child { border-bottom: 0; }
+    .card-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .card-head .coin { font-size: 15px; }
+    .card-price {
+      margin-left: auto;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+    }
+    .card-price .sub { text-align: right; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 7px;
+      border-radius: 5px;
+      background: rgba(138,148,163,.12);
+      color: var(--muted);
+      font-size: 10.5px;
+      font-weight: 800;
+    }
+    .card-reason {
+      margin-top: 7px;
+      font-size: 13px;
+      font-weight: 650;
+      color: #d7e0ea;
+    }
+    .card-why {
+      margin: 7px 0 0;
+      padding-left: 16px;
+      color: var(--muted);
+      font-size: 12.5px;
+    }
+    .card-why li { margin-top: 3px; }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 9px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 22px;
+      padding: 0 8px;
+      border-radius: 6px;
+      background: var(--panel-2);
+      border: 1px solid var(--line);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .chip b { color: var(--text); font-weight: 800; }
+    .chip b.pos { color: var(--up); }
+    .chip b.neg { color: var(--down); }
+    details.metric-details { margin-top: 8px; }
+    details.metric-details summary {
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 11.5px;
+      font-weight: 800;
+      list-style: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    details.metric-details summary::before { content: "▸ "; }
+    details.metric-details[open] summary::before { content: "▾ "; }
+    .metric-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      margin-top: 8px;
+      background: var(--line);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .metric-grid .metric { padding: 8px 10px; }
+    .metric-grid .metric-label { font-size: 10.5px; }
+    .metric-grid .metric-value { font-size: 12.5px; margin-top: 2px; }
+    .home-summary {
+      padding: 13px 14px;
+      background: var(--panel-2);
+      font-weight: 800;
+      font-size: 13px;
+    }
+    .home-summary .muted { font-weight: 650; }
+    .pnl-inline { font-weight: 800; font-variant-numeric: tabular-nums; }
+
     .bottom-tabs {
       position: fixed;
       left: 50%;
@@ -196,7 +298,7 @@
       max-width: 520px;
       transform: translateX(-50%);
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: 1fr 1fr 1fr;
       gap: 1px;
       padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
       background: rgba(5,7,11,.94);
@@ -230,7 +332,34 @@
       <div class="status"><span class="dot" id="ws-dot"></span><span id="ws-text">연결 중</span></div>
     </div>
 
-    <section class="tab-page active" id="tab-portfolio">
+    <!-- ============ HOME: 단타/스윙 판단 ============ -->
+    <section class="tab-page active" id="tab-home">
+      <div class="section">
+        <div class="panel home-summary" id="home-summary">데이터 대기 중</div>
+      </div>
+
+      <div class="section" id="home-positions-section" style="display:none">
+        <div class="section-title">내 포지션</div>
+        <div class="panel" id="home-positions"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">지금 진입 가능</div>
+        <div class="panel" id="home-tradable">
+          <div class="empty">평가 대기 중</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">대기 — 진입 조건 미충족</div>
+        <div class="panel" id="home-waiting">
+          <div class="empty">평가 대기 중</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PORTFOLIO ============ -->
+    <section class="tab-page" id="tab-portfolio">
       <div class="section">
         <div class="panel">
           <div class="summary">
@@ -302,6 +431,7 @@
       </div>
     </section>
 
+    <!-- ============ MARKET ============ -->
     <section class="tab-page" id="tab-market">
       <div class="section">
         <div class="section-title">Market Summary</div>
@@ -332,7 +462,8 @@
   </main>
 
   <nav class="bottom-tabs" aria-label="Dashboard tabs">
-    <button class="tab-btn active" type="button" data-tab="portfolio">포트폴리오</button>
+    <button class="tab-btn active" type="button" data-tab="home">홈</button>
+    <button class="tab-btn" type="button" data-tab="portfolio">포트폴리오</button>
     <button class="tab-btn" type="button" data-tab="market">마켓</button>
   </nav>
 
@@ -348,6 +479,7 @@
     const pct = value => value == null ? '—' : `${num(value) >= 0 ? '+' : ''}${num(value).toFixed(2)}%`;
     const tone = value => num(value) > 0 ? 'pos' : num(value) < 0 ? 'neg' : 'muted';
     const confidence = value => value == null ? '—' : Math.round(num(value) * 100) + '%';
+    const fx = (value, digits = 1) => value == null ? '—' : num(value).toFixed(digits);
 
     function setLive(isLive, label) {
       $('ws-dot').className = 'dot' + (isLive ? ' live' : '');
@@ -359,6 +491,12 @@
       return `<span class="pill ${text.toLowerCase()}">${esc(text)}</span>`;
     }
 
+    function stylePill(style) {
+      if (style === '단타') return '<span class="pill scalp">단타</span>';
+      if (style === '스윙') return '<span class="pill swing">스윙</span>';
+      return '<span class="pill hold">대기</span>';
+    }
+
     function recPill(alt) {
       if (!alt.worth_investing || !alt.recommended_style) {
         return '<span class="pill hold">HOLD</span>';
@@ -366,6 +504,138 @@
       const isShort = alt.recommended_style === 'short_term';
       return `<span class="pill ${isShort ? 'scalp' : 'swing'}">${isShort ? '단타' : '스윙'}</span>`;
     }
+
+    // ---------- HOME ----------
+
+    function chip(label, value, cls = '') {
+      return `<span class="chip">${esc(label)} <b class="${cls}">${esc(value)}</b></span>`;
+    }
+
+    function keyChips(m) {
+      const dv = m.dollar_volume_24h;
+      return [
+        chip('RSI', fx(m.rsi_14, 0)),
+        chip('ATR', fx(m.atr_pct, 2) + '%'),
+        chip('펀딩', m.funding_rate_pct == null ? '—' : pct(m.funding_rate_pct), tone(m.funding_rate_pct)),
+        chip('7d', pct(m.pct_7d), tone(m.pct_7d)),
+        chip('BTC상관', fx(m.btc_correlation, 2)),
+        chip('거래대금', dv == null ? '—' : '$' + (dv / 1e6).toFixed(0) + 'M'),
+      ].join('');
+    }
+
+    function metricDetails(m) {
+      const rows = [
+        ['24h 수익률', pct(m.pct_24h), tone(m.pct_24h)],
+        ['7d 수익률', pct(m.pct_7d), tone(m.pct_7d)],
+        ['30d 수익률', pct(m.pct_30d), tone(m.pct_30d)],
+        ['RSI(14)', fx(m.rsi_14, 0)],
+        ['ATR (1h)', fx(m.atr_pct, 2) + '%'],
+        ['변동성 7d (연율)', fx(m.realized_vol_7d, 0) + '%'],
+        ['변동성 30d (연율)', fx(m.realized_vol_30d, 0) + '%'],
+        ['Sharpe 7d', fx(m.sharpe_7d, 1)],
+        ['Sharpe 30d', fx(m.sharpe_30d, 1)],
+        ['최대낙폭 30d', m.max_drawdown_30d == null ? '—' : '-' + fx(m.max_drawdown_30d, 1) + '%'],
+        ['BTC 상관 (30d)', fx(m.btc_correlation, 2)],
+        ['BTC 베타', fx(m.btc_beta, 2)],
+        ['Amihud 비유동성', fx(m.amihud_illiq, 2)],
+        ['거래대금 24h', m.dollar_volume_24h == null ? '—' : '$' + (m.dollar_volume_24h / 1e6).toFixed(1) + 'M'],
+        ['거래량 배율', m.volume_ratio == null ? '—' : fx(m.volume_ratio, 1) + 'x'],
+        ['30d 고점 대비', pct(m.from_high_30d_pct), tone(m.from_high_30d_pct)],
+        ['30d 저점 대비', pct(m.from_low_30d_pct), tone(m.from_low_30d_pct)],
+        ['볼린저 %B', m.bollinger ? fx(m.bollinger.percent_b, 2) : '—'],
+        ['MACD hist', m.macd ? fx(m.macd.hist_pct, 3) + '%' : '—'],
+        ['펀딩비', m.funding_rate_pct == null ? '—' : pct(m.funding_rate_pct), tone(m.funding_rate_pct)],
+      ];
+      const cells = rows.map(([label, value, cls]) => `
+        <div class="metric">
+          <div class="metric-label">${esc(label)}</div>
+          <div class="metric-value ${cls || ''}">${esc(value)}</div>
+        </div>
+      `).join('');
+      return `
+        <details class="metric-details">
+          <summary>전체 지표 보기</summary>
+          <div class="metric-grid">${cells}</div>
+        </details>
+      `;
+    }
+
+    function evalCard(entry, { showWhy = false } = {}) {
+      const m = entry.metrics || {};
+      const v = entry.verdict;
+      const inv = entry.investment || {};
+      const invested = entry.has_position;
+      const pnlPct = inv.unrealized_pnl_pct;
+      const head = `
+        <div class="card-head">
+          <span class="coin">${esc(entry.base)}</span>
+          ${invested ? pill(inv.direction) : ''}
+          ${v ? stylePill(v.style) : (showWhy ? stylePill(null) : '')}
+          ${v ? pill(v.direction) : ''}
+          ${v ? `<span class="tag">${esc(v.strategy)}</span>` : ''}
+          <span class="card-price">
+            ${usd(m.last_price)}
+            <span class="sub ${tone(m.pct_24h)}">${pct(m.pct_24h)} (24h)</span>
+          </span>
+        </div>
+      `;
+      const investedLine = invested ? `
+        <div class="card-reason">
+          보유중 · 진입 ${usd(inv.entry_price)} →
+          <span class="pnl-inline ${tone(pnlPct)}">${pct(pnlPct)}</span>
+          ${v ? '· 신규 신호: ' + esc(v.reason) : '· 현재 신규 신호 없음 (아래 이유)'}
+        </div>
+      ` : '';
+      const reason = (!invested && v) ? `<div class="card-reason">${esc(v.reason)}</div>` : '';
+      const why = (showWhy && (entry.why_not || []).length) ? `
+        <ul class="card-why">
+          ${entry.why_not.map(r => `<li>${esc(r)}</li>`).join('')}
+        </ul>
+      ` : '';
+      return `
+        <div class="card">
+          ${head}
+          ${investedLine}
+          ${reason}
+          ${why}
+          <div class="chips">${keyChips(m)}</div>
+          ${metricDetails(m)}
+        </div>
+      `;
+    }
+
+    function renderHome(data) {
+      const evaluation = data.evaluation || [];
+      if (!evaluation.length) return;
+
+      const invested = evaluation.filter(e => e.has_position);
+      const tradable = evaluation.filter(e => !e.has_position && e.tradable);
+      const waiting = evaluation.filter(e => !e.has_position && !e.tradable);
+
+      const scalps = evaluation.filter(e => e.verdict?.style === '단타').length;
+      const swings = evaluation.filter(e => e.verdict?.style === '스윙').length;
+      $('home-summary').innerHTML =
+        `지금 진입 가능 <b>${tradable.length + invested.filter(e => e.tradable).length}</b>/${evaluation.length}` +
+        ` <span class="muted">· 단타 ${scalps} · 스윙 ${swings} · 보유 ${invested.length}</span>`;
+
+      const posSection = $('home-positions-section');
+      if (invested.length) {
+        posSection.style.display = '';
+        $('home-positions').innerHTML = invested.map(e => evalCard(e, { showWhy: false })).join('');
+      } else {
+        posSection.style.display = 'none';
+      }
+
+      $('home-tradable').innerHTML = tradable.length
+        ? tradable.map(e => evalCard(e)).join('')
+        : '<div class="empty">지금 진입할 만한 셋업 없음 — 아래 이유 참고</div>';
+
+      $('home-waiting').innerHTML = waiting.length
+        ? waiting.map(e => evalCard(e, { showWhy: true })).join('')
+        : '<div class="empty">모든 코인 진입 가능</div>';
+    }
+
+    // ---------- PORTFOLIO ----------
 
     function renderPortfolio(data) {
       const p = data.portfolio || {};
@@ -443,6 +713,8 @@
       }).join('');
     }
 
+    // ---------- MARKET ----------
+
     function renderMarketSummary(data) {
       const alts = data.alts || [];
       const positive = alts.filter(alt => num(alt.funding_rate) > 0).length;
@@ -473,6 +745,7 @@
     }
 
     function render(data) {
+      renderHome(data);
       renderPortfolio(data);
       renderPositions(data);
       renderHistory(data);
