@@ -482,7 +482,7 @@
       </div>
 
       <div class="section">
-        <div class="section-title">Open Positions <span class="live-badge" id="live-price-status"></span></div>
+        <div class="section-title">Open Positions <span class="live-badge" data-ticker-status></span></div>
         <div class="panel scroll-table">
           <table>
             <thead>
@@ -824,8 +824,8 @@
           ${v ? `<span class="tag">${esc(v.strategy)}</span>` : ''}
           ${v ? verdictConfBadge(v) : confBadge(entry.confidence)}
           <span class="card-price">
-            ${usd(m.last_price)}
-            <span class="sub ${tone(m.pct_24h)}">${pct(m.pct_24h)} (24h)</span>
+            <span data-tick="${esc(entry.symbol.replace('/', ''))}">${usd(m.last_price)}</span>
+            <span class="sub ${tone(m.pct_24h)}" data-tick-pct="${esc(entry.symbol.replace('/', ''))}" data-suffix=" (24h)">${pct(m.pct_24h)} (24h)</span>
           </span>
         </div>
       `;
@@ -893,7 +893,8 @@
       const policyLabel = policy.allow_long === false ? ' · 롱 금지' : '';
       $('home-summary').innerHTML =
         `지금 진입 가능 <b>${tradable.length + invested.filter(e => e.tradable).length}</b>/${evaluation.length}` +
-        ` <span class="muted">· 단타 ${scalps} · 스윙 ${swings} · 보유 ${invested.length}${policyLabel}</span>`;
+        ` <span class="muted">· 단타 ${scalps} · 스윙 ${swings} · 보유 ${invested.length}${policyLabel}</span>` +
+        ` <span class="live-badge" data-ticker-status></span>`;
 
       const regime = data.regime || {};
       const regimeSection = $('regime-section');
@@ -932,6 +933,7 @@
       shown[key] += key === 'market' ? 200 : 60;
       if (key === 'market') renderMarketTable(lastData);
       else renderHome(lastData);
+      syncLiveTicker();
     });
 
     // ---------- PORTFOLIO ----------
@@ -1006,7 +1008,6 @@
       livePositions.clear();
       if (!rows.length) {
         $('positions-body').innerHTML = '<tr><td colspan="6" class="empty">오픈 포지션 없음</td></tr>';
-        connectPriceTicker([]);
         return;
       }
       $('positions-body').innerHTML = rows.map(alt => {
@@ -1034,25 +1035,116 @@
           </tr>
         ` + exitPlanRow(alt, inv);
       }).join('');
-      connectPriceTicker([...livePositions.keys()]);
     }
 
     // ---------- LIVE PRICES (Binance futures public websocket) ----------
-    // Server data refreshes every collection cycle; for second-by-second P&L
-    // the browser subscribes directly to Binance mark prices for the open
-    // position symbols (max MAX_OPEN_POSITIONS streams — tiny).
+    // Every price on screen ticks in real time: after each render we collect
+    // all [data-tick] elements (home cards, market rows) plus open positions,
+    // and subscribe to the matching @miniTicker streams on one connection.
 
     const livePositions = new Map();
-    const priceTicker = { ws: null, key: '' };
+    const tickIndex = new Map(); // 'BTCUSDT' -> { price: [els], pct: [els] }
+    const liveTicker = { ws: null, key: '', pending: new Map(), raf: 0, retries: 0 };
+
+    function setTickerStatus(text) {
+      document.querySelectorAll('[data-ticker-status]').forEach(el => { el.textContent = text; });
+    }
+
+    function setTickEl(el, text, toneCls) {
+      if (el.textContent === text) return;
+      el.textContent = text;
+      if (toneCls !== undefined) {
+        el.className = el.className.replace(/\b(pos|neg|muted)\b/g, '').replace(/\s+/g, ' ').trim()
+          + (toneCls ? ' ' + toneCls : '');
+      }
+      el.classList.remove('tick');
+      void el.offsetWidth;
+      el.classList.add('tick');
+    }
 
     function setLiveCell(name, text, cls) {
       const el = document.querySelector(`[data-live="${name}"]`);
       if (!el) return;
-      el.textContent = text;
-      if (cls !== undefined) el.className = el.className.replace(/\b(pos|neg|muted)\b/g, '').trim() + ' ' + cls;
-      el.classList.remove('tick');
-      void el.offsetWidth;
-      el.classList.add('tick');
+      setTickEl(el, text, cls);
+    }
+
+    function rebuildTickIndex() {
+      tickIndex.clear();
+      document.querySelectorAll('[data-tick]').forEach(el => {
+        const sym = el.dataset.tick.toUpperCase();
+        if (!tickIndex.has(sym)) tickIndex.set(sym, { price: [], pct: [] });
+        tickIndex.get(sym).price.push(el);
+      });
+      document.querySelectorAll('[data-tick-pct]').forEach(el => {
+        const sym = el.dataset.tickPct.toUpperCase();
+        if (!tickIndex.has(sym)) tickIndex.set(sym, { price: [], pct: [] });
+        tickIndex.get(sym).pct.push(el);
+      });
+    }
+
+    // Batch DOM writes per animation frame so hundreds of streams stay cheap.
+    function flushTicks() {
+      liveTicker.raf = 0;
+      for (const [sym, t] of liveTicker.pending) {
+        const idx = tickIndex.get(sym);
+        if (idx) {
+          const priceText = usd(t.close);
+          idx.price.forEach(el => setTickEl(el, priceText));
+          if (t.pct != null) {
+            idx.pct.forEach(el => setTickEl(el, pct(t.pct) + (el.dataset.suffix || ''), tone(t.pct)));
+          }
+        }
+        if (livePositions.has(sym)) onLivePrice(sym, t.close);
+      }
+      liveTicker.pending.clear();
+    }
+
+    function applyTick(sym, close, open24) {
+      if (!close) return;
+      liveTicker.pending.set(sym, { close, pct: open24 ? (close - open24) / open24 * 100 : null });
+      if (!liveTicker.raf) liveTicker.raf = requestAnimationFrame(flushTicks);
+    }
+
+    function syncLiveTicker() {
+      rebuildTickIndex();
+      const symbols = [...new Set([...tickIndex.keys(), ...livePositions.keys()])].sort();
+      const key = symbols.join(',');
+      const wsAlive = liveTicker.ws && liveTicker.ws.readyState <= WebSocket.OPEN;
+      if (key === liveTicker.key && wsAlive) return;
+      liveTicker.key = key;
+      if (liveTicker.ws) { const old = liveTicker.ws; liveTicker.ws = null; try { old.close(); } catch (e) {} }
+      setTickerStatus('');
+      if (!symbols.length) return;
+
+      const ws = new WebSocket('wss://fstream.binance.com/stream');
+      liveTicker.ws = ws;
+      ws.onopen = () => {
+        // Binance caps inbound messages at ~10/sec — subscribe in spaced chunks.
+        for (let i = 0; i < symbols.length; i += 50) {
+          const params = symbols.slice(i, i + 50).map(s => s.toLowerCase() + '@miniTicker');
+          setTimeout(() => {
+            if (liveTicker.ws === ws && ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ method: 'SUBSCRIBE', params, id: i / 50 + 1 }));
+            }
+          }, (i / 50) * 250);
+        }
+      };
+      ws.onmessage = event => {
+        const msg = JSON.parse(event.data);
+        const d = msg && msg.data;
+        if (!d || d.e !== '24hrMiniTicker' || !d.s) return;
+        liveTicker.retries = 0;
+        setTickerStatus('● 실시간');
+        applyTick(d.s, parseFloat(d.c), parseFloat(d.o));
+      };
+      ws.onclose = () => {
+        if (liveTicker.ws !== ws) return;
+        setTickerStatus('');
+        const delay = Math.min(30000, 3000 * 2 ** liveTicker.retries++);
+        setTimeout(() => {
+          if (liveTicker.ws === ws) { liveTicker.ws = null; liveTicker.key = ''; syncLiveTicker(); }
+        }, delay);
+      };
     }
 
     function updateLiveTotals() {
@@ -1083,32 +1175,6 @@
       if (pos.stop != null) setLiveCell(`stopdist-${pos.sid}`, pct((pos.stop - price) / price * 100));
       if (pos.tp != null) setLiveCell(`tpdist-${pos.sid}`, pct((pos.tp - price) / price * 100));
       updateLiveTotals();
-    }
-
-    function connectPriceTicker(streamSymbols) {
-      const key = streamSymbols.slice().sort().join(',');
-      if (key === priceTicker.key) return;
-      priceTicker.key = key;
-      if (priceTicker.ws) { try { priceTicker.ws.close(); } catch (e) {} priceTicker.ws = null; }
-      $('live-price-status').textContent = '';
-      if (!streamSymbols.length) return;
-
-      const streams = streamSymbols.map(s => s.toLowerCase() + '@markPrice@1s').join('/');
-      const ws = new WebSocket('wss://fstream.binance.com/stream?streams=' + streams);
-      ws.onmessage = event => {
-        const payload = JSON.parse(event.data).data;
-        if (!payload || !payload.s) return;
-        $('live-price-status').textContent = '● 실시간';
-        onLivePrice(payload.s, parseFloat(payload.p));
-      };
-      ws.onclose = () => {
-        if (priceTicker.ws !== ws) return;
-        $('live-price-status').textContent = '';
-        setTimeout(() => {
-          if (priceTicker.ws === ws) { priceTicker.key = ''; connectPriceTicker(streamSymbols); }
-        }, 5000);
-      };
-      priceTicker.ws = ws;
     }
 
     function tradeReturn(trade) {
@@ -1167,8 +1233,8 @@
       let html = rows.slice(0, shown.market).map(alt => `
         <tr class="${alt.worth_investing ? 'hot' : ''}">
           <td><span class="coin">${esc(alt.base || alt.symbol)}</span><span class="sub">${esc(alt.symbol)}</span></td>
-          <td>${usd(alt.price)}</td>
-          <td class="${tone(alt.pct_24h)}">${pct(alt.pct_24h)}</td>
+          <td class="num" data-tick="${esc(alt.symbol.replace('/', ''))}">${usd(alt.price)}</td>
+          <td class="${tone(alt.pct_24h)}" data-tick-pct="${esc(alt.symbol.replace('/', ''))}">${pct(alt.pct_24h)}</td>
           <td class="${tone(alt.funding_rate_pct)}">${pct(alt.funding_rate_pct)}</td>
           <td>${pill(alt.direction)}</td>
           <td>${recPill(alt)}</td>
@@ -1201,6 +1267,7 @@
       renderHistory(data);
       renderMarketSummary(data);
       renderMarketTable(data);
+      syncLiveTicker();
       const status = data.health?.status;
       if (status) setLive(true, status === 'ok' ? 'Live' : `Live · ${status}`);
     }
