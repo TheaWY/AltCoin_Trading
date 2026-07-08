@@ -326,6 +326,35 @@
       color: #fbbf24;
     }
     .regime-banner.risk_off { border-color: var(--neg); background: rgba(248,113,113,.08); color: var(--neg); }
+
+    /* --- live prices / exit plan --- */
+    .live-badge {
+      font-size: 10.5px;
+      font-weight: 800;
+      color: var(--pos);
+      margin-left: 6px;
+    }
+    .exit-row td {
+      padding: 6px 12px 10px;
+      font-size: 11.5px;
+      color: var(--muted);
+      border-bottom: 1px solid rgba(255,255,255,.06);
+      line-height: 1.7;
+    }
+    .exit-row b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .exit-row .stop { color: var(--neg); font-weight: 800; }
+    .exit-row .target { color: var(--pos); font-weight: 800; }
+    .exit-row .adjusted {
+      display: inline-block;
+      padding: 0 6px;
+      border-radius: 4px;
+      background: rgba(251,191,36,.14);
+      color: #fbbf24;
+      font-weight: 800;
+    }
+    @keyframes tickflash { 0% { background: rgba(96,165,250,.22); } 100% { background: transparent; } }
+    .tick { animation: tickflash .5s ease-out; }
+    td.num { font-variant-numeric: tabular-nums; }
     .pnl-inline { font-weight: 800; font-variant-numeric: tabular-nums; }
 
     .bottom-tabs {
@@ -431,7 +460,7 @@
       </div>
 
       <div class="section">
-        <div class="section-title">Open Positions</div>
+        <div class="section-title">Open Positions <span class="live-badge" id="live-price-status"></span></div>
         <div class="panel scroll-table">
           <table>
             <thead>
@@ -815,25 +844,139 @@
       `).join('');
     }
 
+    function exitPlanRow(alt, inv) {
+      const sid = alt.symbol.replace('/', '');
+      const price = inv.current_price ?? alt.price;
+      const stopDist = (inv.stop_loss != null && price) ? (inv.stop_loss - price) / price * 100 : null;
+      const tpDist = (inv.take_profit != null && price) ? (inv.take_profit - price) / price * 100 : null;
+      const adjusted = inv.stop_moved
+        ? ` <span class="adjusted">트레일링 조정 ${usd(inv.initial_stop)} → ${usd(inv.stop_loss)}</span>`
+        : '';
+      const styleLabel = inv.style === 'scalp' ? '단타' : inv.style === 'swing' ? '스윙' : '';
+      const meta = [styleLabel, inv.strategy, inv.atr_pct ? `ATR ${fx(inv.atr_pct, 2)}%` : null]
+        .filter(Boolean).map(esc).join(' · ');
+      return `
+        <tr class="exit-row">
+          <td colspan="6">
+            손절 <span class="stop">${usd(inv.stop_loss)}</span>
+            (<span data-live="stopdist-${sid}">${stopDist == null ? '—' : pct(stopDist)}</span>)
+            &nbsp;·&nbsp; 익절 <span class="target">${usd(inv.take_profit)}</span>
+            (<span data-live="tpdist-${sid}">${tpDist == null ? '—' : pct(tpDist)}</span>)
+            ${adjusted}
+            ${meta ? `<br>${meta}` : ''}
+          </td>
+        </tr>
+      `;
+    }
+
     function renderPositions(data) {
       const rows = (data.alts || []).filter(alt => alt.investment?.status === 'open');
+      livePositions.clear();
       if (!rows.length) {
         $('positions-body').innerHTML = '<tr><td colspan="6" class="empty">오픈 포지션 없음</td></tr>';
+        connectPriceTicker([]);
         return;
       }
       $('positions-body').innerHTML = rows.map(alt => {
         const inv = alt.investment || {};
+        const sid = alt.symbol.replace('/', '');
+        livePositions.set(sid.toUpperCase(), {
+          symbol: alt.symbol,
+          sid,
+          direction: inv.direction,
+          entry: num(inv.entry_price),
+          qty: num(inv.quantity),
+          invested: num(inv.invested) || num(inv.entry_price) * num(inv.quantity),
+          stop: inv.stop_loss,
+          tp: inv.take_profit,
+          livePrice: inv.current_price ?? alt.price,
+        });
         return `
           <tr>
             <td><span class="coin">${esc(alt.base || alt.symbol)}</span><span class="sub">${esc(alt.symbol)}</span></td>
             <td>${pill(inv.direction)}</td>
-            <td>${usd(inv.entry_price)}</td>
-            <td>${usd(inv.current_price ?? alt.price)}</td>
-            <td class="${tone(inv.unrealized_pnl)}">${krw(inv.unrealized_pnl)}</td>
-            <td class="${tone(inv.unrealized_pnl_pct)}">${pct(inv.unrealized_pnl_pct)}</td>
+            <td class="num">${usd(inv.entry_price)}</td>
+            <td class="num" data-live="price-${sid}">${usd(inv.current_price ?? alt.price)}</td>
+            <td class="num ${tone(inv.unrealized_pnl)}" data-live="pnl-${sid}">${krw(inv.unrealized_pnl)}</td>
+            <td class="num ${tone(inv.unrealized_pnl_pct)}" data-live="pct-${sid}">${pct(inv.unrealized_pnl_pct)}</td>
           </tr>
-        `;
+        ` + exitPlanRow(alt, inv);
       }).join('');
+      connectPriceTicker([...livePositions.keys()]);
+    }
+
+    // ---------- LIVE PRICES (Binance futures public websocket) ----------
+    // Server data refreshes every collection cycle; for second-by-second P&L
+    // the browser subscribes directly to Binance mark prices for the open
+    // position symbols (max MAX_OPEN_POSITIONS streams — tiny).
+
+    const livePositions = new Map();
+    const priceTicker = { ws: null, key: '' };
+
+    function setLiveCell(name, text, cls) {
+      const el = document.querySelector(`[data-live="${name}"]`);
+      if (!el) return;
+      el.textContent = text;
+      if (cls !== undefined) el.className = el.className.replace(/\b(pos|neg|muted)\b/g, '').trim() + ' ' + cls;
+      el.classList.remove('tick');
+      void el.offsetWidth;
+      el.classList.add('tick');
+    }
+
+    function updateLiveTotals() {
+      const p = (lastData && lastData.portfolio) || {};
+      if (p.cash == null) return;
+      let value = num(p.cash);
+      for (const pos of livePositions.values()) {
+        const price = num(pos.livePrice) || pos.entry;
+        const pnl = (pos.direction === 'LONG' ? price - pos.entry : pos.entry - price) * pos.qty;
+        value += pos.invested + pnl;
+      }
+      const start = num(p.starting_capital);
+      const pnlTotal = value - start;
+      $('total-value').textContent = krw(value);
+      $('total-pnl').className = 'summary-pnl ' + tone(pnlTotal);
+      $('total-pnl').textContent = `${pct(start ? pnlTotal / start * 100 : null)} · ${krw(pnlTotal)} 평가손익`;
+    }
+
+    function onLivePrice(streamSymbol, price) {
+      const pos = livePositions.get(streamSymbol);
+      if (!pos || !price) return;
+      pos.livePrice = price;
+      const pnl = (pos.direction === 'LONG' ? price - pos.entry : pos.entry - price) * pos.qty;
+      const pnlPct = pos.invested ? pnl / pos.invested * 100 : null;
+      setLiveCell(`price-${pos.sid}`, usd(price));
+      setLiveCell(`pnl-${pos.sid}`, krw(pnl), tone(pnl));
+      setLiveCell(`pct-${pos.sid}`, pct(pnlPct), tone(pnlPct));
+      if (pos.stop != null) setLiveCell(`stopdist-${pos.sid}`, pct((pos.stop - price) / price * 100));
+      if (pos.tp != null) setLiveCell(`tpdist-${pos.sid}`, pct((pos.tp - price) / price * 100));
+      updateLiveTotals();
+    }
+
+    function connectPriceTicker(streamSymbols) {
+      const key = streamSymbols.slice().sort().join(',');
+      if (key === priceTicker.key) return;
+      priceTicker.key = key;
+      if (priceTicker.ws) { try { priceTicker.ws.close(); } catch (e) {} priceTicker.ws = null; }
+      $('live-price-status').textContent = '';
+      if (!streamSymbols.length) return;
+
+      const streams = streamSymbols.map(s => s.toLowerCase() + '@markPrice@1s').join('/');
+      const ws = new WebSocket('wss://fstream.binance.com/stream?streams=' + streams);
+      ws.onmessage = event => {
+        const payload = JSON.parse(event.data).data;
+        if (!payload || !payload.s) return;
+        $('live-price-status').textContent = '● 실시간';
+        onLivePrice(payload.s, parseFloat(payload.p));
+      };
+      ws.onclose = () => {
+        if (priceTicker.ws !== ws) return;
+        $('live-price-status').textContent = '';
+        setTimeout(() => {
+          if (priceTicker.ws === ws) { priceTicker.key = ''; connectPriceTicker(streamSymbols); }
+        }, 5000);
+      };
+      priceTicker.ws = ws;
     }
 
     function tradeReturn(trade) {

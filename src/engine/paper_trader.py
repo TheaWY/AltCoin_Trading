@@ -408,7 +408,33 @@ class PaperTrader:
         total_pnl = realized_pnl + unrealized
         total_pnl_pct = (total_pnl / invested * 100.0) if invested else None
 
+        # Original ATR stop at entry — lets the UI show trailing adjustments
+        # ("손절 $X → $Y 조정됨") without a separate audit table.
+        entry = float(open_trade["entry_price"])
+        atr = open_trade.get("atr_pct")
+        initial_stop = None
+        if atr:
+            stop_frac = config.ATR_STOP_MULT * float(atr) / 100.0
+            initial_stop = (
+                entry * (1 - stop_frac)
+                if open_trade["direction"] == SignalDirection.LONG.value
+                else entry * (1 + stop_frac)
+            )
+        current_stop = float(open_trade["stop_loss"]) if open_trade.get("stop_loss") else None
+        stop_moved = (
+            initial_stop is not None
+            and current_stop is not None
+            and abs(current_stop - initial_stop) / entry > 0.0005
+        )
+
         return {
+            "strategy": open_trade.get("strategy"),
+            "style": open_trade.get("style"),
+            "atr_pct": float(atr) if atr else None,
+            "initial_stop": initial_stop,
+            "stop_moved": stop_moved,
+            "trail_price": float(open_trade["trail_price"]) if open_trade.get("trail_price") else None,
+            "opened_at": open_trade.get("opened_at"),
             "status": "open",
             "direction": open_trade["direction"],
             "invested": round(invested, 2),
