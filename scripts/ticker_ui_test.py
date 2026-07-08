@@ -57,10 +57,11 @@ def main() -> int:
                 const el = idx.price[0];
                 return {
                     price: el.textContent,
-                    flashed: el.classList.contains('tick'),
+                    flashed: el.classList.contains('tick') || el.classList.contains('tick-up') || el.classList.contains('tick-down'),
                     pct: idx.pct.length ? idx.pct[0].textContent : null,
                     pctTone: idx.pct.length ? idx.pct[0].className : null,
                     status: document.querySelector('[data-ticker-status]').textContent,
+                    watchKey: liveTicker.watchKey,
                 };
             }""",
             symbol,
@@ -70,9 +71,21 @@ def main() -> int:
         assert "123,456" in after["price"], after["price"]
         assert after["flashed"], "no flash animation class"
         assert "실시간" in after["status"], after["status"]
+        assert after["watchKey"], "watch list was not sent to the server"
         if after["pct"] is not None:
             assert "23.46" in after["pct"], after["pct"]
             assert "pos" in (after["pctTone"] or ""), after["pctTone"]
+
+        # Upbit-style directional flash: up tick flashes red, down tick blue.
+        page.evaluate("(sym) => onPricesMessage({ type: 'prices', data: { [sym]: [123500, 23.5] } })", symbol)
+        page.wait_for_timeout(100)
+        up = page.evaluate("(sym) => tickIndex.get(sym).price[0].className", symbol)
+        page.evaluate("(sym) => onPricesMessage({ type: 'prices', data: { [sym]: [123400, 23.4] } })", symbol)
+        page.wait_for_timeout(100)
+        down = page.evaluate("(sym) => tickIndex.get(sym).price[0].className", symbol)
+        print("flash classes:", up, "|", down)
+        assert "tick-up" in up, up
+        assert "tick-down" in down, down
 
         # Market tab rows must tick too.
         page.click(".tab-btn[data-tab='market']")

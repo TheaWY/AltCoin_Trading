@@ -53,6 +53,17 @@ async def broadcast_snapshot() -> None:
     await manager.broadcast(build_snapshot())
 
 
+def _handle_client_message(websocket: WebSocket, text: str) -> None:
+    from src.api.price_stream import relay
+
+    try:
+        message = json.loads(text)
+    except (TypeError, ValueError):
+        return
+    if isinstance(message, dict) and message.get("type") == "watch":
+        relay.set_watch(websocket, message.get("symbols") or [])
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await manager.connect(websocket)
@@ -66,11 +77,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 await websocket.send_json(snapshot)
                 last_sent_id = id(snapshot)
             try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
+                text = await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
             except asyncio.TimeoutError:
                 continue
+            _handle_client_message(websocket, text)
     except WebSocketDisconnect:
-        manager.disconnect(websocket)
+        _cleanup(websocket)
     except Exception as exc:
         logger.debug("WebSocket closed: %s", exc)
-        manager.disconnect(websocket)
+        _cleanup(websocket)
+
+
+def _cleanup(websocket: WebSocket) -> None:
+    from src.api.price_stream import relay
+
+    manager.disconnect(websocket)
+    relay.remove_watch(websocket)

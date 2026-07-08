@@ -376,6 +376,16 @@
     }
     @keyframes tickflash { 0% { background: rgba(96,165,250,.22); } 100% { background: transparent; } }
     .tick { animation: tickflash .5s ease-out; }
+    @keyframes tickup {
+      0% { background: rgba(240,68,82,.32); box-shadow: 0 0 0 1px rgba(240,68,82,.55) inset; }
+      100% { background: transparent; box-shadow: none; }
+    }
+    @keyframes tickdown {
+      0% { background: rgba(40,120,255,.32); box-shadow: 0 0 0 1px rgba(40,120,255,.55) inset; }
+      100% { background: transparent; box-shadow: none; }
+    }
+    .tick-up { animation: tickup .45s ease-out; border-radius: 4px; }
+    .tick-down { animation: tickdown .45s ease-out; border-radius: 4px; }
     td.num { font-variant-numeric: tabular-nums; }
     .pnl-inline { font-weight: 800; font-variant-numeric: tabular-nums; }
 
@@ -1045,22 +1055,28 @@
 
     const livePositions = new Map();
     const tickIndex = new Map(); // 'BTCUSDT' -> { price: [els], pct: [els] }
-    const liveTicker = { pending: new Map(), raf: 0, staleTimer: 0 };
+    const lastCloses = new Map(); // 'BTCUSDT' -> last seen price (flash direction)
+    const liveTicker = { pending: new Map(), raf: 0, staleTimer: 0, watchKey: '' };
 
     function setTickerStatus(text) {
       document.querySelectorAll('[data-ticker-status]').forEach(el => { el.textContent = text; });
     }
 
-    function setTickEl(el, text, toneCls) {
-      if (el.textContent === text) return;
-      el.textContent = text;
-      if (toneCls !== undefined) {
-        el.className = el.className.replace(/\b(pos|neg|muted)\b/g, '').replace(/\s+/g, ' ').trim()
-          + (toneCls ? ' ' + toneCls : '');
+    function setTickEl(el, text, toneCls, flashCls) {
+      const changed = el.textContent !== text;
+      if (changed) {
+        el.textContent = text;
+        if (toneCls !== undefined) {
+          el.className = el.className.replace(/\b(pos|neg|muted)\b/g, '').replace(/\s+/g, ' ').trim()
+            + (toneCls ? ' ' + toneCls : '');
+        }
       }
-      el.classList.remove('tick');
+      // Flash on every real tick (Upbit-style), even if the rounded text is
+      // identical — flashCls carries the tick direction; 'tick' is neutral.
+      if (!changed && !flashCls) return;
+      el.classList.remove('tick', 'tick-up', 'tick-down');
       void el.offsetWidth;
-      el.classList.add('tick');
+      el.classList.add(flashCls || 'tick');
     }
 
     function setLiveCell(name, text, cls) {
@@ -1087,10 +1103,13 @@
     function flushTicks() {
       liveTicker.raf = 0;
       for (const [sym, t] of liveTicker.pending) {
+        const prev = lastCloses.get(sym);
+        const dir = (prev == null || t.close === prev) ? null : (t.close > prev ? 'tick-up' : 'tick-down');
+        lastCloses.set(sym, t.close);
         const idx = tickIndex.get(sym);
         if (idx) {
           const priceText = usd(t.close);
-          idx.price.forEach(el => setTickEl(el, priceText));
+          idx.price.forEach(el => setTickEl(el, priceText, undefined, dir));
           if (t.pct != null) {
             idx.pct.forEach(el => setTickEl(el, pct(t.pct) + (el.dataset.suffix || ''), tone(t.pct)));
           }
@@ -1108,6 +1127,18 @@
 
     function syncLiveTicker() {
       rebuildTickIndex();
+      sendWatchList();
+    }
+
+    // Tell the server which symbols are on screen so it can subscribe to
+    // per-trade (aggTrade) streams for exactly those — true tick-by-tick.
+    function sendWatchList() {
+      if (!liveWs || liveWs.readyState !== WebSocket.OPEN) return;
+      const symbols = [...new Set([...tickIndex.keys(), ...livePositions.keys()])].sort();
+      const key = symbols.join(',');
+      if (key === liveTicker.watchKey) return;
+      liveTicker.watchKey = key;
+      liveWs.send(JSON.stringify({ type: 'watch', symbols }));
     }
 
     // Server pushes {type:"prices", data:{ BTCUSDT: [price, pct24h], ... }}
@@ -1264,10 +1295,17 @@
       }
     }
 
+    let liveWs = null;
+
     function connectWs() {
       const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(`${protocol}://${location.host}/ws`);
-      ws.onopen = () => setLive(true);
+      ws.onopen = () => {
+        liveWs = ws;
+        liveTicker.watchKey = '';
+        setLive(true);
+        sendWatchList();
+      };
       ws.onmessage = event => {
         setLive(true);
         const msg = JSON.parse(event.data);
@@ -1275,6 +1313,7 @@
         render(msg);
       };
       ws.onclose = () => {
+        if (liveWs === ws) liveWs = null;
         setLive(false);
         setTimeout(connectWs, 3000);
       };
