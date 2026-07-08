@@ -273,6 +273,28 @@ def distance_from_extremes(rows: Sequence[dict[str, Any]], window: int = 720) ->
     }
 
 
+def donchian_break(rows: Sequence[dict[str, Any]], window: int = 480) -> dict[str, Any] | None:
+    """Donchian channel breakout state (Turtle rules; 480 x 1h = 20 days).
+
+    Compares the last close against the channel formed by the *prior* candles,
+    so a fresh breakout is detected the moment it happens.
+    """
+    if len(rows) < window // 2:
+        return None
+    prior = rows[-window - 1 : -1]
+    if len(prior) < 24:
+        return None
+    channel_high = max(float(r["high"]) for r in prior)
+    channel_low = min(float(r["low"]) for r in prior)
+    last = float(rows[-1]["close"])
+    return {
+        "high": channel_high,
+        "low": channel_low,
+        "broke_high": last > channel_high,
+        "broke_low": last < channel_low,
+    }
+
+
 def volume_ratio(rows: Sequence[dict[str, Any]], lookback: int = 24) -> float | None:
     if len(rows) < 2:
         return None
@@ -297,11 +319,16 @@ def compute_all(
     extremes = distance_from_extremes(rows)
     boll = bollinger(values)
     macd_state = macd(values)
+    # Storage retains exactly 720 x 1h candles for the extended universe, but
+    # momentum_pct(720) needs 721 points — accept >=29d of history as "30d".
+    pct_30d = momentum_pct(values, 720)
+    if pct_30d is None and len(values) >= 696:
+        pct_30d = momentum_pct(values, len(values) - 1)
     return {
         "candles": len(rows),
         "pct_24h": momentum_pct(values, 24),
         "pct_7d": momentum_pct(values, 168),
-        "pct_30d": momentum_pct(values, 720),
+        "pct_30d": pct_30d,
         "rsi_14": rsi(values, 14),
         "atr_pct": atr_pct(rows, 14),
         "realized_vol_7d": realized_vol_annualized(values, 168),
@@ -320,4 +347,5 @@ def compute_all(
         "volume_ratio": volume_ratio(rows),
         "from_high_30d_pct": extremes["from_high_pct"],
         "from_low_30d_pct": extremes["from_low_pct"],
+        "donchian_20d": donchian_break(rows, 480),
     }

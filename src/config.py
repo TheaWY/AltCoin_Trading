@@ -218,6 +218,25 @@ EVAL_BTC_CORR_MAX = float(os.getenv("EVAL_BTC_CORR_MAX", "0.9"))
 VOLUME_SPIKE_RATIO = float(os.getenv("VOLUME_SPIKE_RATIO", "2.0"))
 VOLUME_SPIKE_MIN_CANDLES = int(os.getenv("VOLUME_SPIKE_MIN_CANDLES", "12"))
 
+# --- Mean-reversion scalp setup (BB 20,2 + RSI 14; Vantixs/StratProof filters) ---
+MEANREV_RSI_HIGH = float(os.getenv("MEANREV_RSI_HIGH", "70"))
+MEANREV_RSI_LOW = float(os.getenv("MEANREV_RSI_LOW", "30"))
+# Squeezes precede expansions — the worst environment for mean reversion.
+MEANREV_MIN_BANDWIDTH_PCT = float(os.getenv("MEANREV_MIN_BANDWIDTH_PCT", "4.0"))
+# Don't fade a strong trend (regime filter for the counter-trend setup).
+MEANREV_MAX_TREND_7D_PCT = float(os.getenv("MEANREV_MAX_TREND_7D_PCT", "15.0"))
+
+# --- Swing setups ---
+# 28d time-series momentum (AUT walk-forward study: 28d lookback optimal).
+MOMENTUM_28D_STRONG_PCT = float(os.getenv("MOMENTUM_28D_STRONG_PCT", "15.0"))
+
+# --- Confluence (final confidence when setups align) ---
+CONFLUENCE_ALIGNED_BONUS = float(os.getenv("CONFLUENCE_ALIGNED_BONUS", "0.06"))
+CONFLUENCE_CONFLICT_PENALTY = float(os.getenv("CONFLUENCE_CONFLICT_PENALTY", "0.08"))
+# Retail long/short account ratio beyond these = crowded, contrarian bonus.
+LSR_CROWDED_LONG = float(os.getenv("LSR_CROWDED_LONG", "1.5"))
+LSR_CROWDED_SHORT = float(os.getenv("LSR_CROWDED_SHORT", "0.67"))
+
 # --- Market comparison ---
 MARKET_COMPARE_HORIZONS_HOURS = (1, 4, 24)
 SIGNAL_ACCURACY_ROLLING_DAYS = int(os.getenv("SIGNAL_ACCURACY_ROLLING_DAYS", "7"))

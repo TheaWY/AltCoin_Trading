@@ -128,6 +128,40 @@ def main() -> int:
     assert entry2["confidence"] is not None
     print(f"9. Waiting coin confidence: {entry2['confidence']} why_not={entry2['why_not'][:1]}")
 
+    # 10. Confluence: flat range then a sharp breakdown -> SHORT setups align
+    # (650 flat candles, then 50 candles of -1.5%/h: breaks the 20d low,
+    #  turns 7d/28d momentum deeply negative, MACD down, price < SMAs)
+    now = int(time.time())
+    rows = []
+    price = 4000.0
+    for i in range(700):
+        if i >= 650:
+            price *= 0.985
+        rows.append(
+            {
+                "symbol": "CCC/USDT",
+                "timestamp": now - (700 - i) * 3600,
+                "open": price * 0.999,
+                "high": price * 1.005,
+                "low": price * 0.995,
+                "close": price,
+                "volume": 5000.0,
+            }
+        )
+    storage.insert_prices(rows, timeframe="1h")
+    storage.insert_funding_rates(
+        [{"symbol": "CCC/USDT", "timestamp": int(time.time()), "funding_rate": 0.0015}]
+    )
+    entry3 = evaluate_symbol(storage, "CCC/USDT", None, regime=regime, calibration={})
+    assert entry3["tradable"], entry3["why_not"]
+    v = entry3["verdict"]
+    assert v["direction"] == "SHORT" and v["confluence"]["aligned"] >= 1, v
+    print(
+        f"10. Confluence: {v['strategy']} SHORT, aligned={v['confluence']['aligned']} "
+        f"({v['confluence']['aligned_strategies']}), final confidence={v['score']} "
+        f"(base {v['base_score']})"
+    )
+
     print("\nAll strategy smoke tests passed.")
     return 0
 

@@ -110,6 +110,117 @@ def _volume_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _meanrev_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[str, Any] | None:
+    """단타: BB(20,2) + RSI(14) mean reversion with regime filters.
+
+    Evidence: BB+RSI was the top scalp performer in fee-inclusive forward tests
+    (53.8% win rate); regime filters (no squeeze, no strong trend) cut the
+    largest losses (Vantixs 2023-25 backtest: Sharpe 0.48 -> 1.39 with filters).
+    """
+    rsi = metrics["rsi_14"]
+    boll = metrics["bollinger"]
+    pct_7d = metrics["pct_7d"]
+    if rsi is None or not boll:
+        return None
+    # regime filters: skip squeezes (breakout risk) and strong trends
+    if boll["bandwidth_pct"] < config.MEANREV_MIN_BANDWIDTH_PCT:
+        return None
+    if pct_7d is not None and abs(pct_7d) > config.MEANREV_MAX_TREND_7D_PCT:
+        return None
+
+    if rsi >= config.MEANREV_RSI_HIGH and boll["percent_b"] >= 1.0:
+        score = 0.55
+        if funding_rate is not None and funding_rate > 0:
+            score += 0.05  # crowded longs strengthen the fade
+        return {
+            "style": STYLE_SCALP,
+            "strategy": "mean_reversion",
+            "direction": "SHORT",
+            "score": round(score, 2),
+            "reason": f"RSI {rsi:.0f} 과매수 + 볼린저 상단 이탈 — 통계적 과열, 평균회귀 숏",
+        }
+    if rsi <= config.MEANREV_RSI_LOW and boll["percent_b"] <= 0.0:
+        score = 0.55
+        if funding_rate is not None and funding_rate < 0:
+            score += 0.05
+        return {
+            "style": STYLE_SCALP,
+            "strategy": "mean_reversion",
+            "direction": "LONG",
+            "score": round(score, 2),
+            "reason": f"RSI {rsi:.0f} 과매도 + 볼린저 하단 이탈 — 통계적 과냉, 평균회귀 롱",
+        }
+    return None
+
+
+def _breakout_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[str, Any] | None:
+    """스윙: 20일 돈찬 채널 돌파 (Turtle rules).
+
+    Evidence: 20d Donchian breakout on BTC 2017-2026 — CAGR 48.2% vs 37.3%
+    buy&hold, max DD -53.7% vs -83.2%. Funding filter per the combined
+    trend+funding framework: skip when the move is already crowded.
+    """
+    donchian = metrics.get("donchian_20d")
+    if not donchian:
+        return None
+
+    if donchian["broke_low"]:
+        score = 0.6
+        # crowded shorts (very negative funding) = squeeze risk, weaker signal
+        if funding_rate is not None and funding_rate < config.FUNDING_RATE_LONG_THRESHOLD:
+            score -= 0.1
+        return {
+            "style": STYLE_SWING,
+            "strategy": "breakout",
+            "direction": "SHORT",
+            "score": round(score, 2),
+            "reason": "20일 최저가 하향 돌파 (Turtle) — 신규 하락 추세 진입 숏",
+        }
+    if donchian["broke_high"]:
+        score = 0.6
+        if funding_rate is not None and funding_rate > config.FUNDING_RATE_SHORT_THRESHOLD:
+            score -= 0.1
+        return {
+            "style": STYLE_SWING,
+            "strategy": "breakout",
+            "direction": "LONG",
+            "score": round(score, 2),
+            "reason": "20일 최고가 상향 돌파 (Turtle) — 신규 상승 추세 진입 롱",
+        }
+    return None
+
+
+def _tsmom28_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """스윙: 28일 시계열 모멘텀.
+
+    Evidence: crypto TS-momentum studies find ~28d lookback optimal
+    (Sharpe 1.51 vs 0.84 market on BTC with 28d/5d parameters).
+    """
+    pct_30d = metrics["pct_30d"]
+    last = metrics.get("last_price")
+    sma20 = metrics["sma_20"]
+    if pct_30d is None or last is None or sma20 is None:
+        return None
+
+    if pct_30d <= -config.MOMENTUM_28D_STRONG_PCT and last < sma20:
+        return {
+            "style": STYLE_SWING,
+            "strategy": "tsmom_28d",
+            "direction": "SHORT",
+            "score": 0.58,
+            "reason": f"28d {pct_30d:.1f}% 하락 모멘텀 + SMA20 아래 — 중기 추세 지속 숏",
+        }
+    if pct_30d >= config.MOMENTUM_28D_STRONG_PCT and last > sma20:
+        return {
+            "style": STYLE_SWING,
+            "strategy": "tsmom_28d",
+            "direction": "LONG",
+            "score": 0.58,
+            "reason": f"28d +{pct_30d:.1f}% 상승 모멘텀 + SMA20 위 — 중기 추세 지속 롱",
+        }
+    return None
+
+
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
     pct_7d = metrics["pct_7d"]
@@ -230,6 +341,49 @@ def _proximity_confidence(
     return round(min(0.45, max(scores)), 2)
 
 
+def _apply_confluence(
+    best: dict[str, Any], setups: list[dict[str, Any]], metrics: dict[str, Any]
+) -> None:
+    """Final confidence: boost when independent setups agree, penalize conflict.
+
+    "우주 정렬" — each additional setup pointing the same direction adds a
+    bonus; setups pointing the other way subtract. Crowded retail positioning
+    (long/short account ratio) against the trade direction adds a contrarian
+    bonus, per the funding+OI confluence framework.
+    """
+    aligned = [s for s in setups if s is not best and s["direction"] == best["direction"]]
+    conflicting = [s for s in setups if s["direction"] != best["direction"]]
+
+    score = best["score"]
+    parts: list[str] = [f"{best['strategy']} {best['base_score']:.2f}"]
+    if aligned:
+        bonus = config.CONFLUENCE_ALIGNED_BONUS * len(aligned)
+        score += bonus
+        parts.append(f"정렬 +{bonus:.2f} ({', '.join(s['strategy'] for s in aligned)})")
+    if conflicting:
+        penalty = config.CONFLUENCE_CONFLICT_PENALTY * len(conflicting)
+        score -= penalty
+        parts.append(f"역방향 -{penalty:.2f} ({', '.join(s['strategy'] for s in conflicting)})")
+
+    lsr = metrics.get("long_short_ratio")
+    if lsr is not None:
+        if best["direction"] == "SHORT" and lsr >= config.LSR_CROWDED_LONG:
+            score += 0.04
+            parts.append(f"롱쏠림 {lsr:.2f} +0.04")
+        elif best["direction"] == "LONG" and lsr <= config.LSR_CROWDED_SHORT:
+            score += 0.04
+            parts.append(f"숏쏠림 {lsr:.2f} +0.04")
+
+    best["score"] = round(min(0.95, max(0.05, score)), 2)
+    best["confluence"] = {
+        "aligned": len(aligned),
+        "conflicting": len(conflicting),
+        "aligned_strategies": [s["strategy"] for s in aligned],
+        "conflicting_strategies": [s["strategy"] for s in conflicting],
+        "breakdown": parts,
+    }
+
+
 def _attach_market_metrics(storage: Storage, symbol: str, metrics: dict[str, Any]) -> None:
     """Add open interest / long-short ratio when collected (core symbols)."""
     metrics["open_interest_usd"] = None
@@ -271,7 +425,10 @@ def evaluate_symbol(
         for setup in (
             _funding_setup(metrics, funding_rate),
             _volume_setup(metrics),
+            _meanrev_setup(metrics, funding_rate),
             _swing_setup(metrics),
+            _breakout_setup(metrics, funding_rate),
+            _tsmom28_setup(metrics),
         ):
             if setup is None:
                 continue
@@ -296,6 +453,8 @@ def evaluate_symbol(
         setups.sort(key=lambda s: -s["score"])
 
     best = setups[0] if setups else None
+    if best is not None:
+        _apply_confluence(best, setups, metrics)
     tradable = best is not None
 
     why_not: list[str] = []

@@ -326,6 +326,28 @@
       color: #fbbf24;
     }
     .regime-banner.risk_off { border-color: var(--neg); background: rgba(248,113,113,.08); color: var(--neg); }
+    .confluence-line {
+      margin-top: 6px;
+      font-size: 11.5px;
+      font-weight: 750;
+      color: var(--muted);
+    }
+
+    /* --- methodology page --- */
+    .method-block { padding: 13px 14px; font-size: 13px; line-height: 1.75; color: var(--text); }
+    .method-block h3 { margin: 0 0 6px; font-size: 13.5px; }
+    .method-block p, .method-block ul { margin: 0 0 4px; color: var(--muted); }
+    .method-block ul { padding-left: 18px; }
+    .method-block li { margin-bottom: 3px; }
+    .method-block b { color: var(--text); }
+    .method-block .ref { font-size: 11px; color: var(--muted); opacity: .8; }
+    .method-block code {
+      background: rgba(138,148,163,.12);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      color: var(--text);
+    }
 
     /* --- live prices / exit plan --- */
     .live-badge {
@@ -365,7 +387,7 @@
       max-width: 520px;
       transform: translateX(-50%);
       display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
+      grid-template-columns: repeat(4, 1fr);
       gap: 1px;
       padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
       background: rgba(5,7,11,.94);
@@ -524,6 +546,107 @@
       </div>
     </section>
 
+    <!-- ============ METHOD (전략 설명) ============ -->
+    <section class="tab-page" id="tab-method">
+      <div class="section">
+        <div class="section-title">이 시스템이 하는 것</div>
+        <div class="panel method-block">
+          <p>Binance USDT 무기한 선물 <b>전체 유니버스</b>를 5분마다 수집하고,
+          <b>단타(최대 <span data-cfg="scalp_max_hold_hours">48</span>시간)</b>와
+          <b>스윙(최대 <span data-cfg="swing_max_hold_days">30</span>일)</b> 두 가지만 합니다.
+          한 달 넘는 보유(장기)는 하지 않고, 현재 <b>롱 방향 진입은 금지</b>되어 있습니다 (숏 전용).</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">1단계 — 거를 코인 거르기 (하드 게이트)</div>
+        <div class="panel method-block">
+          <ul>
+            <li>캔들 48개 미만 → 지표 신뢰 불가, 제외</li>
+            <li>24h 거래대금 $<span data-cfg="min_dollar_volume_m">5</span>M 미만 → 슬리피지 위험, 제외</li>
+            <li>ATR <span data-cfg="min_atr_pct">0.25</span>% 미만 → 움직임이 수수료도 못 갚음, 제외</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">2단계 — 단타 셋업 (48시간 안에 승부)</div>
+        <div class="panel method-block">
+          <ul>
+            <li><b>펀딩비 반전</b> <code>funding_rate</code> — 펀딩비 +<span data-cfg="funding_short_pct">0.1</span>% 이상 = 롱 과밀 → 되돌림 숏. 무기한 선물의 쏠림 청산 메커니즘 이용.</li>
+            <li><b>거래량 스파이크</b> <code>volume_spike</code> — 평소 대비 <span data-cfg="volume_spike_ratio">2</span>배 이상 거래량 + 방향성 있는 움직임 → 수급 확인된 추종.</li>
+            <li><b>평균회귀</b> <code>mean_reversion</code> — RSI <span data-cfg="meanrev_rsi_high">70</span>+ & 볼린저(20,2) 상단 이탈 → 통계적 과열 숏. 스퀴즈 구간·강한 추세에서는 발동 안 함 (역추세 매매의 최대 리스크 차단). 수수료 포함 실전 테스트에서 승률 1위였던 조합.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">3단계 — 스윙 셋업 (최대 1개월)</div>
+        <div class="panel method-block">
+          <ul>
+            <li><b>7일 모멘텀</b> <code>momentum</code> — 7d ±<span data-cfg="momentum_7d_pct">5</span>% 이상 + 가격·SMA20·SMA50 배열 + MACD 동조 → 추세 지속 베팅. 크립토에서 가장 강하게 문서화된 수익원 (Liu & Tsyvinski 2021).</li>
+            <li><b>28일 모멘텀</b> <code>tsmom_28d</code> — 28d ±<span data-cfg="momentum_28d_pct">15</span>% + SMA20 확인. 학술 연구에서 최적 관찰기간 (Sharpe 1.51 vs 시장 0.84).</li>
+            <li><b>돈찬 돌파</b> <code>breakout</code> — 20일 최저가 하향 돌파 = 신규 추세 진입 (Turtle 규칙, BTC 8.5년 백테스트 CAGR 48% vs 보유 37%). 펀딩이 이미 쏠려 있으면 점수 감점 (과밀 진입 방지).</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">4단계 — 우주 정렬 (Final Confidence)</div>
+        <div class="panel method-block">
+          <p>6개 셋업을 <b>전부 동시에</b> 평가한 뒤:</p>
+          <ul>
+            <li>가장 강한 셋업의 점수에서 시작</li>
+            <li>같은 방향 셋업 1개당 <b>+<span data-cfg="aligned_bonus">0.06</span></b> (독립 신호의 합치 = 확률 상승)</li>
+            <li>반대 방향 셋업 1개당 <b>−<span data-cfg="conflict_penalty">0.08</span></b> (신호 충돌 = 불확실)</li>
+            <li>롱/숏 계정비율이 반대로 쏠려 있으면 +0.04 (군중 역행 보너스)</li>
+            <li>같은 전략의 <b>실제 청산 승률</b>이 5거래 이상 쌓이면 그쪽으로 보정 (실측 우선)</li>
+          </ul>
+          <p>이 최종 점수가 카드의 <b>확신 %</b>입니다. 신호가 정렬된 코인은 카드에 <b>◈ 정렬 N개 신호</b>로 표시됩니다.</p>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">5단계 — 진입 통제</div>
+        <div class="panel method-block">
+          <ul>
+            <li><b>BTC 레짐 필터</b> — BTC 급락 시 신규 롱 차단, 급등 시 신규 숏 차단 (알트는 BTC 스트레스에 종속)</li>
+            <li>동시 보유 최대 <b><span data-cfg="max_open_positions">5</span>개</b>, 확신 높은 순으로만 진입</li>
+            <li>포지션 크기 = 포트폴리오의 <b><span data-cfg="risk_per_trade_pct">1</span>% 리스크</b> ÷ 손절 거리 → 변동성 큰 코인일수록 자동으로 작게 (최대 <span data-cfg="max_position_pct">20</span>%)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">6단계 — 청산 (진입보다 중요)</div>
+        <div class="panel method-block">
+          <ul>
+            <li><b>손절</b> = <span data-cfg="atr_stop_mult">1.5</span> × ATR — 코인의 실제 변동폭 기준, 고정 % 아님</li>
+            <li><b>익절</b> = <span data-cfg="atr_tp_mult">2.5</span> × ATR — 손익비 약 1 : 1.7 확보</li>
+            <li><b>트레일링</b> — 1 ATR 이상 수익 나면 최고점 대비 <span data-cfg="trail_atr_mult">2</span> ATR 뒤로 손절선 따라올림 (수익이 손실로 회귀하는 것 방지)</li>
+            <li><b>시간 손절</b> — 단타 <span data-cfg="scalp_max_hold_hours">48</span>시간 / 스윙 <span data-cfg="swing_max_hold_days">30</span>일 내 미결착 시 청산 (모멘텀 소멸 = 근거 소멸)</li>
+            <li>수수료+슬리피지 <span data-cfg="round_trip_cost_pct">0.16</span>% 왕복 반영 — 종이 수익이 아닌 실질 수익 기준</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">근거 문헌</div>
+        <div class="panel method-block">
+          <p class="ref">
+            Liu & Tsyvinski (2021) Risks and Returns of Cryptocurrency, RFS ·
+            Liu, Tsyvinski & Wu (2022) Common Risk Factors in Cryptocurrency, JF ·
+            Moskowitz, Ooi & Pedersen (2012) Time Series Momentum, JFE ·
+            Barroso & Santa-Clara (2015) Momentum Has Its Moments, JFE ·
+            Moreira & Muir (2017) Volatility-Managed Portfolios, JF ·
+            AUT (2023) TS & CS Momentum in Crypto (28d/5d 최적) ·
+            Turtle Trading Rules (Donchian 20/10) ·
+            Gate/Vantixs BB+RSI 레짐 필터 백테스트 (2023–25)
+          </p>
+        </div>
+      </div>
+    </section>
+
     <!-- ============ MARKET ============ -->
     <section class="tab-page" id="tab-market">
       <div class="section">
@@ -558,6 +681,7 @@
     <button class="tab-btn active" type="button" data-tab="home">홈</button>
     <button class="tab-btn" type="button" data-tab="portfolio">포트폴리오</button>
     <button class="tab-btn" type="button" data-tab="market">마켓</button>
+    <button class="tab-btn" type="button" data-tab="method">전략</button>
   </nav>
 
   <script>
@@ -713,6 +837,13 @@
         </div>
       ` : '';
       const reason = (!invested && v) ? `<div class="card-reason">${esc(v.reason)}</div>` : '';
+      const conf = v && v.confluence;
+      const confluenceLine = (conf && (conf.aligned > 0 || conf.conflicting > 0)) ? `
+        <div class="confluence-line">
+          ${conf.aligned > 0 ? `<span class="pos">◈ 정렬 ${conf.aligned + 1}개 신호</span> (${esc([v.strategy, ...conf.aligned_strategies].join(' + '))})` : ''}
+          ${conf.conflicting > 0 ? `<span class="neg">◇ 역방향 ${conf.conflicting}개</span> (${esc(conf.conflicting_strategies.join(', '))})` : ''}
+        </div>
+      ` : '';
       const why = (showWhy && (entry.why_not || []).length) ? `
         <ul class="card-why">
           ${entry.why_not.map(r => `<li>${esc(r)}</li>`).join('')}
@@ -723,6 +854,7 @@
           ${head}
           ${investedLine}
           ${reason}
+          ${confluenceLine}
           ${why}
           <div class="chips">${keyChips(m)}</div>
           ${metricDetails(entry)}
@@ -1049,12 +1181,23 @@
       $('market-body').innerHTML = html;
     }
 
+    function renderMethod(data) {
+      const cfg = data.strategy_config;
+      if (!cfg) return;
+      document.querySelectorAll('[data-cfg]').forEach(el => {
+        const value = cfg[el.dataset.cfg];
+        if (value == null) return;
+        el.textContent = Number.isInteger(value) ? value : +value.toFixed(2);
+      });
+    }
+
     function render(data) {
       lastData = data;
       renderHome(data);
       renderPortfolio(data);
       renderStrategyStats(data);
       renderPositions(data);
+      renderMethod(data);
       renderHistory(data);
       renderMarketSummary(data);
       renderMarketTable(data);
