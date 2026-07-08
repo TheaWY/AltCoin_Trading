@@ -160,9 +160,10 @@ ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "2.5"))
 # Risk this fraction of portfolio value per trade (position size is derived
 # from the stop distance, so volatile coins automatically get smaller size).
 RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.01"))
-# Time stops: scalps must resolve fast, swings get room to develop.
+# Time stops: scalps must resolve fast; swings get up to one month — anything
+# still open after that is a long-term hold, which this system never does.
 SCALP_MAX_HOLD_HOURS = float(os.getenv("SCALP_MAX_HOLD_HOURS", "48"))
-SWING_MAX_HOLD_HOURS = float(os.getenv("SWING_MAX_HOLD_HOURS", "240"))
+SWING_MAX_HOLD_HOURS = float(os.getenv("SWING_MAX_HOLD_HOURS", "720"))
 # Trailing stop for swing trades: once price moves 1 ATR in favor, trail the
 # stop TRAIL_ATR_MULT x ATR behind the best price seen.
 TRAILING_STOP_ENABLED = _env_bool("TRAILING_STOP_ENABLED", default=True)

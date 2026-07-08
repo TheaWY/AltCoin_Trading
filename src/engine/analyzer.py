@@ -182,11 +182,11 @@ def _analyze_swing(
     pct_7d: float | None,
     volume_spike: bool,
 ) -> dict[str, Any]:
-    """1–2 week horizon — 7d trend + funding alignment."""
+    """1–4 week horizon (max one month — longer is a hold, not a swing) — 7d trend + funding alignment."""
     if direction == SignalDirection.NONE.value:
         return {
             "timeframe": "swing",
-            "horizon": "1-2 weeks",
+            "horizon": "1-4 weeks",
             "rating": "NEUTRAL",
             "action": "HOLD",
             "confidence": 0.3,
@@ -233,7 +233,7 @@ def _analyze_swing(
 
     return {
         "timeframe": "swing",
-        "horizon": "1-2 weeks",
+        "horizon": "1-4 weeks",
         "rating": rating,
         "action": action,
         "confidence": round(confidence, 2),
