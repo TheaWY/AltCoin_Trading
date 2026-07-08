@@ -18,8 +18,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
+from src.engine.signal import gather_strategy_data  # noqa: E402
 from src.strategies.base import SignalDirection  # noqa: E402
-from src.strategies.registry import get_strategy  # noqa: E402
+from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
 
 SECONDS_PER_DAY = 24 * 60 * 60
@@ -249,7 +250,6 @@ class BacktestEngine:
 
     def run(self) -> dict[str, Any]:
         prices_by_symbol = self._load_prices()
-        funding_by_symbol = self._load_funding()
         timeline = sorted(
             {
                 row["timestamp"]
@@ -274,16 +274,11 @@ class BacktestEngine:
             portfolio.check_exits(current_prices, ts)
 
             for symbol in self.symbols:
-                price_row = self._latest_row_before(prices_by_symbol[symbol], ts)
-                funding_row = self._latest_row_before(funding_by_symbol[symbol], ts)
-                if not price_row or not funding_row:
-                    continue
-
-                data = {
-                    "symbol": symbol,
-                    "latest_price": price_row,
-                    "funding_rate": funding_row,
-                }
+                # Same data path as live trading: the snapshot hides rows
+                # after `ts`, and gather_strategy_data fetches exactly what
+                # the strategy declares in get_required_data().
+                snapshot = SnapshotStorage(self.storage, ts, None)
+                data = gather_strategy_data(snapshot, self.strategy, symbol)
                 if self.strategy.validate_data(data):
                     continue
 
@@ -291,7 +286,12 @@ class BacktestEngine:
                 if signal.direction == SignalDirection.NONE:
                     continue
 
+                price_row = data.get("latest_price")
+                if not price_row:
+                    continue
+
                 signal_count += 1
+                funding_row = data.get("funding_rate") or {}
                 signal_row = {
                     "strategy": self.strategy_name,
                     "symbol": symbol,
@@ -302,8 +302,10 @@ class BacktestEngine:
                     "funding_rate": funding_row.get("funding_rate"),
                     "metadata": signal.metadata,
                 }
-                snapshot = SnapshotStorage(self.storage, ts, signal_row)
-                analysis = AltAnalyzer(snapshot).analyze(symbol)
+                snapshot.latest_signal = signal_row
+                analysis = AltAnalyzer(snapshot).analyze(
+                    symbol, strategy_name=self.strategy_name
+                )
                 confidence_passed = analysis["confidence"] >= config.PAPER_MIN_CONFIDENCE
                 if confidence_passed:
                     confidence_pass_count += 1
@@ -362,17 +364,6 @@ class BacktestEngine:
             for symbol in self.symbols
         }
 
-    def _load_funding(self) -> dict[str, list[dict[str, Any]]]:
-        return {
-            symbol: self.storage.get_funding_rates(
-                symbol,
-                limit=1_000_000,
-                since=self.start_ts,
-                before=self.end_ts,
-            )
-            for symbol in self.symbols
-        }
-
     def _advance_prices(
         self,
         prices_by_symbol: dict[str, list[dict[str, Any]]],
@@ -389,17 +380,6 @@ class BacktestEngine:
             if price_index[symbol] > 0:
                 current[symbol] = float(rows[price_index[symbol] - 1]["close"])
         return current
-
-    def _latest_row_before(
-        self, rows: list[dict[str, Any]], timestamp: int
-    ) -> dict[str, Any] | None:
-        candidate = None
-        for row in rows:
-            if int(row["timestamp"]) <= timestamp:
-                candidate = row
-            else:
-                break
-        return candidate
 
     def _btc_buy_hold_return(
         self, prices_by_symbol: dict[str, list[dict[str, Any]]]
@@ -490,7 +470,11 @@ def main() -> int:
     parser.add_argument("--start", default=None, help="Start date/time, e.g. 2024-01-01")
     parser.add_argument("--end", default=None, help="End date/time, defaults to now")
     parser.add_argument("--symbols", default=None, help="Comma-separated spot symbols")
-    parser.add_argument("--strategy", default="funding_rate", help="Strategy name")
+    parser.add_argument(
+        "--strategy",
+        default=config.PRIMARY_STRATEGY,
+        help=f"Strategy name (available: {', '.join(list_strategies())})",
+    )
     args = parser.parse_args()
 
     start = _parse_datetime(args.start) if args.start else _default_start()
