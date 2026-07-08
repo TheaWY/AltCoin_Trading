@@ -29,7 +29,6 @@ REST_PRICE_URL = "https://fapi.binance.com/fapi/v1/ticker/price"  # weight 2
 BROADCAST_INTERVAL_SECONDS = 0.25
 IDLE_SLEEP_SECONDS = 3.0
 FAST_POLL_SECONDS = 1.0
-WS_FRESH_SECONDS = 3.0
 WS_SILENT_TIMEOUT_SECONDS = 10.0
 OPEN_REFRESH_SECONDS = 60.0
 REST_ERROR_BACKOFF_SECONDS = 5.0
@@ -46,9 +45,7 @@ class PriceRelay:
         self.dirty: set[str] = set()
         # /ws client -> symbols it currently displays (drives aggTrade subs)
         self.watchers: dict[Any, set[str]] = {}
-        # monotonic time of the last upstream websocket message; the REST
-        # poller stands down only while this is fresh (the Railway<->Binance
-        # websocket can go silent without closing, so a boolean isn't enough)
+        # monotonic time of the last upstream websocket message (diagnostics)
         self.last_ws_data = 0.0
 
     # ----- client watch lists -----
@@ -182,28 +179,32 @@ class PriceRelay:
             return json.loads(response.read())
 
     async def _rest_poll_loop(self, manager: Any) -> None:
-        """1s price polling whenever the websocket isn't delivering data.
+        """Unconditional 1s price polling while any client is connected.
 
-        Uses the cheap /ticker/price endpoint (weight 2) each second and the
-        heavier /ticker/24hr (weight 40) once a minute for 24h opens, staying
-        far below Binance's 2400 weight/min budget.
+        The upstream websocket from this host delivers only sporadically, so
+        REST is the guaranteed heartbeat and websocket ticks are a bonus on
+        top (identical prices are deduped in _set_price). Uses the cheap
+        /ticker/price endpoint (weight 2) each second and the heavier
+        /ticker/24hr (weight 40) once a minute for 24h opens — ~160 weight/min
+        against Binance's 2400/min budget.
         """
         opens_refreshed_at = 0.0
         while True:
-            ws_fresh = time.monotonic() - self.last_ws_data < WS_FRESH_SECONDS
-            if not manager.active or ws_fresh:
-                await asyncio.sleep(FAST_POLL_SECONDS if manager.active else IDLE_SLEEP_SECONDS)
+            if not manager.active:
+                await asyncio.sleep(IDLE_SLEEP_SECONDS)
                 continue
             try:
-                now = time.monotonic()
-                if now - opens_refreshed_at >= OPEN_REFRESH_SECONDS:
+                started = time.monotonic()
+                if started - opens_refreshed_at >= OPEN_REFRESH_SECONDS:
                     self.ingest(await asyncio.to_thread(self._rest_get, REST_24H_URL))
-                    opens_refreshed_at = now
+                    opens_refreshed_at = started
                 else:
                     self.ingest_price_list(
                         await asyncio.to_thread(self._rest_get, REST_PRICE_URL)
                     )
-                await asyncio.sleep(FAST_POLL_SECONDS)
+                # Aim for a steady 1s cadence regardless of request latency.
+                elapsed = time.monotonic() - started
+                await asyncio.sleep(max(0.05, FAST_POLL_SECONDS - elapsed))
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
