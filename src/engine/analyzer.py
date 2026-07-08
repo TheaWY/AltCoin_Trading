@@ -282,6 +282,7 @@ class AltAnalyzer:
         best = short_term if short_term["confidence"] >= swing["confidence"] else swing
         worth = (
             direction in (SignalDirection.LONG.value, SignalDirection.SHORT.value)
+            and config.direction_allowed(direction)
             and (
                 short_term["worth_it"]
                 or swing["worth_it"]

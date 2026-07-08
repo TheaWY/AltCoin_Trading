@@ -72,6 +72,7 @@ class SignalEngine:
         result = {
             "ok": True,
             "signal_id": signal_id,
+            "strategy": strategy_name,
             "direction": signal.direction.value,
             "reason": signal.reason,
             "entry_price": signal.entry_price,

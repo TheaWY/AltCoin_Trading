@@ -203,6 +203,55 @@ def _collect_funding_batch(
     return rows
 
 
+def _collect_market_metrics(
+    exchange: ccxt.binance, storage: Storage, symbols: list[str]
+) -> int:
+    """Collect open interest + global long/short account ratio.
+
+    Both are per-symbol endpoints on Binance futures, so this only runs for
+    the core symbol list (not the full 500+ universe) to keep request volume
+    sane. Failures are non-fatal — these metrics are enrichment, not gates.
+    """
+    from src.symbols import ccxt_symbol
+
+    now_ts = int(datetime.now(timezone.utc).timestamp())
+    rows: list[dict[str, Any]] = []
+    for spot in symbols:
+        market_symbol = ccxt_symbol(spot)
+        row: dict[str, Any] = {
+            "symbol": spot,
+            "timestamp": now_ts,
+            "open_interest": None,
+            "open_interest_usd": None,
+            "long_short_ratio": None,
+        }
+        try:
+            oi = exchange.fetch_open_interest(market_symbol)
+            row["open_interest"] = oi.get("openInterestAmount")
+            row["open_interest_usd"] = oi.get("openInterestValue")
+        except Exception:
+            logger.debug("Open interest fetch failed for %s", spot, exc_info=True)
+        try:
+            market_id = exchange.market(market_symbol)["id"]
+            data = exchange.fapiDataGetGlobalLongShortAccountRatio(
+                {"symbol": market_id, "period": "1h", "limit": 1}
+            )
+            if data:
+                row["long_short_ratio"] = float(data[-1]["longShortRatio"])
+        except Exception:
+            logger.debug("Long/short ratio fetch failed for %s", spot, exc_info=True)
+
+        if row["open_interest"] is not None or row["long_short_ratio"] is not None:
+            rows.append(row)
+
+    inserted = storage.insert_market_metrics(rows)
+    if rows:
+        logger.info(
+            "Market metrics (OI / long-short) collected for %d symbols", len(rows)
+        )
+    return inserted
+
+
 def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
     """Collect OHLCV + funding for all configured symbols.
 
@@ -220,6 +269,12 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
     results: dict[str, Any] = {}
 
     funding_batch = _collect_funding_batch(exchange, storage, symbols)
+
+    try:
+        _collect_market_metrics(exchange, storage, sorted(core & set(symbols)))
+        storage.cleanup_old_market_metrics()
+    except Exception:
+        logger.warning("Market metrics collection failed", exc_info=True)
 
     for spot in symbols:
         try:

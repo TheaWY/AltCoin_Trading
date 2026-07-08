@@ -16,6 +16,8 @@ from typing import Any
 from src import config
 from src.data.storage import Storage, get_storage
 from src.engine import indicators
+from src.engine.calibration import build_calibration_map, calibrate_score
+from src.engine.regime import btc_regime, direction_blocked
 
 STYLE_SCALP = "단타"
 STYLE_SWING = "스윙"
@@ -196,11 +198,61 @@ def _why_not(metrics: dict[str, Any], funding_rate: float | None) -> list[str]:
     return reasons[:4]
 
 
+def _proximity_confidence(
+    metrics: dict[str, Any], funding_rate: float | None, blocked: bool
+) -> float:
+    """Graded 0-0.45 confidence for coins without an active setup.
+
+    Measures how close each setup trigger is to firing so 'waiting' coins can
+    still be ranked — a coin at 90% of the volume-spike threshold shows a
+    higher number than a dead one.
+    """
+    if blocked:
+        return 0.05
+
+    scores = [0.1]
+    if funding_rate is not None:
+        threshold = max(
+            abs(config.FUNDING_RATE_SHORT_THRESHOLD),
+            abs(config.FUNDING_RATE_LONG_THRESHOLD),
+        )
+        if threshold:
+            scores.append(min(1.0, abs(funding_rate) / threshold) * 0.45)
+
+    ratio = metrics.get("volume_ratio")
+    if ratio is not None and config.VOLUME_SPIKE_RATIO:
+        scores.append(min(1.0, ratio / config.VOLUME_SPIKE_RATIO) * 0.4)
+
+    pct_7d = metrics.get("pct_7d")
+    if pct_7d is not None and config.MOMENTUM_7D_STRONG_PCT:
+        scores.append(min(1.0, abs(pct_7d) / config.MOMENTUM_7D_STRONG_PCT) * 0.4)
+
+    return round(min(0.45, max(scores)), 2)
+
+
+def _attach_market_metrics(storage: Storage, symbol: str, metrics: dict[str, Any]) -> None:
+    """Add open interest / long-short ratio when collected (core symbols)."""
+    metrics["open_interest_usd"] = None
+    metrics["long_short_ratio"] = None
+    try:
+        row = storage.get_latest_market_metrics(symbol)
+    except Exception:
+        return
+    if row:
+        metrics["open_interest_usd"] = row.get("open_interest_usd")
+        metrics["long_short_ratio"] = row.get("long_short_ratio")
+
+
 def evaluate_symbol(
     storage: Storage,
     symbol: str,
     btc_rows: list[dict[str, Any]] | None,
+    regime: dict[str, Any] | None = None,
+    calibration: dict[tuple[str, str], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    regime = regime or {"blocked_directions": []}
+    calibration = calibration or {}
+
     rows = storage.get_prices(symbol, limit=720, timeframe="1h")
     funding = storage.get_latest_funding_rate(symbol)
     funding_rate = float(funding["funding_rate"]) if funding else None
@@ -209,29 +261,69 @@ def evaluate_symbol(
     metrics["last_price"] = float(rows[-1]["close"]) if rows else None
     metrics["funding_rate"] = funding_rate
     metrics["funding_rate_pct"] = funding_rate * 100 if funding_rate is not None else None
+    _attach_market_metrics(storage, symbol, metrics)
 
     blockers = _gate_blockers(metrics, funding_rate)
 
     setups: list[dict[str, Any]] = []
+    policy_notes: list[str] = []
     if not blockers:
         for setup in (
             _funding_setup(metrics, funding_rate),
             _volume_setup(metrics),
             _swing_setup(metrics),
         ):
-            if setup:
-                setups.append(setup)
+            if setup is None:
+                continue
+            direction = setup["direction"]
+            if not config.direction_allowed(direction):
+                policy_notes.append(
+                    f"{setup['style']} {direction} 셋업 감지 — 롱 금지 정책으로 스킵"
+                    if direction == "LONG"
+                    else f"{setup['style']} {direction} 셋업 감지 — 숏 금지 정책으로 스킵"
+                )
+                continue
+            if direction_blocked(regime, direction):
+                policy_notes.append(
+                    f"{setup['style']} {direction} 셋업 감지 — {regime.get('reason', 'BTC 레짐 차단')}"
+                )
+                continue
+            calibrated = calibrate_score(
+                setup["score"], setup["strategy"], direction, calibration
+            )
+            setup.update(calibrated)
+            setups.append(setup)
         setups.sort(key=lambda s: -s["score"])
 
     best = setups[0] if setups else None
     tradable = best is not None
+
+    why_not: list[str] = []
+    if not tradable:
+        if blockers:
+            why_not = blockers
+        else:
+            seen: set[str] = set()
+            for reason in policy_notes + _why_not(metrics, funding_rate):
+                if reason not in seen:
+                    seen.add(reason)
+                    why_not.append(reason)
+            why_not = why_not[:4]
+
+    confidence = (
+        best["score"]
+        if best
+        else _proximity_confidence(metrics, funding_rate, blocked=bool(blockers))
+    )
+
     return {
         "symbol": symbol,
         "base": symbol.split("/")[0],
         "tradable": tradable,
         "verdict": best,
+        "confidence": confidence,
         "other_setups": setups[1:],
-        "why_not": blockers if blockers else (_why_not(metrics, funding_rate) if not tradable else []),
+        "why_not": why_not,
         "metrics": metrics,
     }
 
@@ -244,16 +336,24 @@ def evaluate_all(
     storage = storage or get_storage()
     symbols = symbols or trading_symbols()
     btc_rows = storage.get_prices(config.SYMBOL, limit=720, timeframe="1h")
+    regime = btc_regime(storage)
+    calibration = build_calibration_map(storage)
 
     results = []
     for symbol in symbols:
         results.append(
-            evaluate_symbol(storage, symbol, btc_rows if symbol != config.SYMBOL else None)
+            evaluate_symbol(
+                storage,
+                symbol,
+                btc_rows if symbol != config.SYMBOL else None,
+                regime=regime,
+                calibration=calibration,
+            )
         )
     results.sort(
         key=lambda r: (
             0 if r["tradable"] else 1,
-            -(r["verdict"]["score"] if r["verdict"] else 0.0),
+            -r["confidence"],
             -(r["metrics"].get("dollar_volume_24h") or 0.0),
         )
     )

@@ -56,6 +56,8 @@ class BacktestPortfolio:
     ) -> BacktestTrade | None:
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return None
+        if not config.direction_allowed(direction):
+            return None
         if any(trade.symbol == symbol for trade in self.open_trades):
             return None
         if len(self.open_trades) >= config.MAX_OPEN_POSITIONS:

@@ -130,12 +130,64 @@ RUN_TRADING_SCHEDULER = _env_bool("RUN_TRADING_SCHEDULER", default=True)
 FUNDING_RATE_SHORT_THRESHOLD = float(os.getenv("FUNDING_RATE_SHORT_THRESHOLD", "0.001"))
 FUNDING_RATE_LONG_THRESHOLD = float(os.getenv("FUNDING_RATE_LONG_THRESHOLD", "-0.0005"))
 
+# --- Direction policy ---
+# ALLOW_LONG=false (default): the engine never opens LONG positions and the
+# dashboard never recommends them — SHORT scalps and SHORT swings only.
+ALLOW_LONG = _env_bool("ALLOW_LONG", default=False)
+ALLOW_SHORT = _env_bool("ALLOW_SHORT", default=True)
+
+
+def direction_allowed(direction: str | None) -> bool:
+    if direction == "LONG":
+        return ALLOW_LONG
+    if direction == "SHORT":
+        return ALLOW_SHORT
+    return False
+
+
 # --- Paper trading ---
 LIVE_TRADING = os.getenv("LIVE_TRADING", "false").lower() in ("true", "1", "yes")
 PAPER_STARTING_CAPITAL = float(os.getenv("PAPER_STARTING_CAPITAL", "10000.0"))
 MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", "0.20"))
+# Fallback fixed-percent exits (used when ATR is unavailable)
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "0.06"))
+
+# --- Risk management (ATR-based exits + volatility-scaled sizing) ---
+# Stop distance = ATR_STOP_MULT x 1h ATR%; target = ATR_TP_MULT x ATR%.
+ATR_STOP_MULT = float(os.getenv("ATR_STOP_MULT", "1.5"))
+ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "2.5"))
+# Risk this fraction of portfolio value per trade (position size is derived
+# from the stop distance, so volatile coins automatically get smaller size).
+RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.01"))
+# Time stops: scalps must resolve fast, swings get room to develop.
+SCALP_MAX_HOLD_HOURS = float(os.getenv("SCALP_MAX_HOLD_HOURS", "48"))
+SWING_MAX_HOLD_HOURS = float(os.getenv("SWING_MAX_HOLD_HOURS", "240"))
+# Trailing stop for swing trades: once price moves 1 ATR in favor, trail the
+# stop TRAIL_ATR_MULT x ATR behind the best price seen.
+TRAILING_STOP_ENABLED = _env_bool("TRAILING_STOP_ENABLED", default=True)
+TRAIL_ATR_MULT = float(os.getenv("TRAIL_ATR_MULT", "2.0"))
+# Paper-trade cost model: taker fee + slippage per side (Binance futures taker
+# is 0.05%; slippage assumed 0.03% on liquid perps).
+FEE_PCT_PER_SIDE = float(os.getenv("FEE_PCT_PER_SIDE", "0.0005"))
+SLIPPAGE_PCT_PER_SIDE = float(os.getenv("SLIPPAGE_PCT_PER_SIDE", "0.0003"))
+
+# --- BTC regime filter ---
+# Alts follow BTC in stress: block new LONGs when BTC is dumping, block new
+# SHORTs when BTC is squeezing up. Thresholds in percent.
+REGIME_FILTER_ENABLED = _env_bool("REGIME_FILTER_ENABLED", default=True)
+REGIME_BTC_DROP_24H_PCT = float(os.getenv("REGIME_BTC_DROP_24H_PCT", "-3.0"))
+REGIME_BTC_DROP_7D_PCT = float(os.getenv("REGIME_BTC_DROP_7D_PCT", "-8.0"))
+REGIME_BTC_PUMP_24H_PCT = float(os.getenv("REGIME_BTC_PUMP_24H_PCT", "3.0"))
+REGIME_BTC_PUMP_7D_PCT = float(os.getenv("REGIME_BTC_PUMP_7D_PCT", "8.0"))
+
+# --- Confidence calibration ---
+# Blend hardcoded setup scores with the realized win rate of closed trades for
+# the same strategy+direction. The prior weight is how many "virtual trades"
+# the hardcoded score is worth — with few real trades the base score dominates,
+# with many the empirical win rate takes over.
+CALIBRATION_PRIOR_WEIGHT = int(os.getenv("CALIBRATION_PRIOR_WEIGHT", "20"))
+CALIBRATION_MIN_TRADES = int(os.getenv("CALIBRATION_MIN_TRADES", "5"))
 
 # --- Strategy ---
 # ACTIVE_STRATEGIES: comma-separated list. The first entry is the primary

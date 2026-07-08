@@ -70,8 +70,25 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     pnl REAL,
     opened_at INTEGER NOT NULL,
     closed_at INTEGER,
+    strategy TEXT,
+    style TEXT,
+    atr_pct REAL,
+    trail_price REAL,
+    exit_reason TEXT,
+    fees REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (signal_id) REFERENCES signals(id)
+);
+
+CREATE TABLE IF NOT EXISTS market_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    open_interest REAL,
+    open_interest_usd REAL,
+    long_short_ratio REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(symbol, timestamp)
 );
 
 CREATE TABLE IF NOT EXISTS market_outcomes (
@@ -154,7 +171,31 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     pnl DOUBLE PRECISION,
     opened_at BIGINT NOT NULL,
     closed_at BIGINT,
+    strategy TEXT,
+    style TEXT,
+    atr_pct DOUBLE PRECISION,
+    trail_price DOUBLE PRECISION,
+    exit_reason TEXT,
+    fees DOUBLE PRECISION,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS strategy TEXT;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS style TEXT;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS atr_pct DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS trail_price DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS fees DOUBLE PRECISION;
+
+CREATE TABLE IF NOT EXISTS market_metrics (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    open_interest DOUBLE PRECISION,
+    open_interest_usd DOUBLE PRECISION,
+    long_short_ratio DOUBLE PRECISION,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(symbol, timestamp)
 );
 
 CREATE TABLE IF NOT EXISTS market_outcomes (
@@ -308,11 +349,29 @@ class Storage:
         with self._connect() as conn:
             conn.raw.executescript(SCHEMA)
             self._migrate_prices_timeframe(conn.raw)
+            self._migrate_paper_trades_columns(conn.raw)
             conn.raw.execute("DROP INDEX IF EXISTS idx_prices_symbol_ts")
             conn.raw.execute(
                 "CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts "
                 "ON prices(symbol, timeframe, timestamp)"
             )
+
+    _PAPER_TRADE_NEW_COLUMNS = {
+        "strategy": "TEXT",
+        "style": "TEXT",
+        "atr_pct": "REAL",
+        "trail_price": "REAL",
+        "exit_reason": "TEXT",
+        "fees": "REAL",
+    }
+
+    def _migrate_paper_trades_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {
+            row["name"] for row in conn.execute("PRAGMA table_info(paper_trades)").fetchall()
+        }
+        for column, column_type in self._PAPER_TRADE_NEW_COLUMNS.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {column} {column_type}")
 
     def _migrate_prices_timeframe(self, conn: sqlite3.Connection) -> None:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(prices)").fetchall()]
@@ -584,15 +643,20 @@ class Storage:
     # --- paper trades ---
 
     def insert_paper_trade(self, row: dict[str, Any]) -> int:
+        row = dict(row)
+        for optional in ("strategy", "style", "atr_pct", "trail_price", "exit_reason", "fees"):
+            row.setdefault(optional, None)
         sql = """
             INSERT INTO paper_trades
                 (signal_id, symbol, direction, entry_price, exit_price,
                  quantity, stop_loss, take_profit, status, pnl,
-                 opened_at, closed_at)
+                 opened_at, closed_at, strategy, style, atr_pct,
+                 trail_price, exit_reason, fees)
             VALUES
                 (:signal_id, :symbol, :direction, :entry_price, :exit_price,
                  :quantity, :stop_loss, :take_profit, :status, :pnl,
-                 :opened_at, :closed_at)
+                 :opened_at, :closed_at, :strategy, :style, :atr_pct,
+                 :trail_price, :exit_reason, :fees)
         """
         with self._connect() as conn:
             return conn.insert_returning_id(sql, row)
@@ -776,6 +840,117 @@ class Storage:
         ts = int(datetime.now(timezone.utc).timestamp())
         with self._connect() as conn:
             conn.execute(sql, (price, ts))
+
+    # --- market metrics (open interest / long-short ratio) ---
+
+    def insert_market_metrics(self, rows: Iterable[dict[str, Any]]) -> int:
+        rows = list(rows)
+        if not rows:
+            return 0
+        sql = """
+            INSERT OR IGNORE INTO market_metrics
+                (symbol, timestamp, open_interest, open_interest_usd, long_short_ratio)
+            VALUES
+                (:symbol, :timestamp, :open_interest, :open_interest_usd, :long_short_ratio)
+        """
+        with self._connect() as conn:
+            cursor = conn.executemany(sql, rows)
+            return cursor.rowcount
+
+    def get_latest_market_metrics(self, symbol: str) -> dict[str, Any] | None:
+        sql = """
+            SELECT * FROM market_metrics
+            WHERE symbol = ?
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """
+        with self._connect() as conn:
+            row = conn.execute(sql, (symbol,)).fetchone()
+            return dict(row) if row else None
+
+    def get_market_metrics(self, symbol: str, limit: int = 48) -> list[dict[str, Any]]:
+        sql = """
+            SELECT * FROM market_metrics
+            WHERE symbol = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        with self._connect() as conn:
+            rows = conn.execute(sql, (symbol, limit)).fetchall()
+            result = [dict(r) for r in rows]
+            result.reverse()
+            return result
+
+    def cleanup_old_market_metrics(self, max_age_days: int = 30) -> int:
+        cutoff = int(datetime.now(timezone.utc).timestamp()) - max_age_days * 24 * 3600
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM market_metrics WHERE timestamp < ?", (cutoff,)
+            )
+            return cursor.rowcount
+
+    # --- strategy scorecard ---
+
+    def get_strategy_stats(self) -> list[dict[str, Any]]:
+        """Aggregate closed-trade performance per (strategy, direction)."""
+        sql = """
+            SELECT
+                COALESCE(strategy, 'unknown') AS strategy,
+                direction,
+                COUNT(*) AS trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins,
+                SUM(pnl) AS total_pnl,
+                AVG(pnl / (quantity * entry_price) * 100.0) AS avg_return_pct,
+                AVG(CASE WHEN pnl > 0 THEN pnl / (quantity * entry_price) * 100.0 END)
+                    AS avg_win_pct,
+                AVG(CASE WHEN pnl <= 0 THEN pnl / (quantity * entry_price) * 100.0 END)
+                    AS avg_loss_pct,
+                AVG((closed_at - opened_at) / 3600.0) AS avg_hold_hours
+            FROM paper_trades
+            WHERE status = 'closed' AND pnl IS NOT NULL
+              AND quantity > 0 AND entry_price > 0
+            GROUP BY COALESCE(strategy, 'unknown'), direction
+            ORDER BY trades DESC
+        """
+        with self._connect() as conn:
+            rows = [dict(r) for r in conn.execute(sql).fetchall()]
+        for row in rows:
+            trades = int(row["trades"] or 0)
+            wins = int(row["wins"] or 0)
+            row["trades"] = trades
+            row["wins"] = wins
+            row["win_rate_pct"] = round(wins / trades * 100.0, 1) if trades else None
+            avg_win = row.get("avg_win_pct")
+            avg_loss = row.get("avg_loss_pct")
+            row["payoff_ratio"] = (
+                round(abs(float(avg_win) / float(avg_loss)), 2)
+                if avg_win is not None and avg_loss not in (None, 0)
+                else None
+            )
+            for key in ("total_pnl", "avg_return_pct", "avg_win_pct", "avg_loss_pct", "avg_hold_hours"):
+                if row.get(key) is not None:
+                    row[key] = round(float(row[key]), 3)
+        return rows
+
+    def get_strategy_win_rate(self, strategy: str, direction: str) -> dict[str, Any]:
+        """Win rate for one strategy+direction (for confidence calibration)."""
+        sql = """
+            SELECT
+                COUNT(*) AS trades,
+                SUM(CASE WHEN pnl > 0 THEN 1 ELSE 0 END) AS wins
+            FROM paper_trades
+            WHERE status = 'closed' AND pnl IS NOT NULL
+              AND COALESCE(strategy, 'unknown') = ? AND direction = ?
+        """
+        with self._connect() as conn:
+            row = conn.execute(sql, (strategy, direction)).fetchone()
+        trades = int(row["trades"] or 0)
+        wins = int(row["wins"] or 0)
+        return {
+            "trades": trades,
+            "wins": wins,
+            "win_rate": (wins / trades) if trades else None,
+        }
 
     def get_signal_accuracy(self, days: int = 7) -> dict[str, Any]:
         """Rolling accuracy over the given window (uses 24h correctness when available)."""

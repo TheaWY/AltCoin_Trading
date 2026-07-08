@@ -12,6 +12,7 @@ from src.data.storage import Storage, get_storage
 from src.engine.analyzer import AltAnalyzer
 from src.engine.evaluation import evaluate_all
 from src.engine.paper_trader import PaperTrader
+from src.engine.regime import btc_regime
 from src.health import get_health
 from src.symbols import trading_symbols
 
@@ -127,6 +128,12 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "evaluation": evaluation,
         "alts": [_slim_alt(a) for a in alts],
         "worth_investing_count": sum(1 for a in alts if a["worth_investing"]),
+        "regime": btc_regime(storage),
+        "strategy_stats": storage.get_strategy_stats(),
+        "direction_policy": {
+            "allow_long": config.ALLOW_LONG,
+            "allow_short": config.ALLOW_SHORT,
+        },
         "portfolio": portfolio,
         "open_positions": storage.get_open_trades(),
         "recent_trades": storage.get_recent_trades(20),

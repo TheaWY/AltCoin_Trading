@@ -45,6 +45,9 @@ class LiveTrader(PaperTrader):
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return {"opened": False, "reason": "non-actionable signal"}
 
+        if not config.direction_allowed(direction):
+            return {"opened": False, "reason": f"{direction} entries disabled by policy"}
+
         if self.storage.get_open_trade_for_symbol(symbol):
             return {"opened": False, "reason": f"position already tracked for {symbol}"}
 
@@ -94,6 +97,7 @@ class LiveTrader(PaperTrader):
             return closed
 
         for trade in self.storage.get_open_trades(symbol):
+            self._update_trailing_stop(trade, current_price)
             exit_reason = self._check_exit(trade, current_price)
             if not exit_reason:
                 continue
@@ -132,12 +136,8 @@ class LiveTrader(PaperTrader):
         direction = signal_result["direction"]
         notional = quantity * current_price
 
-        if direction == SignalDirection.LONG.value:
-            stop_loss = current_price * (1 - config.STOP_LOSS_PCT)
-            take_profit = current_price * (1 + config.TAKE_PROFIT_PCT)
-        else:
-            stop_loss = current_price * (1 + config.STOP_LOSS_PCT)
-            take_profit = current_price * (1 - config.TAKE_PROFIT_PCT)
+        atr = self._atr_pct(symbol)
+        stop_loss, take_profit = self._exit_levels(direction, current_price, atr)
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
         signal_id = signal_result.get("signal_id")
@@ -162,6 +162,10 @@ class LiveTrader(PaperTrader):
                 "pnl": None,
                 "opened_at": now_ts,
                 "closed_at": None,
+                "strategy": signal_result.get("strategy"),
+                "style": signal_result.get("style"),
+                "atr_pct": atr,
+                "trail_price": current_price,
             }
         )
         self.storage.update_portfolio_cash(float(state["cash"]) - notional)

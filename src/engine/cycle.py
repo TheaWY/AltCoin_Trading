@@ -10,6 +10,7 @@ from src.data.storage import Storage, get_storage
 from src.engine.analyzer import AltAnalyzer
 from src.engine.market_compare import MarketCompare
 from src.engine.paper_trader import PaperTrader
+from src.engine.regime import btc_regime, direction_blocked
 from src.engine.signal import SignalEngine
 from src.symbols import trading_symbols
 
@@ -70,6 +71,10 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 signal_results_by_symbol[symbol] = result
                 market.register_from_signal(result)
 
+    regime = btc_regime(storage)
+    if regime.get("reason"):
+        logger.info("BTC regime filter active: %s", regime["reason"])
+
     ranked_candidates = [
         analysis
         for analysis in analyzer.analyze_all(symbols)
@@ -83,12 +88,22 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         result = signal_results_by_symbol.get(symbol)
         if not result or result.get("direction") not in ("LONG", "SHORT"):
             continue
+        if not config.direction_allowed(result["direction"]):
+            continue
+        if direction_blocked(regime, result["direction"]):
+            logger.info(
+                "Entry blocked by BTC regime: %s %s", symbol, result["direction"]
+            )
+            continue
 
         price_row = storage.get_latest_price(symbol)
         if not price_row:
             continue
         price = float(price_row["close"])
 
+        result = result | {
+            "style": "scalp" if analysis.get("recommended_style") == "short_term" else "swing",
+        }
         opened = trader.process_signal(result, price, require_worth=True)
         if opened.get("opened"):
             trades_opened += 1

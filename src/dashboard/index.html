@@ -317,6 +317,15 @@
       font-size: 13px;
     }
     .home-summary .muted { font-weight: 650; }
+    .regime-banner {
+      padding: 11px 14px;
+      font-size: 12.5px;
+      font-weight: 800;
+      border-left: 3px solid #fbbf24;
+      background: rgba(251,191,36,.08);
+      color: #fbbf24;
+    }
+    .regime-banner.risk_off { border-color: var(--neg); background: rgba(248,113,113,.08); color: var(--neg); }
     .pnl-inline { font-weight: 800; font-variant-numeric: tabular-nums; }
 
     .bottom-tabs {
@@ -365,6 +374,10 @@
     <section class="tab-page active" id="tab-home">
       <div class="section">
         <div class="panel home-summary" id="home-summary">데이터 대기 중</div>
+      </div>
+
+      <div class="section" id="regime-section" style="display:none">
+        <div class="panel regime-banner" id="regime-banner"></div>
       </div>
 
       <div class="section" id="home-positions-section" style="display:none">
@@ -433,6 +446,28 @@
             </thead>
             <tbody id="positions-body">
               <tr><td colspan="6" class="empty">오픈 포지션 없음</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">전략별 성적 (청산 완료 기준)</div>
+        <div class="panel scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>전략</th>
+                <th>방향</th>
+                <th>거래</th>
+                <th>승률</th>
+                <th>평균수익</th>
+                <th>손익비</th>
+                <th>평균보유</th>
+              </tr>
+            </thead>
+            <tbody id="strategy-stats-body">
+              <tr><td colspan="7" class="empty">청산된 거래가 쌓이면 전략별 실측 성적이 표시됩니다</td></tr>
             </tbody>
           </table>
         </div>
@@ -526,10 +561,17 @@
       return '<span class="pill hold">대기</span>';
     }
 
-    function confBadge(score) {
+    function confBadge(score, extra) {
       if (score == null) return '';
       const level = score >= 0.65 ? 'hi' : score >= 0.5 ? 'mid' : '';
-      return `<span class="conf-badge ${level}">확신 ${Math.round(num(score) * 100)}%</span>`;
+      const suffix = extra ? ` <span style="font-weight:650">· ${esc(extra)}</span>` : '';
+      return `<span class="conf-badge ${level}">확신 ${Math.round(num(score) * 100)}%${suffix}</span>`;
+    }
+
+    function verdictConfBadge(v) {
+      if (!v) return '';
+      const extra = v.calibrated ? `실측 ${v.sample_trades}전 ${v.sample_wins}승` : null;
+      return confBadge(v.score, extra);
     }
 
     function recPill(alt) {
@@ -580,6 +622,9 @@
         ['볼린저 %B', m.bollinger ? fx(m.bollinger.percent_b, 2) : '—'],
         ['MACD hist', m.macd ? fx(m.macd.hist_pct, 3) + '%' : '—'],
         ['펀딩비', m.funding_rate_pct == null ? '—' : pct(m.funding_rate_pct), tone(m.funding_rate_pct)],
+        ['미체결약정', m.open_interest_usd == null ? '—' : '$' + (m.open_interest_usd / 1e6).toFixed(0) + 'M'],
+        ['롱/숏 비율', m.long_short_ratio == null ? '—' : fx(m.long_short_ratio, 2),
+          m.long_short_ratio == null ? '' : (m.long_short_ratio > 1.5 ? 'neg' : m.long_short_ratio < 0.7 ? 'pos' : '')],
       ];
     }
 
@@ -624,7 +669,7 @@
           ${v ? stylePill(v.style) : (showWhy ? stylePill(null) : '')}
           ${v ? pill(v.direction) : ''}
           ${v ? `<span class="tag">${esc(v.strategy)}</span>` : ''}
-          ${v ? confBadge(v.score) : ''}
+          ${v ? verdictConfBadge(v) : confBadge(entry.confidence)}
           <span class="card-price">
             ${usd(m.last_price)}
             <span class="sub ${tone(m.pct_24h)}">${pct(m.pct_24h)} (24h)</span>
@@ -683,9 +728,21 @@
 
       const scalps = evaluation.filter(e => e.verdict?.style === '단타').length;
       const swings = evaluation.filter(e => e.verdict?.style === '스윙').length;
+      const policy = data.direction_policy || {};
+      const policyLabel = policy.allow_long === false ? ' · 롱 금지' : '';
       $('home-summary').innerHTML =
         `지금 진입 가능 <b>${tradable.length + invested.filter(e => e.tradable).length}</b>/${evaluation.length}` +
-        ` <span class="muted">· 단타 ${scalps} · 스윙 ${swings} · 보유 ${invested.length}</span>`;
+        ` <span class="muted">· 단타 ${scalps} · 스윙 ${swings} · 보유 ${invested.length}${policyLabel}</span>`;
+
+      const regime = data.regime || {};
+      const regimeSection = $('regime-section');
+      if (regime.reason) {
+        regimeSection.style.display = '';
+        $('regime-banner').className = 'panel regime-banner ' + (regime.state || '');
+        $('regime-banner').textContent = regime.reason;
+      } else {
+        regimeSection.style.display = 'none';
+      }
 
       const posSection = $('home-positions-section');
       if (invested.length) {
@@ -736,6 +793,26 @@
       $('open-count').textContent = `${p.open_trades ?? 0} / ${p.max_open_positions ?? '—'}`;
       $('btc-compare').className = 'metric-value ' + tone(btcDiff);
       $('btc-compare').textContent = btcDiff == null ? '—' : `${pct(btcDiffPct)} · ${krw(btcDiff)}`;
+    }
+
+    function renderStrategyStats(data) {
+      const rows = data.strategy_stats || [];
+      if (!rows.length) {
+        $('strategy-stats-body').innerHTML =
+          '<tr><td colspan="7" class="empty">청산된 거래가 쌓이면 전략별 실측 성적이 표시됩니다</td></tr>';
+        return;
+      }
+      $('strategy-stats-body').innerHTML = rows.map(s => `
+        <tr>
+          <td><span class="coin">${esc(s.strategy)}</span></td>
+          <td>${pill(s.direction)}</td>
+          <td>${s.trades}</td>
+          <td class="${s.win_rate_pct == null ? '' : (s.win_rate_pct >= 50 ? 'pos' : 'neg')}">${s.win_rate_pct == null ? '—' : s.win_rate_pct + '%'}</td>
+          <td class="${tone(s.avg_return_pct)}">${pct(s.avg_return_pct)}</td>
+          <td>${s.payoff_ratio == null ? '—' : s.payoff_ratio}</td>
+          <td>${s.avg_hold_hours == null ? '—' : (s.avg_hold_hours < 24 ? s.avg_hold_hours.toFixed(1) + 'h' : (s.avg_hold_hours / 24).toFixed(1) + 'd')}</td>
+        </tr>
+      `).join('');
     }
 
     function renderPositions(data) {
@@ -833,6 +910,7 @@
       lastData = data;
       renderHome(data);
       renderPortfolio(data);
+      renderStrategyStats(data);
       renderPositions(data);
       renderHistory(data);
       renderMarketSummary(data);

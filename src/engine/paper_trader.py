@@ -8,9 +8,12 @@ from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.engine import indicators
 from src.strategies.base import SignalDirection
 
 logger = logging.getLogger(__name__)
+
+ROUND_TRIP_COST_PCT = 2 * (config.FEE_PCT_PER_SIDE + config.SLIPPAGE_PCT_PER_SIDE)
 
 
 class PaperTrader:
@@ -74,6 +77,9 @@ class PaperTrader:
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return {"opened": False, "reason": "non-actionable signal"}
 
+        if not config.direction_allowed(direction):
+            return {"opened": False, "reason": f"{direction} entries disabled by policy"}
+
         if self.storage.get_open_trade_for_symbol(symbol):
             return {"opened": False, "reason": f"position already open for {symbol}"}
 
@@ -87,29 +93,107 @@ class PaperTrader:
     ) -> list[dict[str, Any]]:
         closed = []
         for trade in self.storage.get_open_trades(symbol):
+            self._update_trailing_stop(trade, current_price)
             exit_reason = self._check_exit(trade, current_price)
             if exit_reason:
                 closed.append(self._close_trade(trade, current_price, exit_reason))
         return closed
 
+    def _update_trailing_stop(self, trade: dict[str, Any], price: float) -> None:
+        """Ratchet the stop behind the best price seen (swing trades).
+
+        Once price has moved 1 ATR in favor, the stop trails TRAIL_ATR_MULT
+        ATRs behind the high-water mark so a winner can't round-trip to a loss.
+        """
+        if not config.TRAILING_STOP_ENABLED:
+            return
+        atr = trade.get("atr_pct")
+        if not atr:
+            return
+        atr_frac = float(atr) / 100.0
+        entry = float(trade["entry_price"])
+        best = float(trade.get("trail_price") or entry)
+        stop = float(trade["stop_loss"])
+        is_long = trade["direction"] == SignalDirection.LONG.value
+
+        updates: dict[str, Any] = {}
+        if is_long:
+            if price > best:
+                best = price
+                updates["trail_price"] = best
+            if best >= entry * (1 + atr_frac):
+                new_stop = best * (1 - config.TRAIL_ATR_MULT * atr_frac)
+                if new_stop > stop:
+                    updates["stop_loss"] = new_stop
+                    trade["stop_loss"] = new_stop
+        else:
+            if price < best:
+                best = price
+                updates["trail_price"] = best
+            if best <= entry * (1 - atr_frac):
+                new_stop = best * (1 + config.TRAIL_ATR_MULT * atr_frac)
+                if new_stop < stop:
+                    updates["stop_loss"] = new_stop
+                    trade["stop_loss"] = new_stop
+
+        if updates:
+            self.storage.update_paper_trade(int(trade["id"]), updates)
+
     def check_open_trades(self, current_price: float) -> list[dict[str, Any]]:
         """Legacy — check all open trades using one price (BTC only)."""
         return self.check_open_trades_for_symbol(config.SYMBOL, current_price)
+
+    def _atr_pct(self, symbol: str) -> float | None:
+        """1h ATR% from stored candles (basis for stops and sizing)."""
+        rows = self.storage.get_prices(symbol, limit=48, timeframe="1h")
+        if len(rows) < 15:
+            return None
+        return indicators.atr_pct(rows, period=14)
+
+    def _exit_levels(
+        self, direction: str, price: float, atr_pct: float | None
+    ) -> tuple[float, float]:
+        """ATR-scaled stop/target; falls back to fixed percents without ATR."""
+        if atr_pct:
+            stop_frac = config.ATR_STOP_MULT * atr_pct / 100.0
+            tp_frac = config.ATR_TP_MULT * atr_pct / 100.0
+        else:
+            stop_frac = config.STOP_LOSS_PCT
+            tp_frac = config.TAKE_PROFIT_PCT
+
+        if direction == SignalDirection.LONG.value:
+            return price * (1 - stop_frac), price * (1 + tp_frac)
+        return price * (1 + stop_frac), price * (1 - tp_frac)
+
+    def _position_notional(
+        self, portfolio: float, cash: float, price: float, stop_loss: float
+    ) -> float:
+        """Volatility-inverse sizing: risk a fixed fraction of the portfolio.
+
+        notional = risk_budget / stop_distance, so a coin with a 4% stop gets
+        half the size of a coin with a 2% stop. Capped by MAX_POSITION_PCT and
+        available cash.
+        """
+        stop_frac = abs(price - stop_loss) / price if price else 0.0
+        if stop_frac <= 0:
+            return 0.0
+        notional = (portfolio * config.RISK_PER_TRADE_PCT) / stop_frac
+        return max(0.0, min(notional, portfolio * config.MAX_POSITION_PCT, cash))
 
     def _open_trade(self, signal_result: dict[str, Any], current_price: float) -> dict[str, Any]:
         symbol = signal_result.get("symbol", config.SYMBOL)
         state = self.ensure_portfolio(current_price)
         portfolio = self.portfolio_value()
-        notional = portfolio * config.MAX_POSITION_PCT
-        quantity = notional / current_price
         direction = signal_result["direction"]
 
-        if direction == SignalDirection.LONG.value:
-            stop_loss = current_price * (1 - config.STOP_LOSS_PCT)
-            take_profit = current_price * (1 + config.TAKE_PROFIT_PCT)
-        else:
-            stop_loss = current_price * (1 + config.STOP_LOSS_PCT)
-            take_profit = current_price * (1 - config.TAKE_PROFIT_PCT)
+        atr = self._atr_pct(symbol)
+        stop_loss, take_profit = self._exit_levels(direction, current_price, atr)
+        notional = self._position_notional(
+            portfolio, float(state["cash"]), current_price, stop_loss
+        )
+        if notional <= 0:
+            return {"opened": False, "reason": "no cash / zero position size"}
+        quantity = notional / current_price
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
         trade_id = self.storage.insert_paper_trade(
@@ -126,6 +210,12 @@ class PaperTrader:
                 "pnl": None,
                 "opened_at": now_ts,
                 "closed_at": None,
+                "strategy": signal_result.get("strategy"),
+                "style": signal_result.get("style"),
+                "atr_pct": atr,
+                "trail_price": current_price,
+                "exit_reason": None,
+                "fees": None,
             }
         )
 
@@ -151,8 +241,9 @@ class PaperTrader:
     def _close_trade(
         self, trade: dict[str, Any], current_price: float, reason: str
     ) -> dict[str, Any]:
-        pnl = self._realized_pnl(trade, current_price)
         notional = float(trade["quantity"]) * float(trade["entry_price"])
+        fees = notional * ROUND_TRIP_COST_PCT
+        pnl = self._realized_pnl(trade, current_price) - fees
         state = self.storage.get_portfolio_state()
         cash = float(state["cash"]) if state else 0.0
         self.storage.update_portfolio_cash(cash + notional + pnl)
@@ -165,6 +256,8 @@ class PaperTrader:
                 "status": "closed",
                 "pnl": pnl,
                 "closed_at": now_ts,
+                "exit_reason": reason,
+                "fees": fees,
             },
         )
         logger.info(
@@ -190,6 +283,19 @@ class PaperTrader:
                 return "stop_loss"
             if price <= target:
                 return "take_profit"
+
+        max_hours = (
+            config.SCALP_MAX_HOLD_HOURS
+            if (trade.get("style") or "") == "scalp"
+            else config.SWING_MAX_HOLD_HOURS
+        )
+        opened_at = trade.get("opened_at")
+        if opened_at and max_hours > 0:
+            age_hours = (
+                datetime.now(timezone.utc).timestamp() - float(opened_at)
+            ) / 3600.0
+            if age_hours >= max_hours:
+                return "time_stop"
         return None
 
     def _position_value(self, trade: dict[str, Any], price: float) -> float:
