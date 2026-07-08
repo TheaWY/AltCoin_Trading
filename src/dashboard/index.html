@@ -193,7 +193,22 @@
     .card {
       border-bottom: 1px solid rgba(255,255,255,.06);
       padding: 12px 13px;
+      /* offscreen cards are skipped by the renderer — critical at 500+ coins */
+      content-visibility: auto;
+      contain-intrinsic-size: auto 180px;
     }
+    .more-btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      border: 0;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 850;
+      cursor: pointer;
+    }
+    .more-btn:active { color: var(--text); }
     .card:last-child { border-bottom: 0; }
     .card-head {
       display: flex;
@@ -523,8 +538,8 @@
       ].join('');
     }
 
-    function metricDetails(m) {
-      const rows = [
+    function metricGridRows(m) {
+      return [
         ['24h 수익률', pct(m.pct_24h), tone(m.pct_24h)],
         ['7d 수익률', pct(m.pct_7d), tone(m.pct_7d)],
         ['30d 수익률', pct(m.pct_30d), tone(m.pct_30d)],
@@ -546,19 +561,35 @@
         ['MACD hist', m.macd ? fx(m.macd.hist_pct, 3) + '%' : '—'],
         ['펀딩비', m.funding_rate_pct == null ? '—' : pct(m.funding_rate_pct), tone(m.funding_rate_pct)],
       ];
-      const cells = rows.map(([label, value, cls]) => `
+    }
+
+    // Metric grids are built only when a card's details element is opened —
+    // rendering 20 hidden cells x 500+ coins up front crashes mobile Chrome.
+    const metricsBySymbol = new Map();
+
+    function metricDetails(entry) {
+      return `
+        <details class="metric-details" data-symbol="${esc(entry.symbol)}">
+          <summary>전체 지표 보기</summary>
+          <div class="metric-grid"></div>
+        </details>
+      `;
+    }
+
+    document.addEventListener('toggle', event => {
+      const details = event.target;
+      if (!details.classList?.contains('metric-details') || !details.open) return;
+      const grid = details.querySelector('.metric-grid');
+      if (grid.childElementCount) return;
+      const m = metricsBySymbol.get(details.dataset.symbol);
+      if (!m) return;
+      grid.innerHTML = metricGridRows(m).map(([label, value, cls]) => `
         <div class="metric">
           <div class="metric-label">${esc(label)}</div>
           <div class="metric-value ${cls || ''}">${esc(value)}</div>
         </div>
       `).join('');
-      return `
-        <details class="metric-details">
-          <summary>전체 지표 보기</summary>
-          <div class="metric-grid">${cells}</div>
-        </details>
-      `;
-    }
+    }, true);
 
     function evalCard(entry, { showWhy = false } = {}) {
       const m = entry.metrics || {};
@@ -599,14 +630,31 @@
           ${reason}
           ${why}
           <div class="chips">${keyChips(m)}</div>
-          ${metricDetails(m)}
+          ${metricDetails(entry)}
         </div>
       `;
+    }
+
+    // Incremental rendering: show PAGE_SIZE cards per section, load more on tap.
+    const PAGE_SIZE = 30;
+    const shown = { tradable: PAGE_SIZE, waiting: PAGE_SIZE, market: 100 };
+    let lastData = null;
+
+    function renderSection(el, entries, count, key, opts) {
+      const visible = entries.slice(0, count);
+      let html = visible.map(e => evalCard(e, opts)).join('');
+      if (entries.length > count) {
+        html += `<button class="more-btn" type="button" data-more="${key}">더 보기 (${entries.length - count}개 남음)</button>`;
+      }
+      el.innerHTML = html;
     }
 
     function renderHome(data) {
       const evaluation = data.evaluation || [];
       if (!evaluation.length) return;
+
+      metricsBySymbol.clear();
+      evaluation.forEach(e => metricsBySymbol.set(e.symbol, e.metrics || {}));
 
       const invested = evaluation.filter(e => e.has_position);
       const tradable = evaluation.filter(e => !e.has_position && e.tradable);
@@ -626,14 +674,26 @@
         posSection.style.display = 'none';
       }
 
-      $('home-tradable').innerHTML = tradable.length
-        ? tradable.map(e => evalCard(e)).join('')
-        : '<div class="empty">지금 진입할 만한 셋업 없음 — 아래 이유 참고</div>';
+      if (tradable.length) {
+        renderSection($('home-tradable'), tradable, shown.tradable, 'tradable');
+      } else {
+        $('home-tradable').innerHTML = '<div class="empty">지금 진입할 만한 셋업 없음 — 아래 이유 참고</div>';
+      }
 
-      $('home-waiting').innerHTML = waiting.length
-        ? waiting.map(e => evalCard(e, { showWhy: true })).join('')
-        : '<div class="empty">모든 코인 진입 가능</div>';
+      if (waiting.length) {
+        renderSection($('home-waiting'), waiting, shown.waiting, 'waiting', { showWhy: true });
+      } else {
+        $('home-waiting').innerHTML = '<div class="empty">모든 코인 진입 가능</div>';
+      }
     }
+
+    document.addEventListener('click', event => {
+      const key = event.target?.dataset?.more;
+      if (!key || !lastData) return;
+      shown[key] += key === 'market' ? 200 : 60;
+      if (key === 'market') renderMarketTable(lastData);
+      else renderHome(lastData);
+    });
 
     // ---------- PORTFOLIO ----------
 
@@ -731,7 +791,7 @@
         $('market-body').innerHTML = '<tr><td colspan="7" class="empty">마켓 데이터 없음</td></tr>';
         return;
       }
-      $('market-body').innerHTML = rows.map(alt => `
+      let html = rows.slice(0, shown.market).map(alt => `
         <tr class="${alt.worth_investing ? 'hot' : ''}">
           <td><span class="coin">${esc(alt.base || alt.symbol)}</span><span class="sub">${esc(alt.symbol)}</span></td>
           <td>${usd(alt.price)}</td>
@@ -742,9 +802,14 @@
           <td>${confidence(alt.confidence)}</td>
         </tr>
       `).join('');
+      if (rows.length > shown.market) {
+        html += `<tr><td colspan="7" style="padding:0"><button class="more-btn" type="button" data-more="market">더 보기 (${rows.length - shown.market}개 남음)</button></td></tr>`;
+      }
+      $('market-body').innerHTML = html;
     }
 
     function render(data) {
+      lastData = data;
       renderHome(data);
       renderPortfolio(data);
       renderPositions(data);

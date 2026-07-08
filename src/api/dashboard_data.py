@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from typing import Any
@@ -24,6 +25,50 @@ _cache: dict[str, Any] = {"payload": None, "built_at": 0.0}
 def invalidate_payload_cache() -> None:
     _cache["payload"] = None
     _cache["built_at"] = 0.0
+
+
+def _round_floats(obj: Any, sig_digits: int = 6) -> Any:
+    """Round every float to N significant digits.
+
+    Raw floats serialize with 17 digits ("-0.6800081715001535"); with hundreds
+    of symbols that multiplies payload size ~3x for no informational value.
+    Significant (not decimal) digits keep sub-cent coin prices intact.
+    """
+    if isinstance(obj, float):
+        if obj == 0.0 or not math.isfinite(obj):
+            return obj
+        return round(obj, max(0, sig_digits - 1 - int(math.floor(math.log10(abs(obj))))))
+    if isinstance(obj, dict):
+        return {k: _round_floats(v, sig_digits) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_round_floats(v, sig_digits) for v in obj]
+    return obj
+
+
+# Only the fields the dashboard actually renders — the analyzer's full output
+# (nested short_term/swing/signal dicts) is dead weight at 500+ symbols.
+_ALT_FIELDS = (
+    "symbol",
+    "base",
+    "price",
+    "pct_24h",
+    "funding_rate",
+    "funding_rate_pct",
+    "direction",
+    "worth_investing",
+    "recommended_style",
+    "recommended_action",
+    "confidence",
+    "volume_spike",
+    "has_position",
+    "total_pnl",
+)
+
+
+def _slim_alt(alt: dict[str, Any]) -> dict[str, Any]:
+    slim = {key: alt.get(key) for key in _ALT_FIELDS}
+    slim["investment"] = alt.get("investment") if alt.get("has_position") else {}
+    return slim
 
 
 def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
@@ -73,41 +118,15 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         )
     )
 
-    holdings_list = [holdings[s] | {"symbol": s, "base": s.split("/")[0]} for s in symbols]
-    holdings_list.sort(
-        key=lambda h: (0 if h["status"] == "open" else 1, -abs(h.get("total_pnl") or 0))
-    )
-
     btc = storage.get_latest_price(config.SYMBOL)
     btc_price = float(btc["close"]) if btc else None
     portfolio = trader.summary(btc_price) if btc_price else {}
 
-    recommendations = [
-        {
-            "symbol": a["symbol"],
-            "base": a["base"],
-            "recommended_action": a["recommended_action"],
-            "recommended_style": a["recommended_style"],
-            "confidence": a["confidence"],
-            "direction": a["direction"],
-            "short_term": a["short_term"],
-            "swing": a["swing"],
-            "price": a["price"],
-            "worth_investing": a["worth_investing"],
-            "already_invested": a["has_position"],
-        }
-        for a in alts
-        if a["worth_investing"] and not a["has_position"]
-    ]
-
-    return {
+    payload = {
         "symbols_tracked": len(symbols),
         "evaluation": evaluation,
-        "alts": alts,
-        "holdings": holdings_list,
+        "alts": [_slim_alt(a) for a in alts],
         "worth_investing_count": sum(1 for a in alts if a["worth_investing"]),
-        "worth_investing": [a for a in alts if a["worth_investing"]],
-        "recommendations": recommendations,
         "portfolio": portfolio,
         "open_positions": storage.get_open_trades(),
         "recent_trades": storage.get_recent_trades(20),
@@ -115,3 +134,4 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": get_health().get_status(),
     }
+    return _round_floats(payload)
