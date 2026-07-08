@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from typing import Any
 
 from src import config
@@ -13,7 +15,34 @@ from src.health import get_health
 from src.symbols import trading_symbols
 
 
+# With hundreds of symbols a payload build costs many queries; cache it and
+# let a finished trading cycle (new data) invalidate the cache explicitly.
+_cache_lock = threading.Lock()
+_cache: dict[str, Any] = {"payload": None, "built_at": 0.0}
+
+
+def invalidate_payload_cache() -> None:
+    _cache["payload"] = None
+    _cache["built_at"] = 0.0
+
+
 def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
+    now = time.monotonic()
+    cached = _cache["payload"]
+    if cached is not None and now - _cache["built_at"] < config.DASHBOARD_CACHE_SECONDS:
+        return cached
+
+    with _cache_lock:
+        cached = _cache["payload"]
+        if cached is not None and now - _cache["built_at"] < config.DASHBOARD_CACHE_SECONDS:
+            return cached
+        payload = _build_alts_payload_uncached(storage)
+        _cache["payload"] = payload
+        _cache["built_at"] = time.monotonic()
+        return payload
+
+
+def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, Any]:
     storage = storage or get_storage()
     analyzer = AltAnalyzer(storage)
     trader = PaperTrader(storage)

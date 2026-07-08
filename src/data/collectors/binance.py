@@ -58,12 +58,13 @@ class BinanceCollector:
         self,
         timeframe: str | None = None,
         limit: int | None = None,
+        timeframes: list[str] | None = None,
     ) -> list[dict[str, Any]] | dict[str, list[dict[str, Any]]]:
         """Fetch OHLCV candles and persist raw rows to the prices table."""
         if timeframe is None and self.timeframe is None:
             return {
                 tf: self._collect_ohlcv_for_timeframe(tf, limit)
-                for tf in config.OHLCV_TIMEFRAMES
+                for tf in (timeframes or config.OHLCV_TIMEFRAMES)
             }
 
         return self._collect_ohlcv_for_timeframe(
@@ -125,13 +126,17 @@ class BinanceCollector:
         )
         return row
 
-    def collect_all(self, funding_row: dict[str, Any] | None = None) -> dict[str, Any]:
+    def collect_all(
+        self,
+        funding_row: dict[str, Any] | None = None,
+        timeframes: list[str] | None = None,
+    ) -> dict[str, Any]:
         """Run all Binance collectors in one pass.
 
         `funding_row` lets run_collection() pass a rate that was already
         fetched in the batch call, skipping the per-symbol request.
         """
-        ohlcv = self.collect_ohlcv()
+        ohlcv = self.collect_ohlcv(timeframes=timeframes)
         funding = funding_row if funding_row is not None else self.collect_funding_rate()
         return {"ohlcv": ohlcv, "funding_rate": funding}
 
@@ -199,10 +204,17 @@ def _collect_funding_batch(
 
 
 def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
-    """Collect OHLCV + funding for all configured symbols."""
-    from src.symbols import ccxt_symbol, trading_symbols
+    """Collect OHLCV + funding for all configured symbols.
+
+    Core symbols (the static TRADING_SYMBOLS list) get every configured
+    timeframe; the extended auto-discovered universe gets 1h only, which is
+    all the evaluation metrics need — this keeps the request count sane with
+    hundreds of symbols.
+    """
+    from src.symbols import ccxt_symbol, core_symbols, trading_symbols
 
     symbols = symbols or trading_symbols()
+    core = set(core_symbols())
     exchange = _build_exchange()
     storage = get_storage()
     results: dict[str, Any] = {}
@@ -217,7 +229,10 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
                 symbol=spot,
                 futures_symbol=ccxt_symbol(spot),
             )
-            results[spot] = collector.collect_all(funding_row=funding_batch.get(spot))
+            results[spot] = collector.collect_all(
+                funding_row=funding_batch.get(spot),
+                timeframes=None if spot in core else ["1h"],
+            )
         except Exception:
             logger.exception("Collection failed for %s", spot)
             results[spot] = {"error": True}

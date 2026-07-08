@@ -254,6 +254,7 @@ def evaluate_all(
         key=lambda r: (
             0 if r["tradable"] else 1,
             -(r["verdict"]["score"] if r["verdict"] else 0.0),
+            -(r["metrics"].get("dollar_volume_24h") or 0.0),
         )
     )
     return results

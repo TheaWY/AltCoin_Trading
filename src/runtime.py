@@ -22,6 +22,10 @@ def trading_cycle() -> None:
     logger.info("Trading cycle started")
     result = run_trading_cycle()
 
+    from src.api.dashboard_data import invalidate_payload_cache
+
+    invalidate_payload_cache()
+
     try:
         loop = asyncio.new_event_loop()
         loop.run_until_complete(broadcast_snapshot())

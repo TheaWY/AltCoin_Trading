@@ -256,24 +256,40 @@ class Storage:
             database_url if database_url is not None else config.DATABASE_URL
         )
         self.is_postgres = bool(self.database_url)
+        self._pg_pool: Any = None
         if not self.is_postgres:
             self.db_path = Path(db_path or config.DATABASE_PATH)
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
+    def _pool(self) -> Any:
+        """Lazily created psycopg connection pool (per-op connects are too slow)."""
+        if self._pg_pool is None:
+            from psycopg.rows import dict_row
+            from psycopg_pool import ConnectionPool
+
+            self._pg_pool = ConnectionPool(
+                self.database_url,
+                min_size=1,
+                max_size=5,
+                kwargs={"row_factory": dict_row},
+                open=True,
+            )
+        return self._pg_pool
+
     @contextmanager
     def _connect(self) -> Generator[_Connection, None, None]:
         if self.is_postgres:
-            import psycopg
-            from psycopg.rows import dict_row
+            # the pool's context manager commits on success / rolls back on error
+            with self._pool().connection() as conn:
+                yield _Connection(conn, True)
+            return
 
-            conn = psycopg.connect(self.database_url, row_factory=dict_row)
-        else:
-            conn = sqlite3.connect(self.db_path)
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA foreign_keys = ON")
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
         try:
-            yield _Connection(conn, self.is_postgres)
+            yield _Connection(conn, False)
             conn.commit()
         except Exception:
             conn.rollback()

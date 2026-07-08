@@ -74,12 +74,22 @@ BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() in ("true", "1", 
 SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
 CCXT_SYMBOL = os.getenv("CCXT_SYMBOL", "BTC/USDT:USDT")  # perpetual futures
 
-# Multi-symbol universe (comma-separated spot pairs)
+# Multi-symbol universe.
+# SYMBOL_UNIVERSE=auto (default): discover every active Binance USDT perpetual
+# at runtime, ranked by 24h dollar volume. TRADING_SYMBOLS then acts as the
+# core list (gets full multi-timeframe collection) and the fallback when
+# discovery fails. SYMBOL_UNIVERSE=static: track only TRADING_SYMBOLS.
+SYMBOL_UNIVERSE = os.getenv("SYMBOL_UNIVERSE", "auto").strip().lower()
+# 0 = no cap (all discovered symbols); set e.g. 100 to track only the top 100.
+TRADING_SYMBOLS_LIMIT = int(os.getenv("TRADING_SYMBOLS_LIMIT", "0"))
 _default_alts = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,DOGE/USDT,ADA/USDT,AVAX/USDT,LINK/USDT,DOT/USDT"
 TRADING_SYMBOLS = [
     s.strip() for s in os.getenv("TRADING_SYMBOLS", _default_alts).split(",") if s.strip()
 ]
 MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
+# Dashboard payload is expensive with hundreds of symbols; serve a cached
+# build for this many seconds (a finished trading cycle invalidates it).
+DASHBOARD_CACHE_SECONDS = int(os.getenv("DASHBOARD_CACHE_SECONDS", "45"))
 
 # --- Analysis thresholds (not hardcoded in analyzer) ---
 MOMENTUM_24H_STRONG_PCT = float(os.getenv("MOMENTUM_24H_STRONG_PCT", "3.0"))

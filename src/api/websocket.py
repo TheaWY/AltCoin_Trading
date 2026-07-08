@@ -56,13 +56,19 @@ async def broadcast_snapshot() -> None:
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await manager.connect(websocket)
+    # The payload cache returns the same object until new data invalidates it,
+    # so identity comparison tells us when a resend is actually needed.
+    last_sent_id: int | None = None
     try:
-        await websocket.send_json(build_snapshot())
         while True:
+            snapshot = await asyncio.to_thread(build_snapshot)
+            if id(snapshot) != last_sent_id:
+                await websocket.send_json(snapshot)
+                last_sent_id = id(snapshot)
             try:
                 await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
             except asyncio.TimeoutError:
-                await websocket.send_json(build_snapshot())
+                continue
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as exc:
