@@ -24,10 +24,13 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 STREAM_URL = "wss://fstream.binance.com/stream?streams=!miniTicker@arr"
-REST_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"
+REST_24H_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"  # weight 40
+REST_PRICE_URL = "https://fapi.binance.com/fapi/v1/ticker/price"  # weight 2
 BROADCAST_INTERVAL_SECONDS = 0.25
 IDLE_SLEEP_SECONDS = 3.0
-REST_POLL_SECONDS = 5.0
+FAST_POLL_SECONDS = 1.0
+OPEN_REFRESH_SECONDS = 60.0
+REST_ERROR_BACKOFF_SECONDS = 5.0
 WS_RETRY_AFTER_SECONDS = 120.0
 MAX_WATCHED_SYMBOLS = 400
 SUBSCRIBE_CHUNK = 100
@@ -41,6 +44,9 @@ class PriceRelay:
         self.dirty: set[str] = set()
         # /ws client -> symbols it currently displays (drives aggTrade subs)
         self.watchers: dict[Any, set[str]] = {}
+        # True only while the upstream websocket actually delivers data;
+        # the REST poller stands down during that time.
+        self.ws_streaming = False
 
     # ----- client watch lists -----
 
@@ -96,6 +102,17 @@ class PriceRelay:
         if symbol:
             self._set_price(symbol, price)
 
+    def ingest_price_list(self, rows: list[dict[str, Any]]) -> None:
+        """Lightweight /ticker/price payload — price only, pct from cached opens."""
+        for row in rows:
+            symbol = row.get("symbol")
+            if not symbol or not symbol.endswith("USDT"):
+                continue
+            try:
+                self._set_price(symbol, float(row.get("price")))
+            except (TypeError, ValueError):
+                continue
+
     # ----- upstream websocket -----
 
     async def _sync_subscriptions(self, ws: Any, subscribed: set[str], next_id: list[int]) -> None:
@@ -121,68 +138,95 @@ class PriceRelay:
     async def _stream_websocket(self, manager: Any) -> None:
         import websockets
 
-        async with websockets.connect(
-            STREAM_URL, ping_interval=20, max_size=2**22
-        ) as ws:
-            logger.info("Price relay: connected to upstream stream")
-            subscribed: set[str] = set()
-            next_id = [1]
-            while True:
-                if not manager.active:
-                    return  # nobody watching — drop the upstream connection
-                await self._sync_subscriptions(ws, subscribed, next_id)
-                # The all-market stream pushes every second; a silent socket
-                # means a half-open/blocked connection, so treat it as dead.
-                raw = await asyncio.wait_for(ws.recv(), timeout=30)
-                message = json.loads(raw)
-                if not isinstance(message, dict):
-                    continue
-                data = message.get("data")
-                if isinstance(data, list):
-                    self.ingest(data)
-                elif isinstance(data, dict) and data.get("e") == "aggTrade":
-                    self.ingest_trade(data)
+        try:
+            async with websockets.connect(
+                STREAM_URL, ping_interval=20, max_size=2**22
+            ) as ws:
+                subscribed: set[str] = set()
+                next_id = [1]
+                while True:
+                    if not manager.active:
+                        return  # nobody watching — drop the upstream connection
+                    await self._sync_subscriptions(ws, subscribed, next_id)
+                    # The all-market stream pushes every second; a silent socket
+                    # means a half-open/blocked connection, so treat it as dead.
+                    raw = await asyncio.wait_for(ws.recv(), timeout=30)
+                    message = json.loads(raw)
+                    if not isinstance(message, dict):
+                        continue
+                    data = message.get("data")
+                    if isinstance(data, list):
+                        self.ingest(data)
+                    elif isinstance(data, dict) and data.get("e") == "aggTrade":
+                        self.ingest_trade(data)
+                    if not self.ws_streaming:
+                        self.ws_streaming = True
+                        logger.info("Price relay: upstream websocket is delivering data")
+        finally:
+            self.ws_streaming = False
 
     # ----- REST fallback -----
 
-    def _rest_poll(self) -> list[dict[str, Any]]:
+    def _rest_get(self, url: str) -> list[dict[str, Any]]:
         import urllib.request
 
-        request = urllib.request.Request(REST_URL, headers={"User-Agent": "Mozilla/5.0"})
+        request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(request, timeout=10) as response:
             return json.loads(response.read())
+
+    async def _rest_poll_loop(self, manager: Any) -> None:
+        """1s price polling whenever the websocket isn't delivering data.
+
+        Uses the cheap /ticker/price endpoint (weight 2) each second and the
+        heavier /ticker/24hr (weight 40) once a minute for 24h opens, staying
+        far below Binance's 2400 weight/min budget.
+        """
+        opens_refreshed_at = 0.0
+        while True:
+            if not manager.active or self.ws_streaming:
+                await asyncio.sleep(IDLE_SLEEP_SECONDS)
+                continue
+            try:
+                now = time.monotonic()
+                if now - opens_refreshed_at >= OPEN_REFRESH_SECONDS:
+                    self.ingest(await asyncio.to_thread(self._rest_get, REST_24H_URL))
+                    opens_refreshed_at = now
+                else:
+                    self.ingest_price_list(
+                        await asyncio.to_thread(self._rest_get, REST_PRICE_URL)
+                    )
+                await asyncio.sleep(FAST_POLL_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.warning("Price relay REST poll failed: %s", exc)
+                await asyncio.sleep(REST_ERROR_BACKOFF_SECONDS)
 
     # ----- main loops -----
 
     async def run(self, manager: Any) -> None:
         """Long-running task: keep prices flowing while dashboard clients exist."""
         broadcast_task = asyncio.create_task(self._broadcast_loop(manager))
-        next_ws_attempt = 0.0
+        rest_task = asyncio.create_task(self._rest_poll_loop(manager))
         try:
             while True:
                 if not manager.active:
                     await asyncio.sleep(IDLE_SLEEP_SECONDS)
                     continue
-                if time.monotonic() >= next_ws_attempt:
-                    try:
-                        await self._stream_websocket(manager)
-                        continue
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as exc:
-                        logger.warning(
-                            "Price relay websocket unavailable (%r) — REST fallback", exc
-                        )
-                        next_ws_attempt = time.monotonic() + WS_RETRY_AFTER_SECONDS
                 try:
-                    self.ingest(await asyncio.to_thread(self._rest_poll))
+                    await self._stream_websocket(manager)
+                except asyncio.CancelledError:
+                    raise
                 except Exception as exc:
-                    logger.warning("Price relay REST fallback failed: %s", exc)
-                await asyncio.sleep(REST_POLL_SECONDS)
+                    logger.warning(
+                        "Price relay websocket unavailable (%r) — REST keeps polling", exc
+                    )
+                    await asyncio.sleep(WS_RETRY_AFTER_SECONDS)
         except asyncio.CancelledError:
             pass
         finally:
             broadcast_task.cancel()
+            rest_task.cancel()
 
     async def _broadcast_loop(self, manager: Any) -> None:
         while True:
