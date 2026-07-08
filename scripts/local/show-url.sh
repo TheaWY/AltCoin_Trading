@@ -14,6 +14,6 @@ if url:
     print(f"Phone dashboard: {url}/dashboard")
     print(f"Status: {d.get('status')} (app pid {d.get('pid')})")
 else:
-    print("Ngrok URL not set. Run: ./scripts/restart.sh")
+    print("Ngrok URL not set. Run: ./scripts/local/restart.sh")
     print(f"Local only: http://localhost:{port}/dashboard")
 PY

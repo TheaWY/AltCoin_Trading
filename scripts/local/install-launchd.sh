@@ -2,7 +2,7 @@
 # Install and start launchd services for 24/7 operation.
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 LABEL_APP="com.altcoin.trading"
 LABEL_HEALTH="com.altcoin.trading.health"
 AGENTS_DIR="$HOME/Library/LaunchAgents"
@@ -17,7 +17,7 @@ fi
 if [[ "$PROJECT_DIR" == "$HOME/Desktop/"* ]]; then
   echo "⚠️  Project is on Desktop — macOS blocks launchd from accessing Desktop files."
   echo "   Choose one fix before relying on 24/7 auto-start:"
-  echo "   1. Move project:  mv '$PROJECT_DIR' '$HOME/AltCoin_Trading' && cd '$HOME/AltCoin_Trading' && ./scripts/install-launchd.sh"
+  echo "   1. Move project:  mv '$PROJECT_DIR' '$HOME/AltCoin_Trading' && cd '$HOME/AltCoin_Trading' && ./scripts/local/install-launchd.sh"
   echo "   2. Grant Full Disk Access to /bin/bash in System Settings → Privacy & Security"
   echo ""
 fi
@@ -32,14 +32,14 @@ render_plist() {
 
 echo "Installing LaunchAgents..."
 
-render_plist "$PROJECT_DIR/launchd/com.altcoin.trading.plist.template" \
+render_plist "$PROJECT_DIR/scripts/local/launchd/com.altcoin.trading.plist.template" \
   "$AGENTS_DIR/${LABEL_APP}.plist"
 
-render_plist "$PROJECT_DIR/launchd/com.altcoin.trading.health.plist.template" \
+render_plist "$PROJECT_DIR/scripts/local/launchd/com.altcoin.trading.health.plist.template" \
   "$AGENTS_DIR/${LABEL_HEALTH}.plist"
 
 chmod +x "$PROJECT_DIR/scripts/health_check.py"
-chmod +x "$PROJECT_DIR/scripts/start-trading.sh"
+chmod +x "$PROJECT_DIR/scripts/local/start-trading.sh"
 
 # Unload if already loaded (ignore errors)
 launchctl bootout "gui/$(id -u)/${LABEL_APP}" 2>/dev/null || true
@@ -56,8 +56,8 @@ launchctl kickstart -k "gui/$(id -u)/${LABEL_APP}"
 launchctl kickstart -k "gui/$(id -u)/${LABEL_HEALTH}"
 
 # GitHub auto-sync (optional — commits & pushes every 3 min)
-if [[ -x "$PROJECT_DIR/scripts/install-gitsync.sh" ]]; then
-  "$PROJECT_DIR/scripts/install-gitsync.sh" || echo "⚠️  Git sync install failed (see logs/git-sync.log)"
+if [[ -x "$PROJECT_DIR/scripts/local/install-gitsync.sh" ]]; then
+  "$PROJECT_DIR/scripts/local/install-gitsync.sh" || echo "⚠️  Git sync install failed (see logs/git-sync.log)"
 fi
 
 echo ""

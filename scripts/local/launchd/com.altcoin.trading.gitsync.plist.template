@@ -8,7 +8,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>__PROJECT_DIR__/scripts/git-sync.sh</string>
+        <string>__PROJECT_DIR__/scripts/local/git-sync.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>__PROJECT_DIR__</string>

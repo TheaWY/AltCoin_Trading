@@ -6,3 +6,4 @@ numpy>=2.0.0,<2.2
 apscheduler>=3.10.0,<4
 python-dotenv>=1.0.0,<2
 aiosqlite>=0.20.0,<0.23
+psycopg[binary]>=3.2.0,<4

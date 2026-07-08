@@ -1,9 +1,15 @@
-"""SQLite read/write abstraction — swap this module to migrate to Postgres later."""
+"""Storage layer — SQLite by default, Postgres when DATABASE_URL is set.
+
+All queries are written once in SQLite style; `_translate_sql` rewrites the
+placeholders and the handful of dialect-specific expressions for Postgres so
+the rest of the codebase never needs to care which backend is active.
+"""
 
 from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -97,26 +103,177 @@ CREATE TABLE IF NOT EXISTS portfolio_state (
 );
 """
 
+PG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS prices (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    timeframe TEXT NOT NULL DEFAULT '1h',
+    open DOUBLE PRECISION NOT NULL,
+    high DOUBLE PRECISION NOT NULL,
+    low DOUBLE PRECISION NOT NULL,
+    close DOUBLE PRECISION NOT NULL,
+    volume DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(symbol, timestamp, timeframe)
+);
+
+CREATE TABLE IF NOT EXISTS funding_rates (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    funding_rate DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(symbol, timestamp)
+);
+
+CREATE TABLE IF NOT EXISTS signals (
+    id BIGSERIAL PRIMARY KEY,
+    strategy TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    direction TEXT NOT NULL,
+    reason TEXT,
+    entry_price DOUBLE PRECISION,
+    funding_rate DOUBLE PRECISION,
+    metadata TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS paper_trades (
+    id BIGSERIAL PRIMARY KEY,
+    signal_id BIGINT REFERENCES signals(id),
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    entry_price DOUBLE PRECISION NOT NULL,
+    exit_price DOUBLE PRECISION,
+    quantity DOUBLE PRECISION NOT NULL,
+    stop_loss DOUBLE PRECISION,
+    take_profit DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'open',
+    pnl DOUBLE PRECISION,
+    opened_at BIGINT NOT NULL,
+    closed_at BIGINT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS market_outcomes (
+    id BIGSERIAL PRIMARY KEY,
+    signal_id BIGINT NOT NULL REFERENCES signals(id),
+    symbol TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    entry_price DOUBLE PRECISION NOT NULL,
+    price_1h DOUBLE PRECISION,
+    price_4h DOUBLE PRECISION,
+    price_24h DOUBLE PRECISION,
+    correct_1h INTEGER,
+    correct_4h INTEGER,
+    correct_24h INTEGER,
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts ON prices(symbol, timeframe, timestamp);
+CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
+CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
+CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
+
+CREATE TABLE IF NOT EXISTS portfolio_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    cash DOUBLE PRECISION NOT NULL,
+    benchmark_btc_price DOUBLE PRECISION,
+    benchmark_started_at BIGINT,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+"""
+
+_NAMED_PARAM_RE = re.compile(r"(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)")
+
+
+def _translate_sql(sql: str) -> str:
+    """Rewrite a SQLite-style statement for Postgres/psycopg."""
+    add_on_conflict = "INSERT OR IGNORE INTO" in sql
+    sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+    sql = sql.replace("datetime('now', ?)", "(now() + (?)::interval)")
+    sql = sql.replace("datetime('now')", "now()")
+    sql = _NAMED_PARAM_RE.sub(r"%(\1)s", sql)
+    sql = sql.replace("?", "%s")
+    if add_on_conflict:
+        sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+    return sql
+
+
+class _ExecManyResult:
+    def __init__(self, rowcount: int) -> None:
+        self.rowcount = rowcount
+
+
+class _Connection:
+    """Uniform execute/executemany over sqlite3 and psycopg connections."""
+
+    def __init__(self, raw: Any, is_postgres: bool) -> None:
+        self.raw = raw
+        self.is_postgres = is_postgres
+
+    def _sql(self, sql: str) -> str:
+        return _translate_sql(sql) if self.is_postgres else sql
+
+    def execute(self, sql: str, params: Any = ()) -> Any:
+        return self.raw.execute(self._sql(sql), params)
+
+    def executemany(self, sql: str, rows: Any) -> Any:
+        if self.is_postgres:
+            # psycopg's executemany does not report affected rows reliably;
+            # loop with execute (auto-prepared after a few runs) and sum.
+            translated = self._sql(sql)
+            affected = 0
+            cursor = None
+            for row in rows:
+                cursor = self.raw.execute(translated, row)
+                affected += max(cursor.rowcount, 0)
+            return _ExecManyResult(affected)
+        return self.raw.executemany(sql, rows)
+
+    def insert_returning_id(self, sql: str, params: Any) -> int:
+        if self.is_postgres:
+            cursor = self.execute(sql.rstrip().rstrip(";") + " RETURNING id", params)
+            return int(cursor.fetchone()["id"])
+        return int(self.execute(sql, params).lastrowid)
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 class Storage:
-    """SQLite storage layer with a simple connection-per-operation pattern."""
+    """Connection-per-operation storage over SQLite or Postgres."""
 
-    def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or config.DATABASE_PATH)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+    def __init__(
+        self,
+        db_path: Path | str | None = None,
+        database_url: str | None = None,
+    ) -> None:
+        self.database_url = (
+            database_url if database_url is not None else config.DATABASE_URL
+        )
+        self.is_postgres = bool(self.database_url)
+        if not self.is_postgres:
+            self.db_path = Path(db_path or config.DATABASE_PATH)
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_schema()
 
     @contextmanager
-    def _connect(self) -> Generator[sqlite3.Connection, None, None]:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON")
+    def _connect(self) -> Generator[_Connection, None, None]:
+        if self.is_postgres:
+            import psycopg
+            from psycopg.rows import dict_row
+
+            conn = psycopg.connect(self.database_url, row_factory=dict_row)
+        else:
+            conn = sqlite3.connect(self.db_path)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA foreign_keys = ON")
         try:
-            yield conn
+            yield _Connection(conn, self.is_postgres)
             conn.commit()
         except Exception:
             conn.rollback()
@@ -125,11 +282,18 @@ class Storage:
             conn.close()
 
     def _init_schema(self) -> None:
+        if self.is_postgres:
+            with self._connect() as conn:
+                for statement in PG_SCHEMA.split(";"):
+                    if statement.strip():
+                        conn.raw.execute(statement)
+            return
+
         with self._connect() as conn:
-            conn.executescript(SCHEMA)
-            self._migrate_prices_timeframe(conn)
-            conn.execute("DROP INDEX IF EXISTS idx_prices_symbol_ts")
-            conn.execute(
+            conn.raw.executescript(SCHEMA)
+            self._migrate_prices_timeframe(conn.raw)
+            conn.raw.execute("DROP INDEX IF EXISTS idx_prices_symbol_ts")
+            conn.raw.execute(
                 "CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts "
                 "ON prices(symbol, timeframe, timestamp)"
             )
@@ -191,6 +355,8 @@ class Storage:
             prepared = dict(row)
             prepared.setdefault("timeframe", timeframe)
             prepared_rows.append(prepared)
+        if not prepared_rows:
+            return 0
         sql = """
             INSERT OR IGNORE INTO prices
                 (symbol, timestamp, timeframe, open, high, low, close, volume)
@@ -287,6 +453,9 @@ class Storage:
     # --- funding rates ---
 
     def insert_funding_rates(self, rows: Iterable[dict[str, Any]]) -> int:
+        rows = list(rows)
+        if not rows:
+            return 0
         sql = """
             INSERT OR IGNORE INTO funding_rates
                 (symbol, timestamp, funding_rate)
@@ -294,7 +463,7 @@ class Storage:
                 (:symbol, :timestamp, :funding_rate)
         """
         with self._connect() as conn:
-            cursor = conn.executemany(sql, list(rows))
+            cursor = conn.executemany(sql, rows)
             return cursor.rowcount
 
     def get_latest_funding_rate(self, symbol: str) -> dict[str, Any] | None:
@@ -358,8 +527,7 @@ class Storage:
                  :entry_price, :funding_rate, :metadata)
         """
         with self._connect() as conn:
-            cursor = conn.execute(sql, row)
-            return int(cursor.lastrowid)
+            return conn.insert_returning_id(sql, row)
 
     def get_recent_signals(self, limit: int = 50) -> list[dict[str, Any]]:
         sql = """
@@ -411,8 +579,7 @@ class Storage:
                  :opened_at, :closed_at)
         """
         with self._connect() as conn:
-            cursor = conn.execute(sql, row)
-            return int(cursor.lastrowid)
+            return conn.insert_returning_id(sql, row)
 
     def get_open_trades(self, symbol: str | None = None) -> list[dict[str, Any]]:
         if symbol:
@@ -497,8 +664,7 @@ class Storage:
                  :correct_1h, :correct_4h, :correct_24h)
         """
         with self._connect() as conn:
-            cursor = conn.execute(sql, row)
-            return int(cursor.lastrowid)
+            return conn.insert_returning_id(sql, row)
 
     def get_market_outcome_by_signal(self, signal_id: int) -> dict[str, Any] | None:
         sql = "SELECT * FROM market_outcomes WHERE signal_id = ? LIMIT 1"
@@ -510,7 +676,7 @@ class Storage:
         if not fields:
             return
         columns = ", ".join(f"{key} = ?" for key in fields)
-        sql = f"UPDATE market_outcomes SET {fields and columns} WHERE id = ?"
+        sql = f"UPDATE market_outcomes SET {columns} WHERE id = ?"
         with self._connect() as conn:
             conn.execute(sql, (*fields.values(), outcome_id))
 

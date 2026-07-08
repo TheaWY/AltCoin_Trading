@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from src.strategies.base import BaseStrategy
 from src.strategies.funding_rate import FundingRateStrategy
+from src.strategies.momentum import MomentumStrategy
+from src.strategies.volume_spike import VolumeSpikeStrategy
 
 _REGISTRY: dict[str, type[BaseStrategy]] = {
     FundingRateStrategy.name: FundingRateStrategy,
+    MomentumStrategy.name: MomentumStrategy,
+    VolumeSpikeStrategy.name: VolumeSpikeStrategy,
 }
 
 

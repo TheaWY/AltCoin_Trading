@@ -2,7 +2,7 @@
 # Auto-commit and push local changes to GitHub (respects .gitignore).
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$PROJECT_DIR"
 LOG_FILE="$PROJECT_DIR/logs/git-sync.log"
 

@@ -16,9 +16,13 @@ def _env_bool(name: str, default: bool) -> bool:
         return default
     return raw.lower() in ("true", "1", "yes", "on")
 
-# --- Paths ---
+# --- Paths / database ---
 DATA_DIR = Path(os.getenv("DATA_DIR", str(_PROJECT_ROOT / "data")))
 DATABASE_PATH = Path(os.getenv("DATABASE_PATH", DATA_DIR / "trading.db"))
+# When set (e.g. by Railway's Postgres plugin), storage uses Postgres instead
+# of the SQLite file above. Postgres survives redeploys and can be shared by
+# the web and worker services.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 # --- API server ---
 API_HOST = os.getenv("API_HOST", "0.0.0.0")
@@ -102,12 +106,12 @@ OHLCV_TIMEFRAMES = [
 ]
 OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
 OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "100"))
-# Keep cloud web deployments purely HTTP by default. Run the trading loop in a
-# separate worker/service, or set RUN_TRADING_SCHEDULER=true intentionally.
-RUN_TRADING_SCHEDULER = _env_bool(
-    "RUN_TRADING_SCHEDULER",
-    default=not is_cloud_runtime(),
-)
+# The scheduler runs in a background thread and never blocks the web server,
+# so it is on by default everywhere — a single Railway service collects data
+# out of the box. When you add a dedicated worker service
+# (scripts/start-worker.sh), set RUN_TRADING_SCHEDULER=false on the web
+# service to split the roles.
+RUN_TRADING_SCHEDULER = _env_bool("RUN_TRADING_SCHEDULER", default=True)
 
 # --- Funding Rate Reversal strategy thresholds ---
 # Rates are expressed as decimals (0.001 = 0.1%)
@@ -122,7 +126,23 @@ STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))
 TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "0.06"))
 
 # --- Strategy ---
+# ACTIVE_STRATEGIES: comma-separated list. The first entry is the primary
+# strategy that drives trades; the others also record signals every cycle so
+# their accuracy can be compared on real data before promoting one.
 ACTIVE_STRATEGY = os.getenv("ACTIVE_STRATEGY", "funding_rate")
+ACTIVE_STRATEGIES = [
+    s.strip()
+    for s in os.getenv("ACTIVE_STRATEGIES", ACTIVE_STRATEGY).split(",")
+    if s.strip()
+]
+PRIMARY_STRATEGY = ACTIVE_STRATEGIES[0]
+
+# --- Momentum strategy thresholds ---
+MOMENTUM_ENTRY_PCT = float(os.getenv("MOMENTUM_ENTRY_PCT", "3.0"))
+
+# --- Volume spike strategy thresholds ---
+VOLUME_SPIKE_RATIO = float(os.getenv("VOLUME_SPIKE_RATIO", "2.0"))
+VOLUME_SPIKE_MIN_CANDLES = int(os.getenv("VOLUME_SPIKE_MIN_CANDLES", "12"))
 
 # --- Market comparison ---
 MARKET_COMPARE_HORIZONS_HOURS = (1, 4, 24)

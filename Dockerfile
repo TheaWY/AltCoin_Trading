@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 COPY main.py .
 COPY src ./src/
 COPY scripts/start-web.sh ./scripts/start-web.sh
+COPY scripts/start-worker.sh ./scripts/start-worker.sh
 
 ENV PYTHONUNBUFFERED=1
 ENV DEPLOYMENT_MODE=cloud
@@ -29,6 +30,6 @@ RUN mkdir -p /data
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
-    CMD sh -c 'curl -sf "http://127.0.0.1:${PORT:-8000}/api/health" || exit 1'
+    CMD sh -c 'curl -sf "http://127.0.0.1:${PORT:-8000}/healthz" || exit 1'
 
 CMD ["bash", "scripts/start-web.sh"]

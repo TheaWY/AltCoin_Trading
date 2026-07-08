@@ -12,7 +12,7 @@ fi
 
 LOCK_DIR="${TMPDIR:-/tmp}/altcoin-trading-restart.lock.d"
 if ! mkdir "$LOCK_DIR" 2>/dev/null; then
-  echo "Another restart is in progress — wait and run ./scripts/show-url.sh"
+  echo "Another restart is in progress — wait and run ./scripts/local/show-url.sh"
   exit 0
 fi
 trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT
@@ -71,7 +71,7 @@ if [[ -n "$NGROK" ]]; then
   if [[ "$NGROK_LIVE" == "yes" || "$PUB" == "200" ]]; then
     echo "Tunnel: OK"
   else
-    echo "Warning: tunnel not confirmed (public HTTP $PUB) — run ./scripts/show-url.sh in ~10s"
+    echo "Warning: tunnel not confirmed (public HTTP $PUB) — run ./scripts/local/show-url.sh in ~10s"
     tail -5 logs/ngrok.log 2>/dev/null || true
   fi
 elif [[ -n "$URL" ]]; then
