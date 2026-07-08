@@ -9,6 +9,7 @@ before emitting actionable signals.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 from src import config
 
@@ -29,6 +30,14 @@ def min_notional() -> float:
 
 
 def account_capital() -> float:
+    """Capital used by cost gates.
+
+    The legacy app default is 10,000. For research strategy filtering, default to
+    the paper's target size (730 USDT) unless PAPER_STARTING_CAPITAL is explicitly
+    provided by the environment.
+    """
+    if os.getenv("PAPER_STARTING_CAPITAL") is None:
+        return 730.0
     return float(getattr(config, "PAPER_STARTING_CAPITAL", 730.0))
 
 
