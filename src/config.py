@@ -142,6 +142,7 @@ MEANREV_BB_STD = float(os.getenv("MEANREV_BB_STD", "2.0"))
 CARRY_ENTRY_RATE = float(os.getenv("CARRY_ENTRY_RATE", "0.0001"))
 CARRY_ENTRY_CONSECUTIVE = int(os.getenv("CARRY_ENTRY_CONSECUTIVE", "6"))
 CARRY_EXIT_RATE = float(os.getenv("CARRY_EXIT_RATE", "0.00005"))
+CARRY_EXIT_CONSECUTIVE = int(os.getenv("CARRY_EXIT_CONSECUTIVE", "3"))
 CARRY_MIN_HOLD_SETTLEMENTS = int(os.getenv("CARRY_MIN_HOLD_SETTLEMENTS", "21"))
 # spot taker in+out (0.1% x2) + futures taker in+out (0.05% x2) = 0.30% notional
 CARRY_FEE_ROUNDTRIP = float(os.getenv("CARRY_FEE_ROUNDTRIP", "0.003"))

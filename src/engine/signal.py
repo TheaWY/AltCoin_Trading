@@ -82,6 +82,7 @@ class SignalEngine:
             "direction": signal.direction.value,
             "reason": signal.reason,
             "entry_price": signal.entry_price,
+            "metadata": signal.metadata,
             "symbol": signal.symbol,
             "timestamp": now_ts,
         }
