@@ -102,6 +102,10 @@ API_PORT = int(
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() in ("true", "1", "yes")
+# Paper trading should use real public market data even when live orders stay
+# disabled/testnet. Binance futures testnet often lacks real alt history, which
+# produces 0/48 candle cards on the dashboard.
+BINANCE_MARKET_DATA_TESTNET = _env_bool("BINANCE_MARKET_DATA_TESTNET", default=False)
 
 # Default trading pair (legacy / BTC focus)
 SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
