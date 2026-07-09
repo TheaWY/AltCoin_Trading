@@ -5,252 +5,79 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>실험 — 자기교정 리서치</title>
 <style>
-  :root {
-    --bg:#05070b; --panel:#0f141c; --panel-2:#151b24; --line:#252d3a;
-    --text:#eef3f8; --muted:#8a94a3; --up:#f04452; --down:#2878ff;
-    --green:#2fd27d; --amber:#f0b84f;
-  }
-  * { box-sizing:border-box; }
-  body { margin:0; background:var(--bg); color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    font-size:14px; line-height:1.4; padding:14px 12px 90px; }
-  h1 { font-size:18px; margin:4px 0 2px; }
-  .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
-  .card { background:var(--panel); border:1px solid var(--line);
-    border-radius:12px; padding:12px; margin-bottom:14px; }
-  .card h2 { font-size:14px; margin:0 0 10px; display:flex;
-    justify-content:space-between; align-items:center; }
-  .pill { font-size:11px; padding:2px 8px; border-radius:999px;
-    border:1px solid var(--line); color:var(--muted); }
-  table { width:100%; border-collapse:collapse; font-size:12px;
-    font-variant-numeric:tabular-nums; }
-  th,td { text-align:right; padding:5px 6px; border-bottom:1px solid var(--line); }
-  th:first-child, td:first-child { text-align:left; }
-  th { color:var(--muted); font-weight:500; }
-  .scroll { overflow-x:auto; }
-  .pos { color:var(--green); } .neg { color:var(--up); } .mut { color:var(--muted); }
-  .feed-item { padding:8px 0; border-bottom:1px solid var(--line);
-    display:flex; gap:8px; align-items:baseline; }
-  .feed-item:last-child { border-bottom:none; }
-  .feed-time { color:var(--muted); font-size:11px; white-space:nowrap;
-    font-variant-numeric:tabular-nums; }
-  .badge { font-size:10px; padding:1px 7px; border-radius:999px; white-space:nowrap; }
-  .b-green { background:rgba(47,210,125,.15); color:var(--green); }
-  .b-red { background:rgba(240,68,82,.15); color:var(--up); }
-  .b-amber { background:rgba(240,184,79,.15); color:var(--amber); }
-  .b-mut { background:var(--panel-2); color:var(--muted); }
-  .feed-detail { color:var(--muted); font-size:11.5px; word-break:break-all; }
-  .kv { display:flex; flex-wrap:wrap; gap:8px 16px; font-size:12px; }
-  .kv div span { color:var(--muted); margin-right:5px; }
-  .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
-  .stat { background:var(--panel-2); border-radius:10px; padding:10px;
-    text-align:center; }
-  .stat .v { font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; }
-  .stat .k { font-size:10.5px; color:var(--muted); margin-top:2px; }
-  button.danger { background:transparent; border:1px solid var(--up);
-    color:var(--up); border-radius:8px; padding:6px 12px; font-size:12px; }
-  .back { position:fixed; bottom:0; left:0; right:0; background:var(--panel);
-    border-top:1px solid var(--line); padding:12px; text-align:center; }
-  .back a { color:var(--text); text-decoration:none; font-size:13px; }
-  details summary { cursor:pointer; color:var(--muted); font-size:11.5px; }
-  .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%;
-    background:var(--green); margin-right:5px; animation:blink 2s infinite; }
-  @keyframes blink { 50% { opacity:.3; } }
+  :root {--bg:#05070b; --panel:#0f141c; --panel-2:#151b24; --line:#252d3a; --text:#eef3f8; --muted:#8a94a3; --up:#f04452; --down:#2878ff; --green:#2fd27d; --amber:#f0b84f;}
+  * { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:14px; line-height:1.4; padding:14px 12px 90px; }
+  h1 { font-size:18px; margin:4px 0 2px; } .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:14px; }
+  .card h2 { font-size:14px; margin:0 0 10px; display:flex; justify-content:space-between; align-items:center; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:12px; font-variant-numeric:tabular-nums; }
+  th,td { text-align:right; padding:5px 6px; border-bottom:1px solid var(--line); } th:first-child, td:first-child { text-align:left; } th { color:var(--muted); font-weight:500; }
+  .scroll { overflow-x:auto; } .pos { color:var(--green); } .neg { color:var(--up); } .mut { color:var(--muted); }
+  .feed-item { padding:8px 0; border-bottom:1px solid var(--line); display:flex; gap:8px; align-items:baseline; } .feed-item:last-child { border-bottom:none; }
+  .feed-time { color:var(--muted); font-size:11px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .badge { font-size:10px; padding:1px 7px; border-radius:999px; white-space:nowrap; } .b-green { background:rgba(47,210,125,.15); color:var(--green); } .b-red { background:rgba(240,68,82,.15); color:var(--up); } .b-amber { background:rgba(240,184,79,.15); color:var(--amber); } .b-mut { background:var(--panel-2); color:var(--muted); }
+  .feed-detail { color:var(--muted); font-size:11.5px; word-break:break-all; } .kv { display:flex; flex-wrap:wrap; gap:8px 16px; font-size:12px; } .kv div span { color:var(--muted); margin-right:5px; }
+  .stat-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; } .stat { background:var(--panel-2); border-radius:10px; padding:10px; text-align:center; } .stat .v { font-size:17px; font-weight:600; font-variant-numeric:tabular-nums; } .stat .k { font-size:10.5px; color:var(--muted); margin-top:2px; }
+  button.danger { background:transparent; border:1px solid var(--up); color:var(--up); border-radius:8px; padding:6px 12px; font-size:12px; }
+  .back { position:fixed; bottom:0; left:0; right:0; background:var(--panel); border-top:1px solid var(--line); padding:12px; text-align:center; } .back a { color:var(--text); text-decoration:none; font-size:13px; }
+  details summary { cursor:pointer; color:var(--muted); font-size:11.5px; } .live-dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:5px; animation:blink 2s infinite; } @keyframes blink { 50% { opacity:.3; } }
 </style>
 </head>
 <body>
   <h1><span class="live-dot"></span>실험 — 자기교정 리서치</h1>
   <div class="sub">시스템이 방금 무엇을, 왜 결정했는지 · 15초마다 갱신 · <span id="updated" class="mut"></span></div>
 
-  <div class="card">
-    <h2>상태 <span class="pill" id="champion-pill">챔피언: 기본 설정</span></h2>
-    <div class="stat-grid" id="stats"></div>
-    <details style="margin-top:8px"><summary>현재 적용 중인 오버라이드</summary>
-      <pre id="overrides" style="font-size:11px;color:var(--muted);white-space:pre-wrap"></pre>
-    </details>
-  </div>
+  <div class="card"><h2>상태 <span class="pill" id="champion-pill">챔피언: 기본 설정</span></h2><div class="stat-grid" id="stats"></div><details style="margin-top:8px"><summary>현재 적용 중인 오버라이드</summary><pre id="overrides" style="font-size:11px;color:var(--muted);white-space:pre-wrap"></pre></details></div>
 
-  <div class="card">
-    <h2>결정 피드 <span class="pill">최근 50건</span></h2>
-    <div id="feed"><div class="mut">불러오는 중…</div></div>
-  </div>
+  <div class="card"><h2>시장 카테고리 <span class="pill" id="category-pill">30분 주기</span></h2><div class="stat-grid" id="category-stats"></div><div class="scroll" style="margin-top:10px"><table id="category-table"><thead><tr><th>category</th><th>symbols</th></tr></thead><tbody></tbody></table></div><details style="margin-top:8px"><summary>최근 카테고리 이동</summary><div id="category-transitions"></div></details><div class="mut" style="font-size:11px;margin-top:6px">Mac mini가 30분마다 OHLCV + funding + tick-bar burst를 보고 coin type을 갱신합니다. trade_allowed=false 카테고리는 새 진입 후보에서 제외됩니다.</div></div>
 
-  <div class="card">
-    <h2>과적합 감시 <span class="pill">DSR · PBO · 시행예산</span></h2>
-    <div class="kv" id="overfit"></div>
-    <div class="mut" style="font-size:11px;margin-top:6px">
-      PBO &gt; 0.5 = in-sample 선택이 반예측적(과적합 기계). 시행예산 = 이 데이터 길이로 통계적으로 허용되는 config 수(MinBTL 역산).
-    </div>
-  </div>
+  <div class="card"><h2>결정 피드 <span class="pill">최근 50건</span></h2><div id="feed"><div class="mut">불러오는 중…</div></div></div>
 
-  <div class="card">
-    <h2>분산 효과 <span class="pill">유효 breadth</span></h2>
-    <div id="corr"></div>
-    <div class="mut" style="font-size:11px;margin-top:6px">
-      IR = IC × √breadth. 셋업 간 상관이 높으면 명목 셋업 수보다 실제 베팅 수가 작다 — 상관 낮은 셋업 추가가 유일한 공짜 점심.
-    </div>
-  </div>
+  <div class="card"><h2>과적합 감시 <span class="pill">DSR · PBO · 시행예산</span></h2><div class="kv" id="overfit"></div><div class="mut" style="font-size:11px;margin-top:6px">PBO &gt; 0.5 = in-sample 선택이 반예측적(과적합 기계). 시행예산 = 이 데이터 길이로 통계적으로 허용되는 config 수.</div></div>
 
-  <div class="card">
-    <h2>실험 테이블 <span class="pill" id="exp-count"></span></h2>
-    <div class="scroll"><table id="experiments">
-      <thead><tr><th>hash</th><th>상태</th><th>거래</th><th>기대값</th><th>PF</th><th>윈도우+</th><th>net</th><th>수수료</th></tr></thead>
-      <tbody></tbody>
-    </table></div>
-  </div>
+  <div class="card"><h2>분산 효과 <span class="pill">유효 breadth</span></h2><div id="corr"></div><div class="mut" style="font-size:11px;margin-top:6px">IR = IC × √breadth. 셋업 간 상관이 높으면 명목 셋업 수보다 실제 베팅 수가 작다.</div></div>
 
-  <div class="card">
-    <h2>신호 검증 (이벤트 스터디) <span class="pill">최근 실행</span></h2>
-    <div class="scroll"><table id="eventstudy">
-      <thead><tr><th>신호</th><th>h</th><th>레짐</th><th>n</th><th>효과</th><th>판정</th></tr></thead>
-      <tbody></tbody>
-    </table></div>
-  </div>
+  <div class="card"><h2>실험 테이블 <span class="pill" id="exp-count"></span></h2><div class="scroll"><table id="experiments"><thead><tr><th>hash</th><th>상태</th><th>거래</th><th>기대값</th><th>PF</th><th>윈도우+</th><th>net</th><th>수수료</th></tr></thead><tbody></tbody></table></div></div>
 
-  <div class="card">
-    <h2>승격/롤백 히스토리</h2>
-    <div id="promotions"></div>
-    <button class="danger" onclick="manualRollback()" style="margin-top:10px">수동 롤백 (이전 설정 복원)</button>
-  </div>
+  <div class="card"><h2>신호 검증 (이벤트 스터디) <span class="pill">최근 실행</span></h2><div class="scroll"><table id="eventstudy"><thead><tr><th>신호</th><th>h</th><th>레짐</th><th>n</th><th>효과</th><th>판정</th></tr></thead><tbody></tbody></table></div></div>
 
+  <div class="card"><h2>승격/롤백 히스토리</h2><div id="promotions"></div><button class="danger" onclick="manualRollback()" style="margin-top:10px">수동 롤백 (이전 설정 복원)</button></div>
   <div class="back"><a href="/dashboard">← 대시보드로</a></div>
 
 <script>
 const fmt = (v, d=2) => v == null ? '–' : Number(v).toFixed(d);
 const cls = v => v > 0 ? 'pos' : (v < 0 ? 'neg' : 'mut');
-const ago = ts => {
-  const s = Math.floor(Date.now()/1000 - ts);
-  if (s < 60) return s + '초 전';
-  if (s < 3600) return Math.floor(s/60) + '분 전';
-  if (s < 86400) return Math.floor(s/3600) + '시간 전';
-  return Math.floor(s/86400) + '일 전';
-};
-const ACTION_LABEL = {
-  experiment_started: ['실험 시작', 'b-mut'],
-  experiment_done: ['실험 완료', 'b-green'],
-  experiment_failed: ['실험 실패', 'b-red'],
-  gate1_blocked: ['게이트1 차단', 'b-amber'],
-  gate_dsr_blocked: ['DSR 차단', 'b-amber'],
-  gate2_blocked: ['게이트2 차단', 'b-amber'],
-  promoted: ['승격', 'b-green'],
-  rolled_back: ['롤백', 'b-red'],
-  decay_flagged: ['감쇠 경고', 'b-red'],
-  trial_budget_refused: ['시행예산 초과', 'b-red'],
-};
-
-async function jget(url) {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(url);
-  return r.json();
+const ago = ts => { const s = Math.floor(Date.now()/1000 - ts); if (s < 60) return s + '초 전'; if (s < 3600) return Math.floor(s/60) + '분 전'; if (s < 86400) return Math.floor(s/3600) + '시간 전'; return Math.floor(s/86400) + '일 전'; };
+const ACTION_LABEL = {experiment_started:['실험 시작','b-mut'],experiment_done:['실험 완료','b-green'],experiment_failed:['실험 실패','b-red'],gate1_blocked:['게이트1 차단','b-amber'],gate_dsr_blocked:['DSR 차단','b-amber'],gate2_blocked:['게이트2 차단','b-amber'],promoted:['승격','b-green'],rolled_back:['롤백','b-red'],decay_flagged:['감쇠 경고','b-red'],trial_budget_refused:['시행예산 초과','b-red']};
+async function jget(url) { const r = await fetch(url); if (!r.ok) throw new Error(url); return r.json(); }
+function renderCategories(cat) {
+  document.getElementById('category-pill').textContent = cat.latest_ts ? `age ${Math.round((cat.age_seconds||0)/60)}m` : '대기';
+  document.getElementById('category-stats').innerHTML = `<div class="stat"><div class="v">${cat.symbols||0}</div><div class="k">분류됨</div></div><div class="stat"><div class="v">${cat.trade_allowed||0}</div><div class="k">trade allowed</div></div><div class="stat"><div class="v">${cat.blocked||0}</div><div class="k">blocked</div></div>`;
+  const counts = cat.counts || {};
+  document.querySelector('#category-table tbody').innerHTML = Object.entries(counts).map(([k,v])=>`<tr><td>${k}</td><td>${v}</td></tr>`).join('') || '<tr><td colspan="2" class="mut">카테고리 미실행</td></tr>';
+  const trans = cat.recent_transitions || [];
+  document.getElementById('category-transitions').innerHTML = trans.length ? trans.slice(0,30).map(t=>`<div class="feed-item"><span class="feed-time">${ago(t.to_ts)}</span><span class="badge b-amber">${t.symbol}</span><span class="feed-detail">${t.from_category||'none'} → ${t.to_category} · ${t.reason||''}</span></div>`).join('') : '<div class="mut">최근 이동 없음</div>';
 }
-
 async function refresh() {
   try {
-    const [sum, feed, exps, es, promos, corr, ofit] = await Promise.all([
-      jget('/api/research/summary'), jget('/api/research/decisions?limit=50'),
-      jget('/api/research/experiments?limit=60'), jget('/api/research/event-study'),
-      jget('/api/research/promotions?limit=20'), jget('/api/research/correlation'),
-      jget('/api/research/overfit'),
-    ]);
-
+    const [sum, feed, exps, es, promos, corr, ofit, cat] = await Promise.all([jget('/api/research/summary'), jget('/api/research/decisions?limit=50'), jget('/api/research/experiments?limit=60'), jget('/api/research/event-study'), jget('/api/research/promotions?limit=20'), jget('/api/research/correlation'), jget('/api/research/overfit'), jget('/api/research/categories/summary')]);
     const q = sum.queue || {};
-    document.getElementById('stats').innerHTML = `
-      <div class="stat"><div class="v">${q.queued||0}</div><div class="k">대기</div></div>
-      <div class="stat"><div class="v">${q.done||0}</div><div class="k">완료</div></div>
-      <div class="stat"><div class="v">${q.failed||0}</div><div class="k">실패</div></div>`;
-    document.getElementById('overrides').textContent =
-      JSON.stringify(sum.active_overrides || {}, null, 2);
-    document.getElementById('champion-pill').textContent =
-      Object.keys(sum.active_overrides||{}).length
-        ? '챔피언: 승격된 설정' : '챔피언: 기본 설정';
-
-    document.getElementById('feed').innerHTML = feed.length ? feed.map(d => {
-      const [label, badge] = ACTION_LABEL[d.action] || [d.action, 'b-mut'];
-      const detail = typeof d.detail === 'string' ? d.detail
-        : Object.entries(d.detail||{}).map(([k,v]) =>
-            `${k}=${typeof v==='object'?JSON.stringify(v):v}`).join(' · ');
-      return `<div class="feed-item">
-        <span class="feed-time">${ago(d.ts)}</span>
-        <span class="badge ${badge}">${label}</span>
-        <span>
-          ${d.subject ? `<code style="font-size:11px">${d.subject.slice(0,10)}</code> ` : ''}
-          <span class="feed-detail">${detail}</span>
-        </span></div>`;
-    }).join('') : '<div class="mut">아직 결정 없음 — 야간 배치(01:00) 이후 채워짐</div>';
-
-    const tbody = document.querySelector('#experiments tbody');
-    document.getElementById('exp-count').textContent = exps.length + '건';
-    tbody.innerHTML = exps.map(e => {
-      const a = e.aggregate || {};
-      const win = a.window_count ? `${a.positive_windows}/${a.window_count}` : '–';
-      return `<tr>
-        <td><code style="font-size:11px">${e.config_hash.slice(0,8)}</code>${e.is_champion_baseline?' 👑':''}</td>
-        <td class="${e.status==='done'?'pos':(e.status==='failed'?'neg':'mut')}">${e.status}</td>
-        <td>${a.trade_count ?? '–'}</td>
-        <td class="${cls(a.expectancy)}">${fmt(a.expectancy,4)}</td>
-        <td>${fmt(a.profit_factor)}</td><td>${win}</td>
-        <td class="${cls(a.total_pnl)}">${fmt(a.total_pnl)}</td>
-        <td class="mut">${fmt(a.total_fees)}</td></tr>`;
-    }).join('');
-
-    document.querySelector('#eventstudy tbody').innerHTML = es
-      .filter(r => r.regime === 'all' || r.verdict === 'context')
-      .map(r => `<tr>
-        <td>${r.signal}</td><td>${r.horizon_h}h</td><td class="mut">${r.regime}</td>
-        <td>${r.n_events}</td>
-        <td class="${cls(r.effect)}">${(r.effect*100).toFixed(2)}%</td>
-        <td>${r.verdict==='PASS' ? '<span class="badge b-green">PASS</span>'
-             : r.verdict==='fail' ? '<span class="badge b-mut">fail</span>'
-             : '<span class="badge b-mut">'+r.verdict+'</span>'}</td></tr>`)
-      .join('') || '<tr><td colspan="6" class="mut">이벤트 스터디 미실행</td></tr>';
-
-    const b = corr.breadth || {};
-    let matrixHtml = '';
-    const names = Object.keys(corr.matrix || {});
-    if (names.length >= 2) {
-      matrixHtml = '<div class="scroll"><table><thead><tr><th></th>' +
-        names.map(n=>`<th>${n.slice(0,10)}</th>`).join('') + '</tr></thead><tbody>' +
-        names.map(a=>`<tr><td>${a.slice(0,12)}</td>` +
-          names.map(x=>{
-            const v = corr.matrix[a][x];
-            const warn = a!==x && Math.abs(v) > 0.6;
-            return `<td class="${warn?'neg':'mut'}">${fmt(v)}</td>`;
-          }).join('') + '</tr>').join('') + '</tbody></table></div>';
-    }
-    document.getElementById('corr').innerHTML = `
-      <div class="kv" style="margin-bottom:8px">
-        <div><span>셋업 수</span>${b.n ?? '–'}</div>
-        <div><span>평균 상관</span>${fmt(b.avg_corr)}</div>
-        <div><span>유효 breadth</span><b>${b.effective_breadth ?? '–'}</b></div>
-      </div>${matrixHtml || '<div class="mut" style="font-size:12px">셋업 2개 이상의 청산 거래가 쌓이면 상관행렬이 나타남</div>'}`;
-
-    const pbo = (ofit.pbo || {});
-    document.getElementById('overfit').innerHTML = `
-      <div><span>완료 실험 수(N)</span>${ofit.trials_done ?? 0}</div>
-      <div><span>PBO</span>${pbo.pbo >= 0 ? `<b class="${pbo.pbo>0.5?'neg':'pos'}">${fmt(pbo.pbo)}</b>` : `–(config ${pbo.configs||0}개, 8개 필요)`}</div>`;
-
-    document.getElementById('promotions').innerHTML = promos.length ? promos.map(p => `
-      <div class="feed-item">
-        <span class="feed-time">${ago(p.created_at)}</span>
-        <span class="badge ${p.action==='promote'?'b-green':'b-red'}">${p.action==='promote'?'승격':'롤백'}</span>
-        <span class="feed-detail">${(p.reason||'').slice(0,140)}</span>
-      </div>`).join('') : '<div class="mut">승격/롤백 이력 없음</div>';
-
-    document.getElementById('updated').textContent =
-      '마지막 갱신 ' + new Date().toLocaleTimeString('ko-KR');
-  } catch (e) {
-    document.getElementById('updated').textContent = 'API 연결 실패 — 워커 실행 중인지 확인';
-  }
+    document.getElementById('stats').innerHTML = `<div class="stat"><div class="v">${q.queued||0}</div><div class="k">대기</div></div><div class="stat"><div class="v">${q.done||0}</div><div class="k">완료</div></div><div class="stat"><div class="v">${q.failed||0}</div><div class="k">실패</div></div>`;
+    document.getElementById('overrides').textContent = JSON.stringify(sum.active_overrides || {}, null, 2);
+    document.getElementById('champion-pill').textContent = Object.keys(sum.active_overrides||{}).length ? '챔피언: 승격된 설정' : '챔피언: 기본 설정';
+    renderCategories(cat);
+    document.getElementById('feed').innerHTML = feed.length ? feed.map(d => { const [label,badge] = ACTION_LABEL[d.action] || [d.action,'b-mut']; const detail = typeof d.detail === 'string' ? d.detail : Object.entries(d.detail||{}).map(([k,v]) => `${k}=${typeof v==='object'?JSON.stringify(v):v}`).join(' · '); return `<div class="feed-item"><span class="feed-time">${ago(d.ts)}</span><span class="badge ${badge}">${label}</span><span>${d.subject ? `<code style="font-size:11px">${d.subject.slice(0,10)}</code> ` : ''}<span class="feed-detail">${detail}</span></span></div>`; }).join('') : '<div class="mut">아직 결정 없음 — 야간 배치(01:00) 이후 채워짐</div>';
+    const tbody = document.querySelector('#experiments tbody'); document.getElementById('exp-count').textContent = exps.length + '건'; tbody.innerHTML = exps.map(e => { const a=e.aggregate||{}; const win=a.window_count?`${a.positive_windows}/${a.window_count}`:'–'; return `<tr><td><code style="font-size:11px">${e.config_hash.slice(0,8)}</code>${e.is_champion_baseline?' 👑':''}</td><td class="${e.status==='done'?'pos':(e.status==='failed'?'neg':'mut')}">${e.status}</td><td>${a.trade_count ?? '–'}</td><td class="${cls(a.expectancy)}">${fmt(a.expectancy,4)}</td><td>${fmt(a.profit_factor)}</td><td>${win}</td><td class="${cls(a.total_pnl)}">${fmt(a.total_pnl)}</td><td class="mut">${fmt(a.total_fees)}</td></tr>`; }).join('');
+    document.querySelector('#eventstudy tbody').innerHTML = es.filter(r=>r.regime==='all'||r.verdict==='context').map(r=>`<tr><td>${r.signal}</td><td>${r.horizon_h}h</td><td class="mut">${r.regime}</td><td>${r.n_events}</td><td class="${cls(r.effect)}">${(r.effect*100).toFixed(2)}%</td><td>${r.verdict==='PASS'?'<span class="badge b-green">PASS</span>':'<span class="badge b-mut">'+r.verdict+'</span>'}</td></tr>`).join('') || '<tr><td colspan="6" class="mut">이벤트 스터디 미실행</td></tr>';
+    const b = corr.breadth || {}; document.getElementById('corr').innerHTML = `<div class="kv"><div><span>셋업 수</span>${b.n ?? '–'}</div><div><span>평균 상관</span>${fmt(b.avg_corr)}</div><div><span>유효 breadth</span><b>${b.effective_breadth ?? '–'}</b></div></div>`;
+    const pbo = ofit.pbo || {}; document.getElementById('overfit').innerHTML = `<div><span>완료 실험 수(N)</span>${ofit.trials_done ?? 0}</div><div><span>PBO</span>${pbo.pbo >= 0 ? `<b class="${pbo.pbo>0.5?'neg':'pos'}">${fmt(pbo.pbo)}</b>` : `–(config ${pbo.configs||0}개, 8개 필요)`}</div>`;
+    document.getElementById('promotions').innerHTML = promos.length ? promos.map(p=>`<div class="feed-item"><span class="feed-time">${ago(p.created_at)}</span><span class="badge ${p.action==='promote'?'b-green':'b-red'}">${p.action==='promote'?'승격':'롤백'}</span><span class="feed-detail">${(p.reason||'').slice(0,140)}</span></div>`).join('') : '<div class="mut">승격/롤백 이력 없음</div>';
+    document.getElementById('updated').textContent = '마지막 갱신 ' + new Date().toLocaleTimeString('ko-KR');
+  } catch (e) { document.getElementById('updated').textContent = 'API 연결 실패 — 워커 실행 중인지 확인'; }
 }
-
-async function manualRollback() {
-  if (!confirm('이전 챔피언 설정으로 되돌립니다. 진행할까요?')) return;
-  await fetch('/api/research/rollback', { method: 'POST' });
-  refresh();
-}
-
-refresh();
-setInterval(refresh, 15000);
+async function manualRollback() { if (!confirm('이전 챔피언 설정으로 되돌립니다. 진행할까요?')) return; await fetch('/api/research/rollback', { method:'POST' }); refresh(); }
+refresh(); setInterval(refresh,15000);
 </script>
 </body>
 </html>
