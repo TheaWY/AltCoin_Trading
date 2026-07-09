@@ -64,6 +64,14 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         if row:
             trader.check_open_trades_for_symbol(sym, float(row["close"]))
 
+    data_health: dict[str, Any] = {"healthy": True, "action": "ok to trade"}
+    try:
+        from src.research.data_quality import verdict as data_health_verdict
+
+        data_health = data_health_verdict()
+    except Exception:
+        logger.exception("Data health check failed")
+
     signals_run = 0
     trades_opened = 0
     signal_results_by_symbol: dict[str, dict[str, Any]] = {}
@@ -92,30 +100,36 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     ranked_candidates.sort(key=lambda analysis: analysis["confidence"], reverse=True)
     ranked_candidates = ranked_candidates[: config.MAX_OPEN_POSITIONS]
 
-    for analysis in ranked_candidates:
-        symbol = analysis["symbol"]
-        result = signal_results_by_symbol.get(symbol)
-        if not result or result.get("direction") not in ("LONG", "SHORT"):
-            continue
-        if not config.direction_allowed(result["direction"]):
-            continue
-        if direction_blocked(regime, result["direction"]):
-            logger.info(
-                "Entry blocked by BTC regime: %s %s", symbol, result["direction"]
-            )
-            continue
+    if not data_health.get("healthy", True):
+        logger.warning(
+            "Skipping new entries this cycle — %s",
+            data_health.get("action", "data unhealthy"),
+        )
+    else:
+        for analysis in ranked_candidates:
+            symbol = analysis["symbol"]
+            result = signal_results_by_symbol.get(symbol)
+            if not result or result.get("direction") not in ("LONG", "SHORT"):
+                continue
+            if not config.direction_allowed(result["direction"]):
+                continue
+            if direction_blocked(regime, result["direction"]):
+                logger.info(
+                    "Entry blocked by BTC regime: %s %s", symbol, result["direction"]
+                )
+                continue
 
-        price_row = storage.get_latest_price(symbol)
-        if not price_row:
-            continue
-        price = float(price_row["close"])
+            price_row = storage.get_latest_price(symbol)
+            if not price_row:
+                continue
+            price = float(price_row["close"])
 
-        result = result | {
-            "style": "scalp" if analysis.get("recommended_style") == "short_term" else "swing",
-        }
-        opened = trader.process_signal(result, price, require_worth=True)
-        if opened.get("opened"):
-            trades_opened += 1
+            result = result | {
+                "style": "scalp" if analysis.get("recommended_style") == "short_term" else "swing",
+            }
+            opened = trader.process_signal(result, price, require_worth=True)
+            if opened.get("opened"):
+                trades_opened += 1
 
     market.backfill_missing_stubs()
     market.update_pending()
@@ -134,4 +148,5 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         "symbols": len(symbols),
         "signals_run": signals_run,
         "trades_opened": trades_opened,
+        "data_health": data_health,
     }
