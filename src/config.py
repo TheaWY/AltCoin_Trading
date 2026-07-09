@@ -257,6 +257,15 @@ MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", os.getenv("PAPER_MIN_CONFIDEN
 # Per-symbol re-entry cooldown after any prior entry (0 = disabled).
 COOLDOWN_HOURS_PER_SYMBOL = float(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "0"))
 
+# --- Capital stage gates (display / criteria only; no live routing here) ---
+CAPITAL_STAGE = os.getenv("CAPITAL_STAGE", "paper").strip().lower()
+CAPITAL_STAGE_MIN_TRADES = int(os.getenv("CAPITAL_STAGE_MIN_TRADES", "60"))
+CAPITAL_STAGE_MIN_EXPECTANCY = float(os.getenv("CAPITAL_STAGE_MIN_EXPECTANCY", "0"))
+CAPITAL_STAGE_MAX_DD_PCT = float(os.getenv("CAPITAL_STAGE_MAX_DD_PCT", "12"))
+CAPITAL_STAGE_CONSECUTIVE_MONTHS = int(os.getenv("CAPITAL_STAGE_CONSECUTIVE_MONTHS", "2"))
+CAPITAL_DEMOTE_DD_PCT = float(os.getenv("CAPITAL_DEMOTE_DD_PCT", "15"))
+CAPITAL_DEMOTE_ROLLING_TRADES = int(os.getenv("CAPITAL_DEMOTE_ROLLING_TRADES", "30"))
+
 # --- BTC regime filter ---
 # Alts follow BTC in stress: block new LONGs when BTC is dumping, block new
 # SHORTs when BTC is squeezing up. Thresholds in percent.

@@ -170,6 +170,114 @@ def build_research_payload(storage: Storage | None = None) -> dict[str, Any]:
     }
 
 
+def _window_performance(
+    storage: Storage, start_ts: int, end_ts: int | None
+) -> dict[str, Any]:
+    clauses = ["status = 'closed'", "closed_at >= ?"]
+    params: list[Any] = [start_ts]
+    if end_ts is not None:
+        clauses.append("closed_at < ?")
+        params.append(end_ts)
+    sql = f"SELECT pnl, fees FROM paper_trades WHERE {' AND '.join(clauses)} ORDER BY closed_at"
+    with storage._connect() as conn:
+        rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    if not rows:
+        return {"trades": 0, "total_pnl": 0.0, "expectancy": 0.0, "win_rate_pct": None}
+    pnls = [float(r["pnl"] or 0) for r in rows]
+    wins = sum(1 for p in pnls if p > 0)
+    return {
+        "trades": len(pnls),
+        "total_pnl": round(sum(pnls), 2),
+        "expectancy": round(sum(pnls) / len(pnls), 4),
+        "win_rate_pct": round(wins / len(pnls) * 100, 1),
+    }
+
+
+def build_history_payload(storage: Storage | None = None) -> dict[str, Any]:
+    storage = storage or get_storage()
+    from src.research.data_quality import freshness, verdict
+    from src.research.promotion import _ensure_schema
+
+    _ensure_schema()
+    now = int(time.time())
+    week_ago = now - 7 * 86_400
+
+    with storage._connect() as conn:
+        promo_rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM promotions ORDER BY created_at ASC"
+            ).fetchall()
+        ]
+        weekly_experiments = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM experiments "
+            "WHERE created_at >= ? GROUP BY status",
+            (week_ago,),
+        ).fetchall()
+        best_candidate = conn.execute(
+            "SELECT config_hash, metrics_json FROM experiments "
+            "WHERE status = 'done' AND is_champion_baseline = 0 "
+            "ORDER BY finished_at DESC LIMIT 50"
+        ).fetchall()
+
+    timeline: list[dict[str, Any]] = []
+    for idx, row in enumerate(promo_rows):
+        end_ts = promo_rows[idx + 1]["created_at"] if idx + 1 < len(promo_rows) else None
+        try:
+            overrides = json.loads(row.get("overrides_json") or "{}")
+        except Exception:
+            overrides = {}
+        try:
+            previous = json.loads(row.get("previous_overrides_json") or "{}")
+        except Exception:
+            previous = {}
+        timeline.append(
+            {
+                "id": row["id"],
+                "action": row["action"],
+                "config_hash": row["config_hash"],
+                "reason": row.get("reason"),
+                "created_at": row["created_at"],
+                "config_diff": _config_diff(overrides, previous),
+                "performance": _window_performance(storage, int(row["created_at"]), end_ts),
+            }
+        )
+    timeline.reverse()
+
+    best_hash = None
+    best_expectancy = None
+    for row in best_candidate:
+        try:
+            metrics = json.loads(row["metrics_json"] or "{}")
+            exp_val = metrics.get("aggregate", {}).get("expectancy")
+            if exp_val is not None and (best_expectancy is None or exp_val > best_expectancy):
+                best_expectancy = exp_val
+                best_hash = row["config_hash"]
+        except Exception:
+            continue
+
+    champion_perf = _window_performance(
+        storage,
+        int(promo_rows[-1]["created_at"]) if promo_rows else week_ago,
+        None,
+    ) if promo_rows else {"trades": 0, "total_pnl": 0.0, "expectancy": 0.0}
+
+    weekly_totals = {str(r["status"]): int(r["n"]) for r in weekly_experiments}
+
+    return {
+        "timeline": timeline,
+        "weekly": {
+            "experiments_run": weekly_totals.get("done", 0) + weekly_totals.get("failed", 0),
+            "experiments_failed": weekly_totals.get("failed", 0),
+            "best_candidate_hash": best_hash,
+            "best_candidate_expectancy": best_expectancy,
+            "champion_performance": champion_perf,
+        },
+        "data_freshness": freshness(),
+        "data_verdict": verdict(),
+    }
+
+
 def invalidate_payload_cache() -> None:
     _cache["payload"] = None
     _cache["built_at"] = 0.0
@@ -309,5 +417,6 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": get_health().get_status(),
         "research": build_research_payload(storage),
+        "history": build_history_payload(storage),
     }
     return _round_floats(payload)
