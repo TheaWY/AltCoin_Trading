@@ -99,6 +99,17 @@ COOLDOWN_HOURS_PER_SYMBOL: 48
 FEE_MODE: taker
 ```
 
+### Step 7 — Make Home the primary dashboard
+
+**Weakness:** The old mobile dashboard put Home and Market side by side. For this project, generic market browsing is less useful than a decision page that answers: hold, enter, or wait?
+
+**Fix:** `/dashboard` now serves a lean Home-only decision dashboard. The generic market table is no longer the default UI. The old full dashboard remains available at `/dashboard/full` for portfolio, strategy, history, and market table access.
+
+**Files:**
+
+- `src/dashboard/home.html`
+- `src/api/main.py`
+
 ## Recommended Mac Mini command sequence
 
 Run this after pulling the branch locally:
