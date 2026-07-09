@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 import threading
 import time
@@ -21,6 +22,152 @@ from src.symbols import trading_symbols
 # let a finished trading cycle (new data) invalidate the cache explicitly.
 _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {"payload": None, "built_at": 0.0}
+
+
+def _config_diff(
+    challenger: dict[str, Any], champion: dict[str, Any]
+) -> dict[str, dict[str, Any]]:
+    diff: dict[str, dict[str, Any]] = {}
+    for key in sorted(set(challenger) | set(champion)):
+        base = champion.get(key)
+        new = challenger.get(key)
+        if base != new:
+            diff[key] = {"from": base, "to": new}
+    return diff
+
+
+def _champion_config(storage: Storage) -> dict[str, Any]:
+    from src.research.promotion import _ensure_schema
+
+    _ensure_schema()
+    with storage._connect() as conn:
+        row = conn.execute(
+            "SELECT config_json FROM experiments "
+            "WHERE is_champion_baseline = 1 AND status = 'done' "
+            "ORDER BY finished_at DESC LIMIT 1"
+        ).fetchone()
+    if row:
+        try:
+            return json.loads(row["config_json"])
+        except Exception:
+            pass
+    overrides_path = config.DATA_DIR / "config_overrides.json"
+    if overrides_path.exists():
+        try:
+            return json.loads(overrides_path.read_text())
+        except Exception:
+            pass
+    return {}
+
+
+def build_research_experiments(storage: Storage | None = None) -> dict[str, Any]:
+    storage = storage or get_storage()
+    from src.research.promotion import _ensure_schema
+
+    _ensure_schema()
+    champion_cfg = _champion_config(storage)
+
+    with storage._connect() as conn:
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM experiments ORDER BY priority ASC, created_at DESC LIMIT 200"
+            ).fetchall()
+        ]
+        totals_rows = conn.execute(
+            "SELECT status, COUNT(*) AS n FROM experiments GROUP BY status"
+        ).fetchall()
+
+    totals = {str(r["status"]): int(r["n"]) for r in totals_rows}
+    experiments: list[dict[str, Any]] = []
+    for row in rows:
+        try:
+            cfg = json.loads(row.get("config_json") or "{}")
+        except Exception:
+            cfg = {}
+        metrics = {}
+        try:
+            metrics = json.loads(row.get("metrics_json") or "{}")
+        except Exception:
+            pass
+        agg = metrics.get("aggregate", {})
+        windows = metrics.get("windows", [])
+        positive = sum(1 for w in windows if float(w.get("total_pnl", 0)) > 0)
+        experiments.append(
+            {
+                "id": row["id"],
+                "config_hash": row["config_hash"],
+                "status": row["status"],
+                "priority": row.get("priority"),
+                "is_champion_baseline": bool(row.get("is_champion_baseline")),
+                "created_at": row.get("created_at"),
+                "finished_at": row.get("finished_at"),
+                "config_diff": _config_diff(cfg, champion_cfg),
+                "aggregate": {
+                    "trade_count": agg.get("trade_count"),
+                    "expectancy": agg.get("expectancy"),
+                    "profit_factor": agg.get("profit_factor"),
+                    "gross_pnl": agg.get("gross_pnl"),
+                    "positive_windows": f"{positive}/{len(windows)}" if windows else None,
+                },
+                "windows": windows,
+            }
+        )
+
+    return {
+        "totals": {
+            "done": totals.get("done", 0),
+            "queued": totals.get("queued", 0),
+            "failed": totals.get("failed", 0),
+            "running": totals.get("running", 0),
+        },
+        "champion_config": champion_cfg,
+        "experiments": experiments,
+    }
+
+
+def build_event_study_grid(storage: Storage | None = None) -> dict[str, Any]:
+    storage = storage or get_storage()
+    from src.research.event_study import _SCHEMA
+
+    with storage._connect() as conn:
+        for statement in _SCHEMA.split(";"):
+            if statement.strip():
+                conn.execute(statement)
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT * FROM event_study_results ORDER BY run_at DESC, signal, horizon_h, regime"
+            ).fetchall()
+        ]
+
+    if not rows:
+        return {"run_at": None, "grid": []}
+
+    latest_run = max(int(r["run_at"]) for r in rows)
+    grid = [
+        {
+            "signal": r["signal"],
+            "horizon_h": r["horizon_h"],
+            "regime": r["regime"],
+            "n_events": r["n_events"],
+            "effect": r["effect"],
+            "ci_low": r.get("ci_low"),
+            "ci_high": r.get("ci_high"),
+            "verdict": r["verdict"],
+        }
+        for r in rows
+        if int(r["run_at"]) == latest_run
+    ]
+    return {"run_at": latest_run, "grid": grid}
+
+
+def build_research_payload(storage: Storage | None = None) -> dict[str, Any]:
+    storage = storage or get_storage()
+    return {
+        "experiments": build_research_experiments(storage),
+        "event_study": build_event_study_grid(storage),
+    }
 
 
 def invalidate_payload_cache() -> None:
@@ -161,5 +308,6 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "closed_trades": storage.get_recent_closed_trades(20),
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": get_health().get_status(),
+        "research": build_research_payload(storage),
     }
     return _round_floats(payload)

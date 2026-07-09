@@ -180,6 +180,22 @@
     .pill.none, .pill.hold { color: var(--muted); background: rgba(138,148,163,.12); border-color: rgba(138,148,163,.22); }
     .pill.scalp { color: var(--amber); background: rgba(240,184,79,.13); border-color: rgba(240,184,79,.24); }
     .pill.swing { color: var(--green); background: rgba(47,210,125,.12); border-color: rgba(47,210,125,.22); }
+    .verdict-pass { color: var(--green); font-weight: 800; }
+    .verdict-fail { color: var(--muted); font-weight: 700; }
+    .verdict-low-n { color: #6b7280; font-weight: 600; opacity: 0.75; }
+    .exp-row { cursor: pointer; }
+    .exp-detail { display: none; padding: 10px 12px; background: #0a0e14; font-size: 12px; }
+    .exp-detail.open { display: block; }
+    .totals-bar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      font-size: 12px;
+      font-weight: 750;
+    }
+    .totals-bar span { padding: 4px 8px; border-radius: 6px; background: rgba(255,255,255,.04); }
+    .totals-bar .failed { color: #f87171; }
     .pos { color: var(--up); }
     .neg { color: var(--down); }
     .muted { color: var(--muted); }
@@ -637,6 +653,52 @@
             <li><b>시간 손절</b> — 단타 <span data-cfg="scalp_max_hold_hours">48</span>시간 / 스윙 <span data-cfg="swing_max_hold_days">30</span>일 내 미결착 시 청산 (모멘텀 소멸 = 근거 소멸)</li>
             <li>수수료+슬리피지 <span data-cfg="round_trip_cost_pct">0.16</span>% 왕복 반영 — 종이 수익이 아닌 실질 수익 기준</li>
           </ul>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">자동 실험 (리서치 스택)</div>
+        <div class="panel">
+          <div class="totals-bar" id="research-totals">실험 데이터 로딩 중…</div>
+          <div class="scroll-table">
+            <table>
+              <thead>
+                <tr>
+                  <th>상태</th>
+                  <th>우선순위</th>
+                  <th>해시</th>
+                  <th>윈도우</th>
+                  <th>기대값</th>
+                  <th>PF</th>
+                  <th>설정 diff</th>
+                </tr>
+              </thead>
+              <tbody id="experiments-body">
+                <tr><td colspan="7" class="empty">실험 기록 없음</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">이벤트 스터디 (신호 예측력)</div>
+        <div class="panel scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>신호</th>
+                <th>호라이즌</th>
+                <th>레짐</th>
+                <th>N</th>
+                <th>효과</th>
+                <th>판정</th>
+              </tr>
+            </thead>
+            <tbody id="event-study-body">
+              <tr><td colspan="6" class="empty">이벤트 스터디 결과 없음</td></tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1261,6 +1323,87 @@
         if (value == null) return;
         el.textContent = Number.isInteger(value) ? value : +value.toFixed(2);
       });
+      renderResearch(data.research);
+    }
+
+    function fmtTs(ts) {
+      if (!ts) return '—';
+      return new Date(ts * 1000).toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    function verdictClass(v) {
+      if (!v) return 'verdict-fail';
+      if (v === 'PASS') return 'verdict-pass';
+      if (v === 'insufficient_n') return 'verdict-low-n';
+      return 'verdict-fail';
+    }
+
+    function verdictLabel(v) {
+      if (v === 'PASS') return 'PASS';
+      if (v === 'insufficient_n') return '표본 부족';
+      return 'fail';
+    }
+
+    function renderResearch(research) {
+      if (!research) return;
+      const exp = research.experiments || {};
+      const totals = exp.totals || {};
+      $('research-totals').innerHTML = `
+        <span>완료 ${totals.done || 0}</span>
+        <span>대기 ${totals.queued || 0}</span>
+        <span class="failed">실패 ${totals.failed || 0}</span>
+        <span>실행중 ${totals.running || 0}</span>
+      `;
+      const rows = exp.experiments || [];
+      if (!rows.length) {
+        $('experiments-body').innerHTML = '<tr><td colspan="7" class="empty">실험 기록 없음</td></tr>';
+      } else {
+        $('experiments-body').innerHTML = rows.slice(0, 40).map((row, idx) => {
+          const diffKeys = Object.keys(row.config_diff || {});
+          const diffText = diffKeys.length
+            ? diffKeys.map(k => `${k}: ${row.config_diff[k].from ?? '—'} → ${row.config_diff[k].to}`).join('<br>')
+            : '—';
+          const agg = row.aggregate || {};
+          return `
+            <tr class="exp-row" data-exp-idx="${idx}">
+              <td>${esc(row.status)}${row.is_champion_baseline ? ' ★' : ''}</td>
+              <td>${row.priority ?? '—'}</td>
+              <td><span class="sub">${esc(row.config_hash)}</span></td>
+              <td>${esc(agg.positive_windows || '—')}</td>
+              <td>${agg.expectancy != null ? agg.expectancy.toFixed(3) : '—'}</td>
+              <td>${agg.profit_factor != null ? agg.profit_factor.toFixed(2) : '—'}</td>
+              <td style="white-space:normal;text-align:left;font-size:11px">${diffText}</td>
+            </tr>
+            <tr><td colspan="7" class="exp-detail" id="exp-detail-${idx}">
+              <div>생성: ${fmtTs(row.created_at)} · 완료: ${fmtTs(row.finished_at)}</div>
+              <div>거래 ${agg.trade_count ?? '—'} · 윈도우 ${esc(agg.positive_windows || '—')}</div>
+              <pre style="margin:8px 0 0;white-space:pre-wrap;color:var(--muted)">${esc(JSON.stringify(row.windows || [], null, 1))}</pre>
+            </td></tr>
+          `;
+        }).join('');
+        document.querySelectorAll('.exp-row').forEach(tr => {
+          tr.addEventListener('click', () => {
+            const detail = document.getElementById(`exp-detail-${tr.dataset.expIdx}`);
+            if (detail) detail.classList.toggle('open');
+          });
+        });
+      }
+
+      const grid = (research.event_study || {}).grid || [];
+      if (!grid.length) {
+        $('event-study-body').innerHTML = '<tr><td colspan="6" class="empty">이벤트 스터디 결과 없음</td></tr>';
+      } else {
+        $('event-study-body').innerHTML = grid.map(cell => `
+          <tr>
+            <td style="text-align:left">${esc(cell.signal)}</td>
+            <td>${cell.horizon_h}h</td>
+            <td>${esc(cell.regime)}</td>
+            <td>${cell.n_events}</td>
+            <td class="${tone(cell.effect)}">${(cell.effect * 100).toFixed(3)}%</td>
+            <td class="${verdictClass(cell.verdict)}">${verdictLabel(cell.verdict)}</td>
+          </tr>
+        `).join('');
+      }
     }
 
     function render(data) {
