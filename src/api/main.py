@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 
 from src import config
-from src.api.routes import alts, dashboard, health, research, signals, trades
+from src.api.routes import alts, categories, dashboard, health, research, signals, trades
 from src.api.websocket import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -78,15 +78,15 @@ app.include_router(alts.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(research.router, prefix="/api")
+app.include_router(categories.router, prefix="/api")
 app.include_router(signals.router, prefix="/api")
 app.include_router(trades.router, prefix="/api")
-from src.api.routes import research as _research  # research stack
-app.include_router(_research.router, prefix="/api")
 
 
 @app.get("/experiments")
 async def experiments_page() -> FileResponse:
     return FileResponse(config.DASHBOARD_DIR / "experiments.html")
+
 
 app.include_router(ws_router)
 
