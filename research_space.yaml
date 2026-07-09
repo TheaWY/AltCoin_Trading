@@ -7,36 +7,48 @@
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
 
 axes:
-  # setup on/off toggles (Cursor must add these SETUP_* flags to config.py
-  # and gate each setup function on its flag — see HANDOFF.md task C)
+  # setup on/off toggles. Defaults now reflect the last backtest weakness:
+  # start with fewer, cleaner hypotheses; re-enable noisy branches only if they
+  # survive walk-forward + fresh-data promotion.
   SETUP_MEANREV_ENABLED: [true, false]
-  SETUP_BREAKOUT_ENABLED: [true, false]
-  SETUP_TSMOM_ENABLED: [true, false]
+  SETUP_BREAKOUT_ENABLED: [false, true]
+  SETUP_TSMOM_ENABLED: [false, true]
+  SETUP_VOLUME_ENABLED: [false, true]
   SETUP_FUNDING_ENABLED: [true]
 
   # mean reversion thresholds
   MEANREV_RSI_HIGH: [68, 70, 74]
-  MEANREV_MIN_BANDWIDTH_PCT: [1.0, 2.0]
+  MEANREV_MIN_BANDWIDTH_PCT: [1.0, 2.0, 4.0]
 
   # confluence weights
   CONFLUENCE_ALIGNED_BONUS: [0.03, 0.05, 0.08]
+  CONFLUENCE_CONFLICT_PENALTY: [0.08, 0.12]
 
-  # trade-frequency control (Cursor task C adds these knobs)
-  MIN_CONFIDENCE: [0.55, 0.62, 0.70]
-  COOLDOWN_HOURS_PER_SYMBOL: [12, 24, 48]
+  # trade-frequency control — primary lever after fees dominated the hourly run.
+  MIN_CONFIDENCE: [0.70, 0.75, 0.80]
+  COOLDOWN_HOURS_PER_SYMBOL: [24, 48, 72]
 
-  # fee model assumption
+  # fee model assumption. Maker is only a research scenario until maker-fill
+  # simulation exists; taker remains the conservative default.
   FEE_MODE: ["taker", "maker"]
 
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:
-  - name: "no_breakout_no_tsmom"          # last backtest's worst performers off
+  - name: "conservative_core"
+    match:
+      SETUP_BREAKOUT_ENABLED: false
+      SETUP_TSMOM_ENABLED: false
+      SETUP_VOLUME_ENABLED: false
+      MIN_CONFIDENCE: 0.70
+      COOLDOWN_HOURS_PER_SYMBOL: 48
+      FEE_MODE: "taker"
+  - name: "no_breakout_no_tsmom"
     match: { SETUP_BREAKOUT_ENABLED: false, SETUP_TSMOM_ENABLED: false }
-  - name: "maker_fees"                     # fee bleed was 75% of capital
-    match: { FEE_MODE: "maker" }
   - name: "fewer_trades"
-    match: { COOLDOWN_HOURS_PER_SYMBOL: 48, MIN_CONFIDENCE: 0.70 }
+    match: { COOLDOWN_HOURS_PER_SYMBOL: 72, MIN_CONFIDENCE: 0.80 }
+  - name: "maker_fees_sensitivity_only"
+    match: { FEE_MODE: "maker" }
 
 limits:
   max_new_per_run: 300     # newly queued combos per generator invocation

@@ -14,6 +14,21 @@ from src.data.storage import Storage, get_storage
 logger = logging.getLogger(__name__)
 
 _TIMEFRAME_UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
+_PLACEHOLDER_KEYS = {
+    "",
+    "your_testnet_api_key",
+    "your_testnet_api_secret",
+    "your_api_key",
+    "your_api_secret",
+    "changeme",
+}
+
+
+def _clean_credential(value: str | None) -> str:
+    value = (value or "").strip()
+    if value.lower() in _PLACEHOLDER_KEYS:
+        return ""
+    return value
 
 
 def _timeframe_seconds(timeframe: str) -> int | None:
@@ -23,22 +38,40 @@ def _timeframe_seconds(timeframe: str) -> int | None:
         return None
 
 
-def _build_exchange() -> ccxt.binance:
-    exchange = ccxt.binance(
-        {
-            "apiKey": config.BINANCE_API_KEY,
-            "secret": config.BINANCE_API_SECRET,
-            "enableRateLimit": True,
-            "options": {"defaultType": "future"},
-        }
-    )
-    if config.BINANCE_TESTNET:
+def _build_exchange(use_testnet: bool | None = None, *, authenticated: bool | None = None) -> ccxt.binance:
+    """Build a Binance futures exchange.
+
+    LiveTrader calls this with the legacy default (`BINANCE_TESTNET`) for order
+    safety and needs credentials. Data collectors pass
+    `BINANCE_MARKET_DATA_TESTNET=false` and do NOT need credentials; sending an
+    invalid/placeholder key causes ccxt to call signed SAPI endpoints and fail
+    before public OHLCV can load.
+    """
+    if use_testnet is None:
+        use_testnet = config.BINANCE_TESTNET
+    if authenticated is None:
+        authenticated = use_testnet or config.LIVE_TRADING
+
+    options: dict[str, Any] = {
+        "enableRateLimit": True,
+        "options": {"defaultType": "future"},
+    }
+    api_key = _clean_credential(config.BINANCE_API_KEY)
+    api_secret = _clean_credential(config.BINANCE_API_SECRET)
+    if authenticated and api_key and api_secret:
+        options["apiKey"] = api_key
+        options["secret"] = api_secret
+    elif authenticated:
+        logger.warning("Binance exchange requested authenticated mode but API keys are blank/placeholders")
+
+    exchange = ccxt.binance(options)
+    if use_testnet:
         exchange.set_sandbox_mode(True)
     return exchange
 
 
 class BinanceCollector:
-    """Fetches OHLCV and funding rate data from Binance (testnet by default)."""
+    """Fetches OHLCV and funding rate data from Binance."""
 
     def __init__(
         self,
@@ -49,7 +82,7 @@ class BinanceCollector:
         timeframe: str | None = None,
     ) -> None:
         self.storage = storage or get_storage()
-        self.exchange = exchange or _build_exchange()
+        self.exchange = exchange or _build_exchange(use_testnet=config.BINANCE_MARKET_DATA_TESTNET, authenticated=False)
         self.symbol = symbol or config.SYMBOL
         self.futures_symbol = futures_symbol or config.CCXT_SYMBOL
         self.timeframe = timeframe
@@ -264,9 +297,15 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
 
     symbols = symbols or trading_symbols()
     core = set(core_symbols())
-    exchange = _build_exchange()
+    exchange = _build_exchange(use_testnet=config.BINANCE_MARKET_DATA_TESTNET, authenticated=False)
     storage = get_storage()
     results: dict[str, Any] = {}
+
+    logger.info(
+        "Market data collection using Binance %s endpoints for %d symbols",
+        "testnet" if config.BINANCE_MARKET_DATA_TESTNET else "mainnet public",
+        len(symbols),
+    )
 
     funding_batch = _collect_funding_batch(exchange, storage, symbols)
 

@@ -89,7 +89,14 @@ def _funding_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[
 
 
 def _volume_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    """단타: abnormal volume with a directional move behind it."""
+    """단타: abnormal volume with a directional move behind it.
+
+    This is disabled by default because the last full-stack backtest showed that
+    weak/high-turnover branches are fee-sensitive. With SETUP_VOLUME_ENABLED=false,
+    volume still contributes inside _apply_confluence as confirmation only.
+    """
+    if not config.SETUP_VOLUME_ENABLED:
+        return None
     ratio = metrics["volume_ratio"]
     pct_24h = metrics["pct_24h"]
     if ratio is None or pct_24h is None:
@@ -113,12 +120,7 @@ def _volume_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _meanrev_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[str, Any] | None:
-    """단타: BB(20,2) + RSI(14) mean reversion with regime filters.
-
-    Evidence: BB+RSI was the top scalp performer in fee-inclusive forward tests
-    (53.8% win rate); regime filters (no squeeze, no strong trend) cut the
-    largest losses (Vantixs 2023-25 backtest: Sharpe 0.48 -> 1.39 with filters).
-    """
+    """단타: BB(20,2) + RSI(14) mean reversion with regime filters."""
     if not config.SETUP_MEANREV_ENABLED:
         return None
     rsi = metrics["rsi_14"]
@@ -158,12 +160,7 @@ def _meanrev_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[
 
 
 def _breakout_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[str, Any] | None:
-    """스윙: 20일 돈찬 채널 돌파 (Turtle rules).
-
-    Evidence: 20d Donchian breakout on BTC 2017-2026 — CAGR 48.2% vs 37.3%
-    buy&hold, max DD -53.7% vs -83.2%. Funding filter per the combined
-    trend+funding framework: skip when the move is already crowded.
-    """
+    """스윙: 20일 돈찬 채널 돌파 (Turtle rules)."""
     if not config.SETUP_BREAKOUT_ENABLED:
         return None
     donchian = metrics.get("donchian_20d")
@@ -197,11 +194,7 @@ def _breakout_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict
 
 
 def _tsmom28_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    """스윙: 28일 시계열 모멘텀.
-
-    Evidence: crypto TS-momentum studies find ~28d lookback optimal
-    (Sharpe 1.51 vs 0.84 market on BTC with 28d/5d parameters).
-    """
+    """스윙: 28일 시계열 모멘텀."""
     if not config.SETUP_TSMOM_ENABLED:
         return None
     pct_30d = metrics["pct_30d"]
@@ -320,12 +313,7 @@ def _why_not(metrics: dict[str, Any], funding_rate: float | None) -> list[str]:
 def _proximity_confidence(
     metrics: dict[str, Any], funding_rate: float | None, blocked: bool
 ) -> float:
-    """Graded 0-0.45 confidence for coins without an active setup.
-
-    Measures how close each setup trigger is to firing so 'waiting' coins can
-    still be ranked — a coin at 90% of the volume-spike threshold shows a
-    higher number than a dead one.
-    """
+    """Graded 0-0.45 confidence for coins without an active setup."""
     if blocked:
         return 0.05
 
@@ -352,12 +340,11 @@ def _proximity_confidence(
 def _apply_confluence(
     best: dict[str, Any], setups: list[dict[str, Any]], metrics: dict[str, Any]
 ) -> None:
-    """Final confidence: boost when independent setups agree, penalize conflict.
+    """Final confidence: boost independent confirmation, penalize conflicts.
 
-    "우주 정렬" — each additional setup pointing the same direction adds a
-    bonus; setups pointing the other way subtract. Crowded retail positioning
-    (long/short account ratio) against the trade direction adds a contrarian
-    bonus, per the funding+OI confluence framework.
+    Volume spike is intentionally treated here as a modifier by default rather
+    than a standalone setup. This reduces churn while preserving useful flow
+    confirmation.
     """
     aligned = [s for s in setups if s is not best and s["direction"] == best["direction"]]
     conflicting = [s for s in setups if s["direction"] != best["direction"]]
@@ -372,6 +359,22 @@ def _apply_confluence(
         penalty = config.CONFLUENCE_CONFLICT_PENALTY * len(conflicting)
         score -= penalty
         parts.append(f"역방향 -{penalty:.2f} ({', '.join(s['strategy'] for s in conflicting)})")
+
+    ratio = metrics.get("volume_ratio")
+    pct_24h = metrics.get("pct_24h")
+    if ratio is not None and pct_24h is not None and ratio >= config.VOLUME_SPIKE_RATIO:
+        volume_aligns = (best["direction"] == "LONG" and pct_24h > 0) or (
+            best["direction"] == "SHORT" and pct_24h < 0
+        )
+        volume_conflicts = (best["direction"] == "LONG" and pct_24h < 0) or (
+            best["direction"] == "SHORT" and pct_24h > 0
+        )
+        if volume_aligns:
+            score += 0.03
+            parts.append(f"거래량 {ratio:.1f}배 방향확인 +0.03")
+        elif volume_conflicts:
+            score -= 0.06
+            parts.append(f"거래량 {ratio:.1f}배 역방향 -0.06")
 
     lsr = metrics.get("long_short_ratio")
     if lsr is not None:

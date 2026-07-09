@@ -102,6 +102,10 @@ API_PORT = int(
 BINANCE_API_KEY = os.getenv("BINANCE_API_KEY", "")
 BINANCE_API_SECRET = os.getenv("BINANCE_API_SECRET", "")
 BINANCE_TESTNET = os.getenv("BINANCE_TESTNET", "true").lower() in ("true", "1", "yes")
+# Paper trading should use real public market data even when live orders stay
+# disabled/testnet. Binance futures testnet often lacks real alt history, which
+# produces 0/48 candle cards on the dashboard.
+BINANCE_MARKET_DATA_TESTNET = _env_bool("BINANCE_MARKET_DATA_TESTNET", default=False)
 
 # Default trading pair (legacy / BTC focus)
 SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
@@ -207,7 +211,8 @@ def direction_allowed(direction: str | None) -> bool:
 
 # --- Paper trading ---
 LIVE_TRADING = os.getenv("LIVE_TRADING", "false").lower() in ("true", "1", "yes")
-PAPER_STARTING_CAPITAL = float(os.getenv("PAPER_STARTING_CAPITAL", "10000.0"))
+# Research default is the actual target account size; override in .env for demos.
+PAPER_STARTING_CAPITAL = float(os.getenv("PAPER_STARTING_CAPITAL", "730.0"))
 MAX_POSITION_PCT = float(os.getenv("MAX_POSITION_PCT", "0.20"))
 # Fallback fixed-percent exits (used when ATR is unavailable)
 STOP_LOSS_PCT = float(os.getenv("STOP_LOSS_PCT", "0.03"))
@@ -232,7 +237,7 @@ TRAIL_ATR_MULT = float(os.getenv("TRAIL_ATR_MULT", "2.0"))
 # is 0.05%; slippage assumed 0.03% on liquid perps).
 FEE_PCT_PER_SIDE = float(os.getenv("FEE_PCT_PER_SIDE", "0.0005"))
 SLIPPAGE_PCT_PER_SIDE = float(os.getenv("SLIPPAGE_PCT_PER_SIDE", "0.0003"))
-# FEE_MODE=taker (default) uses FEE_PCT_PER_SIDE; maker uses FEE_MAKER_PCT_PER_SIDE (0.02%/side futures).
+# FEE_MODE=taker (default) uses FEE_PCT_PER_SIDE. Use maker only with a maker-fill simulator.
 FEE_MODE = os.getenv("FEE_MODE", "taker").strip().lower()
 FEE_MAKER_PCT_PER_SIDE = float(os.getenv("FEE_MAKER_PCT_PER_SIDE", "0.0002"))
 
@@ -249,15 +254,22 @@ def round_trip_cost_pct() -> float:
 
 # --- Setup toggles (research_space.yaml) ---
 SETUP_MEANREV_ENABLED = _env_bool("SETUP_MEANREV_ENABLED", default=True)
-SETUP_BREAKOUT_ENABLED = _env_bool("SETUP_BREAKOUT_ENABLED", default=True)
-SETUP_TSMOM_ENABLED = _env_bool("SETUP_TSMOM_ENABLED", default=True)
+# Disable weak/high-turnover branches by default; research runner can re-enable.
+SETUP_BREAKOUT_ENABLED = _env_bool("SETUP_BREAKOUT_ENABLED", default=False)
+SETUP_TSMOM_ENABLED = _env_bool("SETUP_TSMOM_ENABLED", default=False)
 SETUP_FUNDING_ENABLED = _env_bool("SETUP_FUNDING_ENABLED", default=True)
+# Volume spike is noisy as a standalone entry; default to confirmation modifier only.
+SETUP_VOLUME_ENABLED = _env_bool("SETUP_VOLUME_ENABLED", default=False)
 
 # Minimum confidence to treat a setup as tradable / open paper trades.
-MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", os.getenv("PAPER_MIN_CONFIDENCE", "0.60")))
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", os.getenv("PAPER_MIN_CONFIDENCE", "0.70")))
 
 # Per-symbol re-entry cooldown after any prior entry (0 = disabled).
-COOLDOWN_HOURS_PER_SYMBOL = float(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "0"))
+COOLDOWN_HOURS_PER_SYMBOL = float(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "48"))
+
+# Entry decision engine: evaluation = use the rich confluence engine directly;
+# signal = legacy primary-strategy signal + AltAnalyzer route.
+ENTRY_DECISION_ENGINE = os.getenv("ENTRY_DECISION_ENGINE", "evaluation").strip().lower()
 
 # --- Capital stage gates (display / criteria only; no live routing here) ---
 CAPITAL_STAGE = os.getenv("CAPITAL_STAGE", "paper").strip().lower()
