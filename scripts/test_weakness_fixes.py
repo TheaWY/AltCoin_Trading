@@ -10,7 +10,6 @@ No network calls. This verifies that the repo defaults now reflect the review:
 
 from __future__ import annotations
 
-import json
 import os
 import sys
 import tempfile
@@ -19,7 +18,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# Ensure environment does not mask defaults during this smoke test.
+# Ensure environment and local promotion overrides do not mask defaults.
 for key in (
     "ENTRY_DECISION_ENGINE",
     "PAPER_STARTING_CAPITAL",
@@ -31,6 +30,7 @@ for key in (
     "SETUP_VOLUME_ENABLED",
 ):
     os.environ.pop(key, None)
+os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="weakness_fix_test_")
 
 from src import config  # noqa: E402
 from scripts.annotate_backtest_benchmarks import annotate  # noqa: E402
