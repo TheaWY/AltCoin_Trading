@@ -46,6 +46,13 @@ def main() -> int:
     pnls = [t["pnl"] for t in trades]
     wins = [p for p in pnls if p > 0]
     losses = [p for p in pnls if p <= 0]
+    daily: dict[str, float] = {}
+    for t in trades:
+        closed = t.get("closed_at")
+        if closed:
+            import datetime as _dt
+            day = _dt.datetime.fromtimestamp(int(closed), tz=_dt.timezone.utc).strftime("%Y-%m-%d")
+            daily[day] = round(daily.get(day, 0.0) + t["pnl"], 4)
     compact = {
         "trade_count": len(pnls),
         "total_pnl": round(sum(pnls), 4),
@@ -57,6 +64,9 @@ def main() -> int:
         "gross_pnl": round(sum(pnls) + sum(t["fees"] for t in trades), 4),
         "max_drawdown_pct": result["summary"].get("max_drawdown_pct"),
         "portfolio_return_pct": result["summary"].get("portfolio_return_pct"),
+        # for DSR (per-trade return series) and correlation gates — capped
+        "trade_pnls": [round(p, 4) for p in pnls[:5000]],
+        "daily_pnl": daily,
     }
     print(MARKER_BEGIN)
     print(json.dumps(compact))

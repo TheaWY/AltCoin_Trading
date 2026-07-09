@@ -6,7 +6,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/env</string>
-    <string>__PYTHON_BIN__</string>
+    <string>python3</string>
     <string>-m</string>
     <string>src.worker</string>
   </array>

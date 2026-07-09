@@ -38,6 +38,8 @@ from typing import Any
 
 from src import config
 from src.data.storage import get_storage
+from src.research import decisions
+from src.research.robust_stats import deflated_sharpe, sharpe
 
 # ---------------------------------------------------------------------------
 # Safety rails
@@ -59,6 +61,11 @@ RESTART_FLAG_PATH = config.DATA_DIR / "restart.flag"
 S1_MIN_WINDOW_WIN_FRACTION = float(os.getenv("PROMO_S1_WINDOW_FRACTION", "0.66"))
 S1_MIN_TRADES = int(os.getenv("PROMO_S1_MIN_TRADES", "30"))
 S1_MIN_PROFIT_FACTOR = float(os.getenv("PROMO_S1_MIN_PF", "1.2"))
+
+# DSR gate (between stage 1 and 2): deflated Sharpe corrected for the number
+# of trials the queue has consumed and for non-normal trade returns.
+PROMO_MIN_DSR = float(os.getenv("PROMO_MIN_DSR", "0.95"))
+RESEARCH_CAPITAL = float(os.getenv("RESEARCH_CAPITAL", "730"))
 
 # Stage 2: fresh-data gates (data collected after the experiment existed)
 S2_MIN_FRESH_DAYS = float(os.getenv("PROMO_S2_MIN_FRESH_DAYS", "14"))
@@ -166,6 +173,44 @@ def stage1_pass(exp: dict[str, Any], champion: dict[str, Any] | None) -> tuple[b
     return True, f"windows {positive}/{len(windows)} positive, beats champion"
 
 
+def dsr_pass(exp: dict[str, Any]) -> tuple[bool, str]:
+    """Deflated Sharpe gate. Trials N = all done/failed experiments so far;
+    Var{SR} from other done experiments' trade-level Sharpes when >= 10 exist,
+    else a harsh fallback (see robust_stats.deflated_sharpe)."""
+    metrics = json.loads(exp["metrics_json"] or "{}")
+    pnls: list[float] = []
+    for w in metrics.get("windows", []):
+        pnls.extend(w.get("trade_pnls", []))
+    if not pnls:
+        return False, "no trade-level pnls stored (re-run experiment)"
+    returns = [p / RESEARCH_CAPITAL for p in pnls]
+
+    storage = get_storage()
+    with storage._connect() as conn:  # noqa: SLF001
+        n_trials = conn.execute(
+            "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed')"
+        ).fetchone()[0]
+        rows = conn.execute(
+            "SELECT metrics_json FROM experiments WHERE status='done' "
+            "AND config_hash != ? LIMIT 500", (exp["config_hash"],)).fetchall()
+    trial_srs = []
+    for (mj,) in rows:
+        try:
+            other = []
+            for w in json.loads(mj or "{}").get("windows", []):
+                other.extend(w.get("trade_pnls", []))
+            if len(other) >= 10:
+                trial_srs.append(sharpe([p / RESEARCH_CAPITAL for p in other]))
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+    d = deflated_sharpe(returns, n_trials=max(n_trials, 1), trial_sharpes=trial_srs)
+    ok = d["dsr"] >= PROMO_MIN_DSR
+    why = (f"DSR {d['dsr']:.3f} (SR {d['sr']:.3f} vs luck-hurdle SR0 {d['sr0']:.3f}, "
+           f"N={n_trials} trials)")
+    return ok, why
+
+
 def stage2_pass(exp: dict[str, Any]) -> tuple[bool, str]:
     """Positive on data that did not exist when the experiment was created."""
     storage = get_storage()
@@ -251,6 +296,7 @@ def rollback(reason: str) -> dict[str, Any]:
     _write_json_atomic(OVERRIDES_PATH, previous)
     RESTART_FLAG_PATH.touch()
     _audit("rollback", "-", previous, current, reason)
+    decisions.log("promotion", "rolled_back", detail={"reason": reason})
     return {"restored": previous, "reverted_from": current}
 
 
@@ -277,16 +323,28 @@ def promote_if_ready() -> dict[str, Any]:
         ]
 
     report: list[dict[str, Any]] = []
+    active_hash = last["config_hash"] if last else None
     for exp in candidates:
+        if exp["config_hash"] == active_hash:
+            continue  # already the live champion — re-promoting is churn
         ok1, why1 = stage1_pass(exp, champion)
         if not ok1:
             report.append({"hash": exp["config_hash"], "stage": 1, "why": why1})
+            decisions.log("promotion", "gate1_blocked", exp["config_hash"], why1)
+            continue
+        okd, whyd = dsr_pass(exp)
+        if not okd:
+            report.append({"hash": exp["config_hash"], "stage": "dsr", "why": whyd})
+            decisions.log("promotion", "gate_dsr_blocked", exp["config_hash"], whyd)
             continue
         ok2, why2 = stage2_pass(exp)
         if not ok2:
             report.append({"hash": exp["config_hash"], "stage": 2, "why": why2})
+            decisions.log("promotion", "gate2_blocked", exp["config_hash"], why2)
             continue
-        result = promote(exp, reason=f"stage1: {why1} | stage2: {why2}")
+        result = promote(exp, reason=f"stage1: {why1} | dsr: {whyd} | stage2: {why2}")
+        decisions.log("promotion", "promoted", exp["config_hash"],
+                      {"applied": result["applied"]})
         return {"promoted": True, "hash": exp["config_hash"], **result}
 
     return {"promoted": False, "evaluated": len(candidates), "blocked": report[:10]}
@@ -327,11 +385,26 @@ def health_check() -> dict[str, Any]:
     if dd_pct > ROLLBACK_MAX_DD_PCT:
         return {"status": "rolled_back", **rollback(
             f"drawdown {dd_pct:.1f}% > {ROLLBACK_MAX_DD_PCT}% since promotion")}
+    # Decay watch (report-only): live rolling expectancy vs the champion's own
+    # walk-forward expectancy. Live < 50% of backtest with n>=30 is the decay
+    # signature (McLean-Pontiff out-of-sample degradation pattern).
+    decay = None
+    with storage._connect() as conn:  # noqa: SLF001
+        champ = conn.execute(
+            "SELECT metrics_json FROM experiments WHERE is_champion_baseline=1 "
+            "AND status='done' ORDER BY finished_at DESC LIMIT 1").fetchone()
+    if champ and champ[0] and len(pnls) >= 30:
+        bt_exp = json.loads(champ[0]).get("aggregate", {}).get("expectancy", 0)
+        live_exp = sum(pnls[-30:]) / 30
+        if bt_exp > 0 and live_exp < 0.5 * bt_exp:
+            decay = {"live_exp_30": round(live_exp, 4), "backtest_exp": bt_exp}
+            decisions.log("health", "decay_flagged", detail=decay)
     return {
         "status": "healthy",
         "trades": len(pnls),
         "expectancy": round(expectancy, 4),
         "dd_pct": round(dd_pct, 2),
+        "decay": decay,
     }
 
 

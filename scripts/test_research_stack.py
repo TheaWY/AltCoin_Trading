@@ -23,6 +23,7 @@ os.environ["SYMBOL_UNIVERSE"] = "static"
 os.environ["RESEARCH_SYMBOLS"] = "BTC/USDT"
 os.environ["RESEARCH_WINDOW_COUNT"] = "2"
 os.environ["RESEARCH_WINDOW_TEST_DAYS"] = "10"
+os.environ["RESEARCH_TRIAL_BUDGET"] = "100"  # tiny test history; bypass MinBTL
 
 from src.data.storage import get_storage  # noqa: E402
 

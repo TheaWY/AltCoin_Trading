@@ -31,7 +31,9 @@ from typing import Any
 
 from src import config
 from src.data.storage import get_storage
+from src.research import decisions
 from src.research.promotion import _ensure_schema
+from src.research.robust_stats import max_trials_for_history
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RUN_ONCE = PROJECT_ROOT / "scripts" / "run_backtest_once.py"
@@ -107,6 +109,26 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
 def run_experiments(max_runs: int) -> dict[str, Any]:
     _ensure_schema()
     storage = get_storage()
+
+    # MinBTL trial budget: refuse to exceed the number of independent configs
+    # this much walk-forward history can statistically support (Bailey et al.
+    # 2014). Without this cap the nightly queue is an overfitting machine.
+    history_years = WINDOW_COUNT * WINDOW_TEST_DAYS / 365.0
+    budget_override = int(os.getenv("RESEARCH_TRIAL_BUDGET", "0"))
+    budget = budget_override if budget_override > 0 else max_trials_for_history(history_years)
+    with storage._connect() as conn:  # noqa: SLF001
+        tried = conn.execute(
+            "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed')"
+        ).fetchone()[0]
+    remaining = max(budget - tried, 0)
+    if remaining <= 0:
+        decisions.log("runner", "trial_budget_refused", detail={
+            "budget": budget, "tried": tried, "history_years": round(history_years, 2),
+            "fix": "extend history (load more years) or raise window count",
+        })
+        return {"attempted": 0, "done": 0, "failed": 0,
+                "trial_budget": {"budget": budget, "tried": tried}}
+    max_runs = min(max_runs, remaining)
     with storage._connect() as conn:  # noqa: SLF001
         queue = [
             dict(r)
@@ -125,6 +147,8 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
             conn.execute(
                 "UPDATE experiments SET status = 'running' WHERE id = ?", (exp["id"],)
             )
+        decisions.log("runner", "experiment_started", exp["config_hash"],
+                      {"priority": exp["priority"]})
         window_results = []
         ok = True
         for start, end in windows:
@@ -144,14 +168,22 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
                      windows[-1][1], SYMBOLS, exp["id"]),
                 )
                 done += 1
+                agg = metrics["aggregate"]
+                decisions.log("runner", "experiment_done", exp["config_hash"], {
+                    "expectancy": agg["expectancy"], "pf": agg["profit_factor"],
+                    "trades": agg["trade_count"],
+                    "windows": f"{agg['positive_windows']}/{agg['window_count']}+",
+                })
             else:
                 conn.execute(
                     "UPDATE experiments SET status = 'failed', finished_at = ? WHERE id = ?",
                     (int(time.time()), exp["id"]),
                 )
                 failed += 1
+                decisions.log("runner", "experiment_failed", exp["config_hash"])
     return {"attempted": len(queue), "done": done, "failed": failed,
-            "windows": windows}
+            "windows": windows,
+            "trial_budget": {"budget": budget, "tried": tried + done + failed}}
 
 
 def run_fresh_evals(max_runs: int = 50) -> dict[str, Any]:

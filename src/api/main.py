@@ -80,6 +80,14 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(research.router, prefix="/api")
 app.include_router(signals.router, prefix="/api")
 app.include_router(trades.router, prefix="/api")
+from src.api.routes import research as _research  # research stack
+app.include_router(_research.router, prefix="/api")
+
+
+@app.get("/experiments")
+async def experiments_page() -> FileResponse:
+    return FileResponse(config.DASHBOARD_DIR / "experiments.html")
+
 app.include_router(ws_router)
 
 

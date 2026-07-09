@@ -38,8 +38,18 @@ def check(name: str, cond: bool, detail: str = ""):
 
 
 def metrics(windows_pnl: list[float], trades=60, expectancy=1.5, pf=1.5) -> str:
+    import random as _r
+    rng = _r.Random(5)
+    per_w = max(trades // max(len(windows_pnl), 1), 1)
+    windows = []
+    for p in windows_pnl:
+        mu = p / per_w
+        windows.append({
+            "total_pnl": p,
+            "trade_pnls": [round(rng.gauss(mu, abs(mu) * 0.5 or 0.5), 4) for _ in range(per_w)],
+        })
     return json.dumps({
-        "windows": [{"total_pnl": p} for p in windows_pnl],
+        "windows": windows,
         "aggregate": {"trade_count": trades, "expectancy": expectancy, "profit_factor": pf},
     })
 
