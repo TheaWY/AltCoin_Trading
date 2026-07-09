@@ -23,7 +23,14 @@ def _timeframe_seconds(timeframe: str) -> int | None:
         return None
 
 
-def _build_exchange() -> ccxt.binance:
+def _build_exchange(use_testnet: bool | None = None) -> ccxt.binance:
+    """Build a Binance futures exchange.
+
+    LiveTrader calls this with the legacy default (`BINANCE_TESTNET`) for order
+    safety. Data collectors pass `BINANCE_MARKET_DATA_TESTNET`, which defaults
+    to false so paper trading uses real public market history instead of sparse
+    futures-testnet symbols.
+    """
     exchange = ccxt.binance(
         {
             "apiKey": config.BINANCE_API_KEY,
@@ -32,13 +39,15 @@ def _build_exchange() -> ccxt.binance:
             "options": {"defaultType": "future"},
         }
     )
-    if config.BINANCE_TESTNET:
+    if use_testnet is None:
+        use_testnet = config.BINANCE_TESTNET
+    if use_testnet:
         exchange.set_sandbox_mode(True)
     return exchange
 
 
 class BinanceCollector:
-    """Fetches OHLCV and funding rate data from Binance (testnet by default)."""
+    """Fetches OHLCV and funding rate data from Binance."""
 
     def __init__(
         self,
@@ -49,7 +58,7 @@ class BinanceCollector:
         timeframe: str | None = None,
     ) -> None:
         self.storage = storage or get_storage()
-        self.exchange = exchange or _build_exchange()
+        self.exchange = exchange or _build_exchange(use_testnet=config.BINANCE_MARKET_DATA_TESTNET)
         self.symbol = symbol or config.SYMBOL
         self.futures_symbol = futures_symbol or config.CCXT_SYMBOL
         self.timeframe = timeframe
@@ -264,9 +273,15 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
 
     symbols = symbols or trading_symbols()
     core = set(core_symbols())
-    exchange = _build_exchange()
+    exchange = _build_exchange(use_testnet=config.BINANCE_MARKET_DATA_TESTNET)
     storage = get_storage()
     results: dict[str, Any] = {}
+
+    logger.info(
+        "Market data collection using Binance %s endpoints for %d symbols",
+        "testnet" if config.BINANCE_MARKET_DATA_TESTNET else "mainnet public",
+        len(symbols),
+    )
 
     funding_batch = _collect_funding_batch(exchange, storage, symbols)
 
