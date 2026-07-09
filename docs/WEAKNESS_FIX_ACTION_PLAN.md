@@ -110,6 +110,25 @@ FEE_MODE: taker
 - `src/dashboard/home.html`
 - `src/api/main.py`
 
+### Step 8 — Fix Home price freshness and missing-candle confusion
+
+**Weakness:** The new Home-only dashboard initially polled `/api/alts` every 30 seconds and did not subscribe to `/ws` live ticks, so prices looked stale. Also, `0/48 candles` often happened because market-data collection could point at Binance futures testnet, which has sparse/non-real alt history.
+
+**Fix:**
+
+- `home.html` now subscribes to `/ws`, sends a watch list for visible cards, and updates `[data-tick]` / `[data-tick-pct]` elements from live price messages.
+- Full snapshot polling is reduced to a background refresh; real price updates come from the websocket.
+- Data collection now separates order safety from market-data source:
+  - `BINANCE_TESTNET=true` can still protect live-order endpoints if live trading is ever enabled.
+  - `BINANCE_MARKET_DATA_TESTNET=false` uses real public Binance futures data for paper/backtest collection.
+
+**Files:**
+
+- `src/dashboard/home.html`
+- `src/config.py`
+- `src/data/collectors/binance.py`
+- `.env.example`
+
 ## Recommended Mac Mini command sequence
 
 Run this after pulling the branch locally:
@@ -125,6 +144,7 @@ export SETUP_BREAKOUT_ENABLED=false
 export SETUP_TSMOM_ENABLED=false
 export SETUP_VOLUME_ENABLED=false
 export FEE_MODE=taker
+export BINANCE_MARKET_DATA_TESTNET=false
 
 # 2. Confirm data health before opening new paper trades
 python -m src.research.data_quality --scan --days 30
@@ -139,6 +159,14 @@ python scripts/backtest.py --strategy mean_reversion --symbols BTC/USDT,ETH/USDT
 # 5. Annotate latest report with cash benchmark
 python scripts/annotate_backtest_benchmarks.py data/backtest_YYYYMMDD.json --write
 ```
+
+## If dashboard cards still show 0/48 candles
+
+1. Confirm the Mac Mini worker is actually running, not only the Railway web app.
+2. Confirm `RUN_TRADING_SCHEDULER=true` on the Mac Mini worker.
+3. Confirm `BINANCE_MARKET_DATA_TESTNET=false`.
+4. Watch logs for `OHLCV collected for <symbol> 1h`.
+5. If a delisted/unsupported symbol still fails, remove it from the auto/static universe.
 
 ## What still must not be treated as solved
 
