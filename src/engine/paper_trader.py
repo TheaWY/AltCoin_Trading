@@ -16,7 +16,7 @@ from src.strategies.funding_carry import settlement_rates
 
 logger = logging.getLogger(__name__)
 
-ROUND_TRIP_COST_PCT = 2 * (config.FEE_PCT_PER_SIDE + config.SLIPPAGE_PCT_PER_SIDE)
+ROUND_TRIP_COST_PCT = config.round_trip_cost_pct()
 
 _SETTLEMENT_SECONDS = 8 * 3600
 
@@ -141,6 +141,12 @@ class PaperTrader:
         if self.storage.count_open_trades() >= config.MAX_OPEN_POSITIONS:
             return {"opened": False, "reason": "max open positions reached"}
 
+        if self._symbol_in_cooldown(symbol):
+            return {
+                "opened": False,
+                "reason": f"cooldown active for {symbol} ({config.COOLDOWN_HOURS_PER_SYMBOL}h)",
+            }
+
         return self._open_trade(signal_result, current_price)
 
     def check_open_trades_for_symbol(
@@ -234,6 +240,20 @@ class PaperTrader:
             return 0.0
         notional = (portfolio * config.RISK_PER_TRADE_PCT) / stop_frac
         return max(0.0, min(notional, portfolio * config.MAX_POSITION_PCT, cash))
+
+    def _symbol_in_cooldown(self, symbol: str) -> bool:
+        hours = config.COOLDOWN_HOURS_PER_SYMBOL
+        if hours <= 0:
+            return False
+        trades = self.storage.get_all_trades_for_symbol(symbol)
+        if not trades:
+            return False
+        opened_times = [int(t["opened_at"]) for t in trades if t.get("opened_at") is not None]
+        if not opened_times:
+            return False
+        last_opened = max(opened_times)
+        age_hours = (datetime.now(timezone.utc).timestamp() - last_opened) / 3600.0
+        return age_hours < hours
 
     def _open_trade(self, signal_result: dict[str, Any], current_price: float) -> dict[str, Any]:
         symbol = signal_result.get("symbol", config.SYMBOL)

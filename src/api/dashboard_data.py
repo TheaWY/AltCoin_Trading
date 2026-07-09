@@ -153,7 +153,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
             "min_atr_pct": config.EVAL_ATR_MIN_PCT,
             "aligned_bonus": config.CONFLUENCE_ALIGNED_BONUS,
             "conflict_penalty": config.CONFLUENCE_CONFLICT_PENALTY,
-            "round_trip_cost_pct": 2 * (config.FEE_PCT_PER_SIDE + config.SLIPPAGE_PCT_PER_SIDE) * 100,
+            "round_trip_cost_pct": config.round_trip_cost_pct() * 100,
         },
         "portfolio": portfolio,
         "open_positions": storage.get_open_trades(),

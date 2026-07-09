@@ -42,6 +42,7 @@ class BacktestTrade:
     closed_at: int | None = None
     pnl: float | None = None
     exit_reason: str | None = None
+    fees: float | None = None
 
     @property
     def notional(self) -> float:
@@ -72,6 +73,9 @@ class BacktestPortfolio:
         if any(trade.symbol == symbol for trade in self.open_trades):
             return None
         if len(self.open_trades) >= config.MAX_OPEN_POSITIONS:
+            return None
+
+        if self._symbol_in_cooldown(symbol, timestamp):
             return None
 
         portfolio_value = self.value({}, timestamp)
@@ -124,11 +128,17 @@ class BacktestPortfolio:
         self, trade: BacktestTrade, price: float, timestamp: int, reason: str
     ) -> None:
         pnl = self._realized_pnl(trade, price, timestamp)
+        fees = 0.0
         if (
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
         ):
-            pnl -= trade.notional * config.CARRY_FEE_ROUNDTRIP
+            fees = trade.notional * config.CARRY_FEE_ROUNDTRIP
+            pnl -= fees
+        else:
+            fees = trade.notional * config.round_trip_cost_pct()
+            pnl -= fees
+        trade.fees = fees
         trade.exit_price = price
         trade.closed_at = timestamp
         trade.pnl = pnl
@@ -157,6 +167,18 @@ class BacktestPortfolio:
             )
             result[symbol] = realized + unrealized
         return result
+
+    def _symbol_in_cooldown(self, symbol: str, timestamp: int) -> bool:
+        hours = config.COOLDOWN_HOURS_PER_SYMBOL
+        if hours <= 0:
+            return False
+        cutoff = timestamp - int(hours * 3600)
+        for trade in self.closed_trades + self.open_trades:
+            if trade.symbol != symbol:
+                continue
+            if trade.opened_at >= cutoff:
+                return True
+        return False
 
     def _exit_reason(
         self, trade: BacktestTrade, price: float | None, timestamp: int
@@ -441,7 +463,7 @@ class BacktestEngine:
                 analysis = AltAnalyzer(snapshot).analyze(
                     symbol, strategy_name=self.strategy_name
                 )
-                confidence_passed = analysis["confidence"] >= config.PAPER_MIN_CONFIDENCE
+                confidence_passed = analysis["confidence"] >= config.MIN_CONFIDENCE
                 if confidence_passed:
                     confidence_pass_count += 1
                     opened = portfolio.open_trade(

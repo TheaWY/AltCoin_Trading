@@ -287,7 +287,7 @@ class AltAnalyzer:
                 short_term["worth_it"]
                 or swing["worth_it"]
             )
-            and best["confidence"] >= config.PAPER_MIN_CONFIDENCE
+            and best["confidence"] >= config.MIN_CONFIDENCE
         )
 
         open_trade = self.storage.get_open_trade_for_symbol(symbol)

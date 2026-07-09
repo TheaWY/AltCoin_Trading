@@ -54,6 +54,8 @@ def _gate_blockers(metrics: dict[str, Any], funding_rate: float | None) -> list[
 
 def _funding_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[str, Any] | None:
     """단타: funding-rate reversal (perp carry crowding)."""
+    if not config.SETUP_FUNDING_ENABLED:
+        return None
     if funding_rate is None:
         return None
     rate_pct = funding_rate * 100
@@ -117,6 +119,8 @@ def _meanrev_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[
     (53.8% win rate); regime filters (no squeeze, no strong trend) cut the
     largest losses (Vantixs 2023-25 backtest: Sharpe 0.48 -> 1.39 with filters).
     """
+    if not config.SETUP_MEANREV_ENABLED:
+        return None
     rsi = metrics["rsi_14"]
     boll = metrics["bollinger"]
     pct_7d = metrics["pct_7d"]
@@ -160,6 +164,8 @@ def _breakout_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict
     buy&hold, max DD -53.7% vs -83.2%. Funding filter per the combined
     trend+funding framework: skip when the move is already crowded.
     """
+    if not config.SETUP_BREAKOUT_ENABLED:
+        return None
     donchian = metrics.get("donchian_20d")
     if not donchian:
         return None
@@ -196,6 +202,8 @@ def _tsmom28_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     Evidence: crypto TS-momentum studies find ~28d lookback optimal
     (Sharpe 1.51 vs 0.84 market on BTC with 28d/5d parameters).
     """
+    if not config.SETUP_TSMOM_ENABLED:
+        return None
     pct_30d = metrics["pct_30d"]
     last = metrics.get("last_price")
     sma20 = metrics["sma_20"]
@@ -455,12 +463,21 @@ def evaluate_symbol(
     best = setups[0] if setups else None
     if best is not None:
         _apply_confluence(best, setups, metrics)
-    tradable = best is not None
+    confidence = (
+        best["score"]
+        if best
+        else _proximity_confidence(metrics, funding_rate, blocked=bool(blockers))
+    )
+    tradable = best is not None and confidence >= config.MIN_CONFIDENCE
 
     why_not: list[str] = []
     if not tradable:
         if blockers:
             why_not = blockers
+        elif best is not None and confidence < config.MIN_CONFIDENCE:
+            why_not = [
+                f"확신 {confidence:.0%} < 최소 {config.MIN_CONFIDENCE:.0%} — 진입 기준 미달"
+            ]
         else:
             seen: set[str] = set()
             for reason in policy_notes + _why_not(metrics, funding_rate):
@@ -468,12 +485,6 @@ def evaluate_symbol(
                     seen.add(reason)
                     why_not.append(reason)
             why_not = why_not[:4]
-
-    confidence = (
-        best["score"]
-        if best
-        else _proximity_confidence(metrics, funding_rate, blocked=bool(blockers))
-    )
 
     return {
         "symbol": symbol,

@@ -230,6 +230,32 @@ TRAIL_ATR_MULT = float(os.getenv("TRAIL_ATR_MULT", "2.0"))
 # is 0.05%; slippage assumed 0.03% on liquid perps).
 FEE_PCT_PER_SIDE = float(os.getenv("FEE_PCT_PER_SIDE", "0.0005"))
 SLIPPAGE_PCT_PER_SIDE = float(os.getenv("SLIPPAGE_PCT_PER_SIDE", "0.0003"))
+# FEE_MODE=taker (default) uses FEE_PCT_PER_SIDE; maker uses FEE_MAKER_PCT_PER_SIDE (0.02%/side futures).
+FEE_MODE = os.getenv("FEE_MODE", "taker").strip().lower()
+FEE_MAKER_PCT_PER_SIDE = float(os.getenv("FEE_MAKER_PCT_PER_SIDE", "0.0002"))
+
+
+def fee_pct_per_side() -> float:
+    if FEE_MODE == "maker":
+        return FEE_MAKER_PCT_PER_SIDE
+    return FEE_PCT_PER_SIDE
+
+
+def round_trip_cost_pct() -> float:
+    return 2 * (fee_pct_per_side() + SLIPPAGE_PCT_PER_SIDE)
+
+
+# --- Setup toggles (research_space.yaml) ---
+SETUP_MEANREV_ENABLED = _env_bool("SETUP_MEANREV_ENABLED", default=True)
+SETUP_BREAKOUT_ENABLED = _env_bool("SETUP_BREAKOUT_ENABLED", default=True)
+SETUP_TSMOM_ENABLED = _env_bool("SETUP_TSMOM_ENABLED", default=True)
+SETUP_FUNDING_ENABLED = _env_bool("SETUP_FUNDING_ENABLED", default=True)
+
+# Minimum confidence to treat a setup as tradable / open paper trades.
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", os.getenv("PAPER_MIN_CONFIDENCE", "0.60")))
+
+# Per-symbol re-entry cooldown after any prior entry (0 = disabled).
+COOLDOWN_HOURS_PER_SYMBOL = float(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "0"))
 
 # --- BTC regime filter ---
 # Alts follow BTC in stress: block new LONGs when BTC is dumping, block new
