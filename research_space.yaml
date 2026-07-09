@@ -1,0 +1,42 @@
+# Hypothesis space for the nightly research runner.
+# Each key must be a whitelisted config env var (see promotion.py prefixes).
+# Values are EXPLICIT candidate lists — no continuous ranges, so every combo
+# is enumerable, hashable, and reproducible.
+#
+# 사람이 하는 일: 여기에 축을 추가/수정하는 것. 나머지는 자동.
+# 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
+
+axes:
+  # setup on/off toggles (Cursor must add these SETUP_* flags to config.py
+  # and gate each setup function on its flag — see HANDOFF.md task C)
+  SETUP_MEANREV_ENABLED: [true, false]
+  SETUP_BREAKOUT_ENABLED: [true, false]
+  SETUP_TSMOM_ENABLED: [true, false]
+  SETUP_FUNDING_ENABLED: [true]
+
+  # mean reversion thresholds
+  MEANREV_RSI_HIGH: [68, 70, 74]
+  MEANREV_MIN_BANDWIDTH_PCT: [1.0, 2.0]
+
+  # confluence weights
+  CONFLUENCE_ALIGNED_BONUS: [0.03, 0.05, 0.08]
+
+  # trade-frequency control (Cursor task C adds these knobs)
+  MIN_CONFIDENCE: [0.55, 0.62, 0.70]
+  COOLDOWN_HOURS_PER_SYMBOL: [12, 24, 48]
+
+  # fee model assumption
+  FEE_MODE: ["taker", "maker"]
+
+# Hypothesis families to prioritize first (partial configs; generator boosts
+# priority of any combo matching all listed key/values).
+priority_families:
+  - name: "no_breakout_no_tsmom"          # last backtest's worst performers off
+    match: { SETUP_BREAKOUT_ENABLED: false, SETUP_TSMOM_ENABLED: false }
+  - name: "maker_fees"                     # fee bleed was 75% of capital
+    match: { FEE_MODE: "maker" }
+  - name: "fewer_trades"
+    match: { COOLDOWN_HOURS_PER_SYMBOL: 48, MIN_CONFIDENCE: 0.70 }
+
+limits:
+  max_new_per_run: 300     # newly queued combos per generator invocation

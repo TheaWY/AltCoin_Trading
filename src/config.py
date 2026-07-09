@@ -9,6 +9,39 @@ import os
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
 
+# --- Promotion overrides overlay ---
+# The research promotion engine (src/research/promotion.py) writes vetted
+# config changes to data/config_overrides.json. Applied here, before any
+# os.getenv() below, so a promoted value wins over .env defaults. Keys are
+# whitelisted at write time; this loader additionally refuses anything that
+# is not a plain scalar. Delete the file (or run the rollback command) to
+# return to .env values. Requires worker restart to take effect.
+import json as _json
+
+# Same whitelist as src/research/promotion.py (duplicated here to avoid a
+# circular import). Defense in depth: even a hand-edited overrides file can
+# only touch strategy-tuning keys, never credentials/DB/direction policy.
+_OVERRIDE_PREFIXES = (
+    "MEANREV_", "CONFLUENCE_", "LSR_", "SETUP_", "SCAN_", "COOLDOWN_",
+    "FEE_", "FUNDING_RATE_", "CARRY_", "POS_SHORT_", "BREAKOUT_", "TSMOM_",
+)
+_OVERRIDE_EXACT = {"MIN_CONFIDENCE", "MAX_OPEN_POSITIONS"}
+
+_OVERRIDES_FILE = Path(
+    os.getenv("DATA_DIR", str(_PROJECT_ROOT / "data"))
+) / "config_overrides.json"
+if _OVERRIDES_FILE.exists():
+    try:
+        for _key, _value in _json.loads(_OVERRIDES_FILE.read_text()).items():
+            if (
+                isinstance(_key, str)
+                and isinstance(_value, (str, int, float, bool))
+                and (_key in _OVERRIDE_EXACT or _key.startswith(_OVERRIDE_PREFIXES))
+            ):
+                os.environ[_key] = str(_value)
+    except Exception:  # corrupt overrides must never brick the worker
+        pass
+
 
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)

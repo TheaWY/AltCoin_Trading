@@ -487,6 +487,19 @@ class BacktestEngine:
                 "closed_trades": len(portfolio.closed_trades),
             },
             "symbols": self._symbol_results(portfolio.closed_trades, symbol_curves),
+            # Per-trade detail for the research stack (expectancy / PF / walk-forward
+            # gates in src/research). Additive: nothing existing reads this key.
+            "closed_trade_pnls": [
+                {
+                    "symbol": t.symbol,
+                    "strategy": getattr(t, "strategy", None),
+                    "pnl": round(float(t.pnl or 0.0), 6),
+                    "fees": round(float(getattr(t, "fees", 0.0) or 0.0), 6),
+                    "opened_at": getattr(t, "opened_at", None),
+                    "closed_at": getattr(t, "closed_at", None),
+                }
+                for t in portfolio.closed_trades
+            ],
         }
 
     def _load_prices(self) -> dict[str, list[dict[str, Any]]]:
