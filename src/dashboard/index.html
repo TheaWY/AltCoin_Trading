@@ -445,7 +445,7 @@
       max-width: 520px;
       transform: translateX(-50%);
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(6, 1fr);
       gap: 1px;
       padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
       background: rgba(5,7,11,.94);
@@ -752,45 +752,37 @@
     </section>
 
     <!-- ============ HISTORY (프로모션 / 감사) ============ -->
-    <section class="tab-page" id="tab-audit">
+    <section class="tab-page" id="tab-history">
       <div class="section">
-        <div class="section-title">자본 단계 게이트</div>
-        <div class="panel" id="capital-stage-panel">
-          <div class="stage-gauge">
-            <div style="display:flex;justify-content:space-between;font-weight:800">
-              <span id="capital-stage-label">—</span>
-              <span id="capital-stage-pct">—</span>
-            </div>
-            <div class="gauge-bar"><div class="gauge-fill" id="capital-stage-fill" style="width:0%"></div></div>
-            <div class="timeline-sub" id="capital-stage-detail">—</div>
-          </div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">주간 리포트</div>
-        <div class="panel metrics" id="weekly-report">
-          <div class="metric"><div class="metric-label">이번 주 실험</div><div class="metric-value" id="weekly-experiments">—</div></div>
-          <div class="metric"><div class="metric-label">실패</div><div class="metric-value failed" id="weekly-failed">—</div></div>
-          <div class="metric"><div class="metric-label">최고 후보</div><div class="metric-value" id="weekly-best">—</div></div>
-          <div class="metric"><div class="metric-label">챔피언 실측</div><div class="metric-value" id="weekly-champion">—</div></div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">데이터 신선도</div>
-        <div class="panel" id="freshness-board">
-          <div class="empty">데이터 상태 로딩 중…</div>
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
-          <span>프로모션 타임라인</span>
-          <button type="button" id="rollback-btn" style="font-size:11px;padding:6px 10px;border-radius:6px;border:1px solid var(--line);background:var(--panel-2);color:var(--text)">수동 롤백</button>
-        </div>
+        <div class="section-title">프로모션 타임라인</div>
         <div class="panel" id="promotion-timeline">
           <div class="empty">프로모션 기록 없음</div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-title">최근 12주 리포트</div>
+        <div class="panel scroll-table">
+          <table>
+            <thead>
+              <tr>
+                <th>주차</th>
+                <th>실험</th>
+                <th>결정 액션</th>
+                <th>최고 후보</th>
+                <th>챔피언 성과</th>
+              </tr>
+            </thead>
+            <tbody id="history-weekly-body">
+              <tr><td colspan="5" class="empty">주간 데이터 없음</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="panel method-block">
+          <a href="/experiments" style="color:var(--text);font-weight:800;text-decoration:none;">실시간 결정 피드 보기 →</a>
         </div>
       </div>
     </section>
@@ -830,7 +822,8 @@
     <button class="tab-btn" type="button" data-tab="portfolio">포트폴리오</button>
     <button class="tab-btn" type="button" data-tab="market">마켓</button>
     <button class="tab-btn" type="button" data-tab="method">전략</button>
-    <button class="tab-btn" type="button" data-tab="audit">히스토리</button>
+    <button class="tab-btn" type="button" data-tab="history">히스토리</button>
+    <button class="tab-btn" type="button" onclick="location.href='/experiments'">실험</button>
   </nav>
 
   <script>
@@ -1333,97 +1326,68 @@
       return hours < 24 ? `${hours.toFixed(1)}h` : `${(hours / 24).toFixed(1)}d`;
     }
 
-    function renderCapitalStage(capital) {
-      if (!capital) return;
-      const next = capital.next_stage ? ` → ${capital.next_stage}` : '';
-      $('capital-stage-label').textContent = `${capital.stage}${next}`;
-      $('capital-stage-pct').textContent = `${capital.progress_pct ?? 0}%`;
-      $('capital-stage-fill').style.width = `${capital.progress_pct ?? 0}%`;
-      const c = capital.criteria || {};
-      const lines = [
-        `거래 ${c.trades?.current ?? 0}/${c.trades?.required ?? '—'} ${c.trades?.met ? '✓' : ''}`,
-        `기대값 ${c.expectancy?.current ?? 0} ${c.expectancy?.met ? '✓' : ''}`,
-        `최대 DD ${c.max_dd_pct?.current ?? 0}% / ${c.max_dd_pct?.required ?? '—'}% ${c.max_dd_pct?.met ? '✓' : ''}`,
-        `연속 양호 월 ${c.consecutive_months?.current ?? 0}/${c.consecutive_months?.required ?? '—'} ${c.consecutive_months?.met ? '✓' : ''}`,
-      ];
-      const risk = capital.demotion_risk
-        ? ' · <span class="neg">강등 위험</span>'
-        : capital.promote_ready
-          ? ' · <span class="pos">승격 조건 충족</span>'
-          : '';
-      $('capital-stage-detail').innerHTML = lines.join(' · ') + risk;
-    }
-
-    function renderAuditTab(history) {
-      if (!history) return;
-      renderCapitalStage(history.capital_stage);
-      const weekly = history.weekly || {};
-      $('weekly-experiments').textContent = weekly.experiments_run ?? '—';
-      $('weekly-failed').textContent = weekly.experiments_failed ?? '—';
-      $('weekly-best').textContent = weekly.best_candidate_hash
-        ? `${weekly.best_candidate_hash} (${(weekly.best_candidate_expectancy ?? 0).toFixed(3)})`
-        : '—';
-      const champ = weekly.champion_performance || {};
-      $('weekly-champion').textContent = champ.trades
-        ? `${champ.trades}건 · ${champ.total_pnl >= 0 ? '+' : ''}$${champ.total_pnl}`
-        : '—';
-
-      const fresh = history.data_freshness || [];
-      if (!fresh.length) {
-        $('freshness-board').innerHTML = '<div class="empty">신선도 데이터 없음</div>';
-      } else {
-        const verdict = history.data_verdict || {};
-        $('freshness-board').innerHTML = `
-          <div class="fresh-row" style="font-weight:800">
-            <span>종합 판정</span>
-            <span class="${verdict.healthy ? 'pos' : 'neg'}">${esc(verdict.action || '—')}</span>
-          </div>
-          ${fresh.map(row => `
-            <div class="fresh-row">
-              <span>${esc(row.source)}${row.symbol ? ` · ${esc(row.symbol)}` : ''}</span>
-              <span class="${row.status === 'ok' ? 'pos' : 'neg'}">${esc(row.status)} · ${row.age_minutes ?? '—'}분</span>
-            </div>
-          `).join('')}
-        `;
-      }
-
-      const timeline = history.timeline || [];
+    function renderResearchHistoryTab(payload) {
+      if (!payload) return;
+      const timeline = payload.timeline || [];
       if (!timeline.length) {
         $('promotion-timeline').innerHTML = '<div class="empty">프로모션 기록 없음</div>';
       } else {
         $('promotion-timeline').innerHTML = timeline.map(item => {
-          const perf = item.performance || {};
-          const diffKeys = Object.keys(item.config_diff || {});
-          const diffHtml = diffKeys.length
-            ? diffKeys.map(k => `${k}: ${item.config_diff[k].from ?? '—'} → ${item.config_diff[k].to}`).join(' · ')
+          const perf = item.reign_performance || {};
+          const diff = item.config_diff || [];
+          const diffHtml = diff.length
+            ? diff.map(d => `${esc(d.key)}: ${esc(d.from ?? '—')} → ${esc(d.to ?? '—')}`).join(' · ')
             : '변경 없음';
+          const shortReason = (item.reason || '').length > 120
+            ? `${esc((item.reason || '').slice(0, 120))}…`
+            : esc(item.reason || '');
           return `
             <div class="timeline-item">
               <div class="timeline-head">
-                <span>${item.action === 'promote' ? '승격' : '롤백'} · ${esc(item.config_hash)}</span>
+                <span><span class="pill ${item.action === 'promote' ? 'swing' : 'none'}">${item.label || (item.action === 'promote' ? '승격' : '롤백')}</span> ${esc(item.config_hash || '-')}</span>
                 <span class="muted">${fmtTs(item.created_at)}</span>
               </div>
-              <div class="timeline-sub">${esc(item.reason || '')}</div>
-              <div class="timeline-sub">설정: ${diffHtml}</div>
-              <div class="timeline-sub">실측 ${perf.trades || 0}건 · PnL $${perf.total_pnl ?? 0} · 기대값 ${perf.expectancy ?? 0}</div>
+              <details class="metric-details" style="margin-top:8px">
+                <summary>${shortReason || '사유 없음'}</summary>
+                <div class="timeline-sub">${esc(item.reason || '사유 없음')}</div>
+              </details>
+              <div class="timeline-sub">설정 변경: ${diffHtml}</div>
+              <div class="timeline-sub">
+                리즌 기간 성과 · 거래 ${perf.trade_count ?? 0}건 ·
+                PnL <span class="${tone(perf.net_pnl)}">${perf.net_pnl ?? 0}</span> ·
+                기대값 ${perf.expectancy ?? 0} ·
+                승률 ${perf.win_rate_pct == null ? '—' : perf.win_rate_pct + '%'} ·
+                MDD ${perf.max_drawdown ?? 0}
+              </div>
             </div>
           `;
         }).join('');
       }
-    }
 
-    document.getElementById('rollback-btn')?.addEventListener('click', async () => {
-      if (!confirm('현재 챔피언 설정을 이전 스냅샷으로 롤백할까요? 워커 재시작이 필요할 수 있습니다.')) return;
-      try {
-        const res = await fetch('/api/research/rollback', { method: 'POST' });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.detail || 'rollback failed');
-        alert('롤백 완료. 워커를 재시작하면 설정이 적용됩니다.');
-        loadInitial();
-      } catch (err) {
-        alert(`롤백 실패: ${err.message || err}`);
+      const weekly = payload.weekly || [];
+      if (!weekly.length) {
+        $('history-weekly-body').innerHTML = '<tr><td colspan="5" class="empty">주간 데이터 없음</td></tr>';
+      } else {
+        $('history-weekly-body').innerHTML = weekly.map(w => {
+          const best = w.best_candidate;
+          const exp = w.experiments || {};
+          const decisions = w.decisions_by_action || {};
+          const decisionText = Object.keys(decisions).length
+            ? Object.entries(decisions).map(([k, v]) => `${k}:${v}`).join(', ')
+            : '—';
+          const champ = w.champion_reign || {};
+          return `
+            <tr>
+              <td>${fmtTs(w.week_start).split(' ')[0]}</td>
+              <td>완료 ${exp.done ?? 0} / 실패 ${exp.failed ?? 0}</td>
+              <td>${esc(decisionText)}</td>
+              <td>${best ? `${esc(best.config_hash)} (${num(best.expectancy).toFixed(3)})` : '—'}</td>
+              <td class="${tone(champ.net_pnl)}">PnL ${champ.net_pnl ?? 0} · ${champ.trade_count ?? 0}건</td>
+            </tr>
+          `;
+        }).join('');
       }
-    });
+    }
 
     function renderHistory(data) {
       const trades = (data.closed_trades || data.recent_trades || [])
@@ -1582,7 +1546,6 @@
       renderStrategyStats(data);
       renderPositions(data);
       renderMethod(data);
-      renderAuditTab(data.history);
       renderHistory(data);
       renderMarketSummary(data);
       renderMarketTable(data);
@@ -1603,6 +1566,10 @@
       try {
         const response = await fetch('/api/alts');
         render(await response.json());
+        const historyRes = await fetch('/api/research/history');
+        if (historyRes.ok) {
+          renderResearchHistoryTab(await historyRes.json());
+        }
       } catch {
         setLive(false);
       }
