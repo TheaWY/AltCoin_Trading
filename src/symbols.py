@@ -44,7 +44,10 @@ def _discover_universe() -> list[str]:
     """All active Binance USDT perps as spot symbols, by 24h volume desc."""
     from src.data.collectors.binance import _build_exchange
 
-    exchange = _build_exchange()
+    exchange = _build_exchange(
+        use_testnet=config.BINANCE_MARKET_DATA_TESTNET,
+        authenticated=False,
+    )
     tickers = exchange.fetch_tickers()
 
     ranked: list[tuple[float, str]] = []
