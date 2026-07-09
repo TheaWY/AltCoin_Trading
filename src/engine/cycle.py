@@ -21,6 +21,17 @@ logger = logging.getLogger(__name__)
 STYLE_MAP = {"단타": "scalp", "스윙": "swing"}
 
 
+def _category_allowed(storage: Storage, symbol: str) -> tuple[bool, dict[str, Any] | None, str]:
+    try:
+        from src.research.market_categories import is_symbol_trade_allowed
+
+        allowed, reason, category = is_symbol_trade_allowed(storage, symbol)
+        return allowed, category, reason
+    except Exception:
+        logger.exception("Category filter failed for %s; allowing legacy behaviour", symbol)
+        return True, None, "category filter unavailable"
+
+
 def _entry_candidates_from_evaluation(
     storage: Storage,
     symbols: list[str],
@@ -49,6 +60,12 @@ def _entry_candidates_from_evaluation(
         verdict = result.get("verdict")
         if not result.get("tradable") or not verdict:
             continue
+        allowed, category, reason = _category_allowed(storage, symbol)
+        result["category"] = category
+        result["category_filter_reason"] = reason
+        if not allowed:
+            logger.info("Entry blocked by market category: %s — %s", symbol, reason)
+            continue
         candidates.append(result)
 
     candidates.sort(
@@ -72,8 +89,17 @@ def _entry_candidates_from_legacy_analyzer(
         for analysis in analyzer.analyze_all(symbols)
         if analysis["worth_investing"]
     ]
-    ranked_candidates.sort(key=lambda analysis: analysis["confidence"], reverse=True)
-    return ranked_candidates[: config.MAX_OPEN_POSITIONS]
+    filtered: list[dict[str, Any]] = []
+    for analysis in ranked_candidates:
+        allowed, category, reason = _category_allowed(storage, analysis["symbol"])
+        analysis["category"] = category
+        analysis["category_filter_reason"] = reason
+        if allowed:
+            filtered.append(analysis)
+        else:
+            logger.info("Legacy entry blocked by market category: %s — %s", analysis["symbol"], reason)
+    filtered.sort(key=lambda analysis: analysis["confidence"], reverse=True)
+    return filtered[: config.MAX_OPEN_POSITIONS]
 
 
 def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
@@ -203,6 +229,8 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     "decision_engine": "evaluation",
                     "confidence": candidate.get("confidence"),
                     "confluence": verdict.get("confluence"),
+                    "market_category": (candidate.get("category") or {}).get("category") if candidate.get("category") else None,
+                    "category_reason": candidate.get("category_filter_reason"),
                 },
             }
             opened = trader.process_signal(signal_result, float(price_row["close"]), require_worth=False)
