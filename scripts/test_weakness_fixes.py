@@ -6,6 +6,7 @@ No network calls. This verifies that the repo defaults now reflect the review:
 - low-turnover confidence/cooldown defaults
 - weak/noisy setup branches disabled by default
 - cash benchmark annotation works
+- paper market data uses real public endpoints by default
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ for key in (
     "SETUP_BREAKOUT_ENABLED",
     "SETUP_TSMOM_ENABLED",
     "SETUP_VOLUME_ENABLED",
+    "BINANCE_MARKET_DATA_TESTNET",
 ):
     os.environ.pop(key, None)
 os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="weakness_fix_test_")
@@ -44,6 +46,7 @@ def main() -> int:
     assert config.SETUP_BREAKOUT_ENABLED is False
     assert config.SETUP_TSMOM_ENABLED is False
     assert config.SETUP_VOLUME_ENABLED is False
+    assert config.BINANCE_MARKET_DATA_TESTNET is False
 
     report = {
         "summary": {
