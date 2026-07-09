@@ -93,7 +93,7 @@ app.include_router(ws_router)
 
 @app.get("/")
 async def root() -> dict[str, str]:
-    return {"status": "ok", "dashboard": "/dashboard"}
+    return {"status": "ok", "dashboard": "/dashboard", "full_dashboard": "/dashboard/full"}
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -108,8 +108,14 @@ async def readyz() -> dict[str, bool]:
 
 @app.get("/dashboard")
 async def dashboard_page() -> FileResponse:
-    index = config.DASHBOARD_DIR / "index.html"
-    return FileResponse(index)
+    """Home-first dashboard: entry decisions only, no generic market tab."""
+    return FileResponse(config.DASHBOARD_DIR / "home.html")
+
+
+@app.get("/dashboard/full")
+async def full_dashboard_page() -> FileResponse:
+    """Legacy full dashboard, including portfolio, strategy, history, and market."""
+    return FileResponse(config.DASHBOARD_DIR / "index.html")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
