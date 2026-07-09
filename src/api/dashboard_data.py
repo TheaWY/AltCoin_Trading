@@ -6,6 +6,7 @@ import json
 import math
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any
 
 from src import config
@@ -193,6 +194,110 @@ def _window_performance(
     }
 
 
+def build_capital_stage_progress(storage: Storage | None = None) -> dict[str, Any]:
+    storage = storage or get_storage()
+    stage = config.CAPITAL_STAGE
+    stages = ["paper", "live_150", "live_400", "live_full"]
+    try:
+        stage_idx = stages.index(stage)
+    except ValueError:
+        stage_idx = 0
+        stage = "paper"
+    next_stage = stages[stage_idx + 1] if stage_idx + 1 < len(stages) else None
+
+    with storage._connect() as conn:
+        rows = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT pnl, closed_at FROM paper_trades "
+                "WHERE status = 'closed' AND closed_at IS NOT NULL "
+                "ORDER BY closed_at"
+            ).fetchall()
+        ]
+
+    pnls = [float(r["pnl"] or 0) for r in rows]
+    trade_count = len(pnls)
+    expectancy = sum(pnls) / trade_count if trade_count else 0.0
+
+    equity, peak, max_dd = 0.0, 0.0, 0.0
+    for pnl in pnls:
+        equity += pnl
+        peak = max(peak, equity)
+        max_dd = max(max_dd, peak - equity)
+    max_dd_pct = (max_dd / config.PAPER_STARTING_CAPITAL * 100) if config.PAPER_STARTING_CAPITAL else 0.0
+
+    rolling = pnls[-config.CAPITAL_DEMOTE_ROLLING_TRADES :]
+    rolling_expectancy = sum(rolling) / len(rolling) if rolling else 0.0
+
+    # Monthly buckets for consecutive-month gate
+    monthly: dict[str, list[float]] = {}
+    for row in rows:
+        ts = int(row["closed_at"])
+        key = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m")
+        monthly.setdefault(key, []).append(float(row["pnl"] or 0))
+
+    month_keys = sorted(monthly.keys())
+    qualifying_months = 0
+    for key in reversed(month_keys):
+        month_pnls = monthly[key]
+        month_eq, month_peak, month_dd = 0.0, 0.0, 0.0
+        for p in month_pnls:
+            month_eq += p
+            month_peak = max(month_peak, month_eq)
+            month_dd = max(month_dd, month_peak - month_eq)
+        month_dd_pct = (
+            month_dd / config.PAPER_STARTING_CAPITAL * 100
+            if config.PAPER_STARTING_CAPITAL
+            else 0.0
+        )
+        month_expectancy = sum(month_pnls) / len(month_pnls)
+        if month_expectancy > config.CAPITAL_STAGE_MIN_EXPECTANCY and month_dd_pct <= config.CAPITAL_STAGE_MAX_DD_PCT:
+            qualifying_months += 1
+        else:
+            break
+
+    criteria = {
+        "trades": {
+            "current": trade_count,
+            "required": config.CAPITAL_STAGE_MIN_TRADES,
+            "met": trade_count >= config.CAPITAL_STAGE_MIN_TRADES,
+        },
+        "expectancy": {
+            "current": round(expectancy, 4),
+            "required": config.CAPITAL_STAGE_MIN_EXPECTANCY,
+            "met": expectancy > config.CAPITAL_STAGE_MIN_EXPECTANCY,
+        },
+        "max_dd_pct": {
+            "current": round(max_dd_pct, 2),
+            "required": config.CAPITAL_STAGE_MAX_DD_PCT,
+            "met": max_dd_pct <= config.CAPITAL_STAGE_MAX_DD_PCT,
+        },
+        "consecutive_months": {
+            "current": qualifying_months,
+            "required": config.CAPITAL_STAGE_CONSECUTIVE_MONTHS,
+            "met": qualifying_months >= config.CAPITAL_STAGE_CONSECUTIVE_MONTHS,
+        },
+    }
+    promote_ready = all(c["met"] for c in criteria.values())
+    demotion_risk = (
+        max_dd_pct > config.CAPITAL_DEMOTE_DD_PCT
+        or rolling_expectancy < config.CAPITAL_STAGE_MIN_EXPECTANCY
+    )
+
+    met_count = sum(1 for c in criteria.values() if c["met"])
+    progress_pct = round(met_count / len(criteria) * 100)
+
+    return {
+        "stage": stage,
+        "next_stage": next_stage,
+        "criteria": criteria,
+        "promote_ready": promote_ready and next_stage is not None,
+        "demotion_risk": demotion_risk,
+        "rolling_expectancy": round(rolling_expectancy, 4),
+        "progress_pct": progress_pct,
+    }
+
+
 def build_history_payload(storage: Storage | None = None) -> dict[str, Any]:
     storage = storage or get_storage()
     from src.research.data_quality import freshness, verdict
@@ -275,6 +380,7 @@ def build_history_payload(storage: Storage | None = None) -> dict[str, Any]:
         },
         "data_freshness": freshness(),
         "data_verdict": verdict(),
+        "capital_stage": build_capital_stage_progress(storage),
     }
 
 

@@ -211,6 +211,23 @@
       font-size: 12px;
     }
     .metric-value.failed { color: #f87171; }
+    .stage-gauge {
+      padding: 14px;
+      background: var(--panel-2);
+      border-bottom: 1px solid var(--line);
+    }
+    .gauge-bar {
+      margin-top: 8px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      overflow: hidden;
+    }
+    .gauge-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--down), var(--green));
+      transition: width .3s ease;
+    }
     .pos { color: var(--up); }
     .neg { color: var(--down); }
     .muted { color: var(--muted); }
@@ -736,6 +753,20 @@
 
     <!-- ============ HISTORY (프로모션 / 감사) ============ -->
     <section class="tab-page" id="tab-audit">
+      <div class="section">
+        <div class="section-title">자본 단계 게이트</div>
+        <div class="panel" id="capital-stage-panel">
+          <div class="stage-gauge">
+            <div style="display:flex;justify-content:space-between;font-weight:800">
+              <span id="capital-stage-label">—</span>
+              <span id="capital-stage-pct">—</span>
+            </div>
+            <div class="gauge-bar"><div class="gauge-fill" id="capital-stage-fill" style="width:0%"></div></div>
+            <div class="timeline-sub" id="capital-stage-detail">—</div>
+          </div>
+        </div>
+      </div>
+
       <div class="section">
         <div class="section-title">주간 리포트</div>
         <div class="panel metrics" id="weekly-report">
@@ -1302,8 +1333,30 @@
       return hours < 24 ? `${hours.toFixed(1)}h` : `${(hours / 24).toFixed(1)}d`;
     }
 
+    function renderCapitalStage(capital) {
+      if (!capital) return;
+      const next = capital.next_stage ? ` → ${capital.next_stage}` : '';
+      $('capital-stage-label').textContent = `${capital.stage}${next}`;
+      $('capital-stage-pct').textContent = `${capital.progress_pct ?? 0}%`;
+      $('capital-stage-fill').style.width = `${capital.progress_pct ?? 0}%`;
+      const c = capital.criteria || {};
+      const lines = [
+        `거래 ${c.trades?.current ?? 0}/${c.trades?.required ?? '—'} ${c.trades?.met ? '✓' : ''}`,
+        `기대값 ${c.expectancy?.current ?? 0} ${c.expectancy?.met ? '✓' : ''}`,
+        `최대 DD ${c.max_dd_pct?.current ?? 0}% / ${c.max_dd_pct?.required ?? '—'}% ${c.max_dd_pct?.met ? '✓' : ''}`,
+        `연속 양호 월 ${c.consecutive_months?.current ?? 0}/${c.consecutive_months?.required ?? '—'} ${c.consecutive_months?.met ? '✓' : ''}`,
+      ];
+      const risk = capital.demotion_risk
+        ? ' · <span class="neg">강등 위험</span>'
+        : capital.promote_ready
+          ? ' · <span class="pos">승격 조건 충족</span>'
+          : '';
+      $('capital-stage-detail').innerHTML = lines.join(' · ') + risk;
+    }
+
     function renderAuditTab(history) {
       if (!history) return;
+      renderCapitalStage(history.capital_stage);
       const weekly = history.weekly || {};
       $('weekly-experiments').textContent = weekly.experiments_run ?? '—';
       $('weekly-failed').textContent = weekly.experiments_failed ?? '—';
