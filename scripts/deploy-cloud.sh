@@ -36,14 +36,18 @@ cat <<'VARS'
 
 Required environment variables (Railway → Service → Variables):
 
-  BINANCE_API_KEY=your_testnet_key
-  BINANCE_API_SECRET=your_testnet_secret
-  BINANCE_TESTNET=true
   DEPLOYMENT_MODE=cloud
-  DATA_DIR=/data
-  DATABASE_PATH=/data/trading.db
   NGROK_ENABLED=false
   RUN_TRADING_SCHEDULER=false
+  DATABASE_URL=<from Railway Postgres plugin — attach to this service>
+
+Do NOT set BINANCE_API_KEY on Railway — Binance returns HTTP 451 from US
+cloud IPs. Data collection and paper trading run on the Mac Mini instead.
+See docs/DEPLOYMENT.md for the full Mac + Railway split (Option B).
+
+Mac Mini .env (worker + research):
+  cp .env.mac.example .env
+  # fill BINANCE_API_KEY, BINANCE_API_SECRET, same DATABASE_URL as Railway
 
 Railway public networking:
 
@@ -52,8 +56,7 @@ Railway public networking:
   returns 502 with x-railway-fallback=true, open Railway → Service → Networking
   → Public Networking → edit the domain → set Target Port to 8080.
 
-Optional:
-  RUN_TRADING_SCHEDULER=true   # only on a separate worker/service
+Optional on Railway:
   TRADING_SYMBOLS=BTC/USDT,ETH/USDT,SOL/USDT,...
   PAPER_STARTING_CAPITAL=10000
 

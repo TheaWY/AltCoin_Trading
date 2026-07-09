@@ -5,8 +5,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 WEB_HOST="${API_HOST:-0.0.0.0}"
-if [[ "${DEPLOYMENT_MODE:-}" == "cloud" ]]; then
+if [[ "${DEPLOYMENT_MODE:-}" == "cloud" ]] || [[ -n "${RAILWAY_ENVIRONMENT:-}" ]]; then
   export NGROK_ENABLED="${NGROK_ENABLED:-false}"
+  # Dashboard-only on cloud: Binance API is geo-blocked (HTTP 451) from Railway.
+  # The Mac Mini worker writes to the shared DATABASE_URL instead.
+  export RUN_TRADING_SCHEDULER="${RUN_TRADING_SCHEDULER:-false}"
 fi
 
 if [[ -n "${PORT:-}" ]]; then

@@ -151,12 +151,14 @@ OHLCV_TIMEFRAME = os.getenv("OHLCV_TIMEFRAME", "1h")
 # First fetch per symbol/timeframe pulls this many candles (720 x 1h = 30 days,
 # enough for the quant evaluation metrics); later fetches are incremental.
 OHLCV_LIMIT = int(os.getenv("OHLCV_LIMIT", "720"))
-# The scheduler runs in a background thread and never blocks the web server,
-# so it is on by default everywhere — a single Railway service collects data
-# out of the box. When you add a dedicated worker service
-# (scripts/start-worker.sh), set RUN_TRADING_SCHEDULER=false on the web
-# service to split the roles.
-RUN_TRADING_SCHEDULER = _env_bool("RUN_TRADING_SCHEDULER", default=True)
+# The scheduler runs in a background thread and never blocks the web server.
+# On cloud hosts (Railway, Fly, Render) it defaults OFF — Binance returns HTTP
+# 451 from US cloud IPs, so collection/paper trading must run on the Mac Mini.
+# Set RUN_TRADING_SCHEDULER=true only for local dev or a dedicated worker host.
+RUN_TRADING_SCHEDULER = _env_bool(
+    "RUN_TRADING_SCHEDULER",
+    default=not is_cloud_runtime(),
+)
 
 # --- Funding Rate Reversal strategy thresholds ---
 # Rates are expressed as decimals (0.001 = 0.1%)
