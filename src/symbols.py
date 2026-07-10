@@ -59,7 +59,15 @@ def _exchange_info_symbols(exchange: Any) -> dict[str, dict[str, Any]]:
         quote = item.get("quoteAsset")
         if not base or quote != "USDT":
             continue
-        result[f"{base}/USDT"] = item
+        key = f"{base}/USDT"
+        existing = result.get(key)
+        if existing is None:
+            result[key] = item
+            continue
+        # Binance lists PERPETUAL plus quarterly contracts for the same base.
+        # Keep the perpetual row so majors like BTC/ETH stay in the universe.
+        if item.get("contractType") == "PERPETUAL" and existing.get("contractType") != "PERPETUAL":
+            result[key] = item
     return result
 
 
