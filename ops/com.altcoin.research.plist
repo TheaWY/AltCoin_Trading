@@ -9,6 +9,7 @@
     <string>__REPO_PATH__/ops/nightly_research.sh</string>
   </array>
   <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>RunAtLoad</key><true/>
   <key>StartCalendarInterval</key>
   <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>0</integer></dict>
   <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/research.out.log</string>
