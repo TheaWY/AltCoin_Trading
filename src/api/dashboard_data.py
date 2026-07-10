@@ -15,7 +15,6 @@ from src.engine.analyzer import AltAnalyzer
 from src.engine.evaluation import evaluate_all
 from src.engine.paper_trader import PaperTrader
 from src.engine.regime import btc_regime
-from src.health import get_health
 from src.symbols import trading_symbols
 
 
@@ -23,6 +22,31 @@ from src.symbols import trading_symbols
 # let a finished trading cycle (new data) invalidate the cache explicitly.
 _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {"payload": None, "built_at": 0.0}
+
+
+def build_data_health(
+    storage: Storage | None = None,
+    max_age_seconds: int = 15 * 60,
+) -> dict[str, Any]:
+    """Dashboard health based on newest market data, not server worker state."""
+    storage = storage or get_storage()
+    latest_ts: int | None = None
+    with storage._connect() as conn:  # noqa: SLF001
+        row = conn.execute("SELECT MAX(timestamp) AS ts FROM prices").fetchone()
+    if row:
+        raw_ts = row.get("ts") if isinstance(row, dict) else row[0]
+        latest_ts = int(raw_ts) if raw_ts else None
+
+    now = int(time.time())
+    age_seconds = max(0, now - latest_ts) if latest_ts else None
+    online = age_seconds is not None and age_seconds < max_age_seconds
+    return {
+        "status": "online" if online else "offline",
+        "live": online,
+        "latest_price_ts": latest_ts,
+        "price_age_seconds": age_seconds,
+        "max_age_seconds": max_age_seconds,
+    }
 
 
 def _config_diff(
@@ -524,7 +548,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "recent_trades": storage.get_recent_trades(20),
         "closed_trades": storage.get_recent_closed_trades(20),
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
-        "health": get_health().get_status(),
+        "health": build_data_health(storage),
         "research": build_research_payload(storage),
         "history": build_history_payload(storage),
     }
