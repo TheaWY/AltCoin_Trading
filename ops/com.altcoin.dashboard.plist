@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>-m</string>
+    <string>uvicorn</string>
+    <string>src.api.main:app</string>
+    <string>--host</string>
+    <string>0.0.0.0</string>
+    <string>--port</string>
+    <string>8000</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/dashboard.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/dashboard.err.log</string>
+</dict>
+</plist>

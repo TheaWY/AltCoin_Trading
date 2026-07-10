@@ -8,10 +8,10 @@ if sudo -n true 2>/dev/null; then
 else
   echo "skip: pmset sleep change requires sudo password"
 fi
-for P in com.altcoin.worker com.altcoin.research com.altcoin.watchdog; do
+for P in com.altcoin.worker com.altcoin.research com.altcoin.watchdog com.altcoin.dashboard; do
   sed "s|__REPO_PATH__|$REPO|g" "$REPO/ops/$P.plist" > "$HOME/Library/LaunchAgents/$P.plist"
   launchctl unload "$HOME/Library/LaunchAgents/$P.plist" 2>/dev/null || true
   launchctl load "$HOME/Library/LaunchAgents/$P.plist"
 done
-echo "installed: worker(KeepAlive) + research(01:00) + watchdog(60s). sleep disabled."
+echo "installed: worker(KeepAlive) + research(01:00) + watchdog(60s) + dashboard(KeepAlive). sleep disabled."
 echo "check: launchctl list | grep altcoin"
