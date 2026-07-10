@@ -21,6 +21,13 @@ logger = logging.getLogger(__name__)
 STYLE_MAP = {"단타": "scalp", "스윙": "swing"}
 
 
+def _active_cycle_symbols(symbols: list[str]) -> list[str]:
+    limit = config.ACTIVE_TRADING_SYMBOLS_LIMIT
+    if limit <= 0:
+        return symbols
+    return symbols[:limit]
+
+
 def _category_allowed(storage: Storage, symbol: str) -> tuple[bool, dict[str, Any] | None, str]:
     try:
         from src.research.market_categories import is_symbol_trade_allowed
@@ -105,7 +112,14 @@ def _entry_candidates_from_legacy_analyzer(
 def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     """Full cycle: collect → signal → evaluate → paper trade → outcomes."""
     storage = storage or get_storage()
-    symbols = trading_symbols()
+    universe_symbols = trading_symbols()
+    symbols = _active_cycle_symbols(universe_symbols)
+    if len(symbols) != len(universe_symbols):
+        logger.info(
+            "Trading cycle limited to %d/%d ranked symbols",
+            len(symbols),
+            len(universe_symbols),
+        )
     cycle_ok = True
     cycle_error = None
 
@@ -122,9 +136,18 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     # Positioning data (long/short ratio, open interest) for positioning_short.
     # Enrichment only: failures are logged inside and never break the cycle.
     try:
-        from src.data.collectors.positioning import run_positioning_collection
+        from src.data.collectors.positioning import (
+            positioning_collection_symbols,
+            run_positioning_collection,
+        )
 
-        run_positioning_collection(symbols, storage)
+        positioning_symbols = positioning_collection_symbols(symbols)
+        logger.info(
+            "Positioning collection limited to %d/%d ranked symbols",
+            len(positioning_symbols),
+            len(symbols),
+        )
+        run_positioning_collection(positioning_symbols, storage)
     except Exception:
         logger.exception("Positioning collection failed")
 

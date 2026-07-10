@@ -56,10 +56,16 @@ def _ensure_schema() -> None:
                 conn.execute(stmt)
 
 
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return row[index]
+
+
 def _symbols() -> list[str]:
     with get_storage()._connect() as conn:  # noqa: SLF001
         rows = conn.execute("SELECT DISTINCT symbol FROM prices").fetchall()
-        return [r[0] for r in rows]
+        return [str(_row_value(r, "symbol")) for r in rows]
 
 
 def _last_ts(table: str, symbol: str | None) -> int | None:
@@ -70,7 +76,8 @@ def _last_ts(table: str, symbol: str | None) -> int | None:
         params = (symbol,)
     with get_storage()._connect() as conn:  # noqa: SLF001
         row = conn.execute(query, params).fetchone()
-        return int(row[0]) if row and row[0] else None
+        timestamp = _row_value(row, "max", 0) if row else None
+        return int(timestamp) if timestamp else None
 
 
 def freshness() -> list[dict[str, Any]]:
@@ -107,7 +114,7 @@ def scan_gaps(days: int = 30) -> list[dict[str, Any]]:
                 "ORDER BY timestamp",
                 (symbol, since),
             ).fetchall()
-        stamps = [int(r[0]) for r in rows]
+        stamps = [int(_row_value(r, "timestamp")) for r in rows]
         for prev, cur in zip(stamps, stamps[1:]):
             if cur - prev > cadence * GAP_FACTOR:
                 gap = {

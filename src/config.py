@@ -123,6 +123,10 @@ _default_alts = "BTC/USDT,ETH/USDT,SOL/USDT,BNB/USDT,XRP/USDT,DOGE/USDT,ADA/USDT
 TRADING_SYMBOLS = [
     s.strip() for s in os.getenv("TRADING_SYMBOLS", _default_alts).split(",") if s.strip()
 ]
+# Active trading cycles use the top-ranked slice of the discovered/configured
+# universe. Research/bootstrap scripts can still use the full universe when
+# they call trading_symbols() directly.
+ACTIVE_TRADING_SYMBOLS_LIMIT = int(os.getenv("ACTIVE_TRADING_SYMBOLS_LIMIT", "20"))
 MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
 # Dashboard payload is expensive with hundreds of symbols; serve a cached
 # build for this many seconds (a finished trading cycle invalidates it).

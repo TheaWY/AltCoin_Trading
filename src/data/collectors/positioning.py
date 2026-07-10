@@ -25,6 +25,30 @@ logger = logging.getLogger(__name__)
 _FAPI = "https://fapi.binance.com"
 _PERIOD = "1h"
 _LIMIT = 500  # max rows per request; 500 x 1h ≈ 20 days, fine for incremental
+_SYMBOL_LIMIT = 20
+_MIN_COLLECTION_INTERVAL_SECONDS = 3600
+_last_collection_started_at: float | None = None
+
+
+def positioning_collection_symbols(symbols: list[str]) -> list[str]:
+    """Return the ranked active subset used for hourly positioning enrichment."""
+    return symbols[:_SYMBOL_LIMIT]
+
+
+def _current_hour_start() -> int:
+    return int(time.time() // _MIN_COLLECTION_INTERVAL_SECONDS) * _MIN_COLLECTION_INTERVAL_SECONDS
+
+
+def _latest_stored_positioning_timestamp(storage: Storage, symbols: list[str]) -> int | None:
+    latest: int | None = None
+    for symbol in symbols:
+        for getter in (storage.get_ls_ratio_history, storage.get_open_interest_history):
+            rows = getter(symbol, limit=1)
+            if not rows:
+                continue
+            timestamp = int(rows[-1]["timestamp"])
+            latest = timestamp if latest is None else max(latest, timestamp)
+    return latest
 
 
 def _futures_symbol(spot_symbol: str) -> str:
@@ -100,14 +124,46 @@ class PositioningCollector:
 def run_positioning_collection(
     symbols: list[str], storage: Storage | None = None
 ) -> dict[str, dict[str, int]]:
-    """Collect positioning data for the given symbols. Failures are logged
-    per symbol, never raised — positioning data is enrichment, and a fetch
-    failure must not break the trading cycle. Strategies that require this
-    data return NONE signals through validate_data() when it's missing.
+    """Collect positioning data for the highest-ranked active symbols.
+
+    The Binance positioning endpoints are 1h-period data and each symbol
+    writes hundreds of historical rows, which is too slow to run across the
+    full auto-discovered universe every 5-minute trading cycle. The caller's
+    symbol order is the existing universe ranking, so we collect only the top
+    slice and skip runs until the next hourly window.
+
+    Failures are logged per symbol, never raised — positioning data is
+    enrichment, and a fetch failure must not break the trading cycle.
+    Strategies that require this data return NONE signals through
+    validate_data() when it's missing.
     """
-    storage = storage or get_storage()
+    global _last_collection_started_at
+
+    now = time.monotonic()
+    if (
+        _last_collection_started_at is not None
+        and now - _last_collection_started_at < _MIN_COLLECTION_INTERVAL_SECONDS
+    ):
+        logger.info(
+            "Skipping positioning collection; last run started %.0f seconds ago",
+            now - _last_collection_started_at,
+        )
+        return {}
+
+    _last_collection_started_at = now
     results: dict[str, dict[str, int]] = {}
-    for symbol in symbols:
+    target_symbols = positioning_collection_symbols(symbols)
+    storage = storage or get_storage()
+    latest_stored_ts = _latest_stored_positioning_timestamp(storage, target_symbols)
+    current_hour_start = _current_hour_start()
+    if latest_stored_ts is not None and latest_stored_ts >= current_hour_start:
+        logger.info(
+            "Skipping positioning collection; stored data covers current hourly period"
+        )
+        return {}
+
+    logger.info("Collecting positioning data for %d ranked symbols", len(target_symbols))
+    for symbol in target_symbols:
         try:
             results[symbol] = PositioningCollector(symbol, storage).collect_all()
             time.sleep(0.2)  # stay well under fapi rate limits
