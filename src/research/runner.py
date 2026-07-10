@@ -50,6 +50,16 @@ SYMBOLS = os.getenv("RESEARCH_SYMBOLS", "BTC/USDT,ETH/USDT")
 TIMEOUT_S = int(os.getenv("RESEARCH_RUN_TIMEOUT_S", "600"))
 
 
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return row[index]
+
+
+def _date_to_ts(value: str) -> int:
+    return int(datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+
+
 def _windows() -> list[tuple[str, str]]:
     """Rolling test windows ending at the holdout boundary, newest last."""
     end = datetime.strptime(HOLDOUT_START, "%Y-%m-%d").replace(tzinfo=timezone.utc)
@@ -117,9 +127,10 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
     budget_override = int(os.getenv("RESEARCH_TRIAL_BUDGET", "0"))
     budget = budget_override if budget_override > 0 else max_trials_for_history(history_years)
     with storage._connect() as conn:  # noqa: SLF001
-        tried = conn.execute(
+        tried_row = conn.execute(
             "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed')"
-        ).fetchone()[0]
+        ).fetchone()
+        tried = int(_row_value(tried_row, "count", 0) or 0)
     remaining = max(budget - tried, 0)
     if remaining <= 0:
         decisions.log("runner", "trial_budget_refused", detail={
@@ -164,8 +175,8 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
                     "UPDATE experiments SET status = 'done', finished_at = ?, "
                     "metrics_json = ?, period_start = ?, period_end = ?, symbols = ? "
                     "WHERE id = ?",
-                    (int(time.time()), json.dumps(metrics), windows[0][0],
-                     windows[-1][1], SYMBOLS, exp["id"]),
+                    (int(time.time()), json.dumps(metrics), _date_to_ts(windows[0][0]),
+                     _date_to_ts(windows[-1][1]), SYMBOLS, exp["id"]),
                 )
                 done += 1
                 agg = metrics["aggregate"]

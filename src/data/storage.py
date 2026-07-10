@@ -269,6 +269,8 @@ _NAMED_PARAM_RE = re.compile(r"(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)")
 def _translate_sql(sql: str) -> str:
     """Rewrite a SQLite-style statement for Postgres/psycopg."""
     add_on_conflict = "INSERT OR IGNORE INTO" in sql
+    sql = sql.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY")
+    sql = sql.replace("REAL", "DOUBLE PRECISION")
     sql = sql.replace("INSERT OR IGNORE INTO", "INSERT INTO")
     sql = sql.replace("datetime('now', ?)", "(now() + (?)::interval)")
     sql = sql.replace("datetime('now')", "now()")

@@ -57,6 +57,13 @@ OVERRIDES_PATH = config.DATA_DIR / "config_overrides.json"
 OVERRIDES_PREV_PATH = config.DATA_DIR / "config_overrides.prev.json"
 RESTART_FLAG_PATH = config.DATA_DIR / "restart.flag"
 
+
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return row[index]
+
+
 # Stage 1: walk-forward gates
 S1_MIN_WINDOW_WIN_FRACTION = float(os.getenv("PROMO_S1_WINDOW_FRACTION", "0.66"))
 S1_MIN_TRADES = int(os.getenv("PROMO_S1_MIN_TRADES", "30"))
@@ -187,14 +194,16 @@ def dsr_pass(exp: dict[str, Any]) -> tuple[bool, str]:
 
     storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001
-        n_trials = conn.execute(
+        n_trials_row = conn.execute(
             "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed')"
-        ).fetchone()[0]
+        ).fetchone()
+        n_trials = int(_row_value(n_trials_row, "count", 0) or 0)
         rows = conn.execute(
             "SELECT metrics_json FROM experiments WHERE status='done' "
             "AND config_hash != ? LIMIT 500", (exp["config_hash"],)).fetchall()
     trial_srs = []
-    for (mj,) in rows:
+    for row in rows:
+        mj = _row_value(row, "metrics_json")
         try:
             other = []
             for w in json.loads(mj or "{}").get("windows", []):

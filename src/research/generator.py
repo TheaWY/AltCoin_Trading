@@ -32,6 +32,12 @@ SPACE_PATH = Path(config.DATA_DIR).parent / "research_space.yaml" \
     if str(config.DATA_DIR).endswith("data") else Path("research_space.yaml")
 
 
+def _row_value(row: Any, key: str, index: int = 0) -> Any:
+    if isinstance(row, dict):
+        return row.get(key)
+    return row[index]
+
+
 def _load_space(path: Path | None = None) -> dict[str, Any]:
     p = path or SPACE_PATH
     if not p.exists():
@@ -81,7 +87,8 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
     storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001
         existing = {
-            row[0] for row in conn.execute("SELECT config_hash FROM experiments").fetchall()
+            _row_value(row, "config_hash")
+            for row in conn.execute("SELECT config_hash FROM experiments").fetchall()
         }
 
     now = int(time.time())
