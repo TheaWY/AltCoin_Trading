@@ -108,20 +108,20 @@ async def readyz() -> dict[str, bool]:
 
 @app.get("/dashboard")
 async def dashboard_page() -> FileResponse:
-    """Home-first dashboard: entry decisions, portfolio, strategy, and categories."""
-    return FileResponse(config.DASHBOARD_DIR / "home.html")
+    """Primary mobile tabbed dashboard: home, portfolio, strategy, history, experiments."""
+    return FileResponse(config.DASHBOARD_DIR / "index.html")
 
 
 @app.get("/dashboard/full")
 async def full_dashboard_page() -> FileResponse:
-    """Compatibility route: serve the same Home UI so old links do not open legacy tabs."""
-    return FileResponse(config.DASHBOARD_DIR / "home.html")
-
-
-@app.get("/dashboard/legacy")
-async def legacy_dashboard_page() -> FileResponse:
-    """Old full dashboard kept only for debugging."""
+    """Compatibility route for old bookmarks."""
     return FileResponse(config.DASHBOARD_DIR / "index.html")
+
+
+@app.get("/dashboard/home")
+async def home_dashboard_page() -> FileResponse:
+    """Experimental single-page Home UI kept for debugging."""
+    return FileResponse(config.DASHBOARD_DIR / "home.html")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
