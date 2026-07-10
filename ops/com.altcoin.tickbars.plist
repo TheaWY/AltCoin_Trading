@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.tickbars</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>scripts/collect_tick_bars.py</string>
+    <string>--limit</string>
+    <string>50</string>
+    <string>--bucket-seconds</string>
+    <string>1</string>
+    <string>--flush-seconds</string>
+    <string>5</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>KeepAlive</key><true/>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/tickbars.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/tickbars.err.log</string>
+</dict>
+</plist>
