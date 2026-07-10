@@ -6,15 +6,29 @@ import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import HTMLResponse, Response
 
 from src import config
 from src.api.routes import alts, categories, dashboard, health, research, signals, trades
 from src.api.websocket import router as ws_router
 
 logger = logging.getLogger(__name__)
+
+
+def _html_page(path: Path) -> HTMLResponse:
+    """Return dashboard HTML as inline text/html.
+
+    Some mobile/Tailscale clients can treat extensionless routes backed by a
+    FileResponse as a downloadable file. Reading the HTML and returning an
+    explicit HTMLResponse keeps /dashboard rendering in-browser.
+    """
+    return HTMLResponse(
+        path.read_text(encoding="utf-8"),
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
 
 
 def _log_background_failure(future: asyncio.Future) -> None:
@@ -83,9 +97,9 @@ app.include_router(signals.router, prefix="/api")
 app.include_router(trades.router, prefix="/api")
 
 
-@app.get("/experiments")
-async def experiments_page() -> FileResponse:
-    return FileResponse(config.DASHBOARD_DIR / "experiments.html")
+@app.get("/experiments", response_class=HTMLResponse)
+async def experiments_page() -> HTMLResponse:
+    return _html_page(config.DASHBOARD_DIR / "experiments.html")
 
 
 app.include_router(ws_router)
@@ -106,22 +120,22 @@ async def readyz() -> dict[str, bool]:
     return {"ok": True}
 
 
-@app.get("/dashboard")
-async def dashboard_page() -> FileResponse:
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard_page() -> HTMLResponse:
     """Primary mobile tabbed dashboard: home, portfolio, strategy, history, experiments."""
-    return FileResponse(config.DASHBOARD_DIR / "index.html")
+    return _html_page(config.DASHBOARD_DIR / "index.html")
 
 
-@app.get("/dashboard/full")
-async def full_dashboard_page() -> FileResponse:
+@app.get("/dashboard/full", response_class=HTMLResponse)
+async def full_dashboard_page() -> HTMLResponse:
     """Compatibility route for old bookmarks."""
-    return FileResponse(config.DASHBOARD_DIR / "index.html")
+    return _html_page(config.DASHBOARD_DIR / "index.html")
 
 
-@app.get("/dashboard/home")
-async def home_dashboard_page() -> FileResponse:
+@app.get("/dashboard/home", response_class=HTMLResponse)
+async def home_dashboard_page() -> HTMLResponse:
     """Experimental single-page Home UI kept for debugging."""
-    return FileResponse(config.DASHBOARD_DIR / "home.html")
+    return _html_page(config.DASHBOARD_DIR / "home.html")
 
 
 @app.get("/favicon.ico", include_in_schema=False)
