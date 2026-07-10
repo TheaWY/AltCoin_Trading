@@ -5,8 +5,7 @@
   <key>Label</key><string>com.altcoin.worker</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/env</string>
-    <string>python3</string>
+    <string>__REPO_PATH__/.venv/bin/python</string>
     <string>-m</string>
     <string>src.worker</string>
   </array>
