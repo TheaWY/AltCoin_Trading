@@ -11,6 +11,7 @@ verdict can be traced to the displayed metrics.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from src import config
@@ -25,6 +26,13 @@ STYLE_SWING = "스윙"
 
 def _fmt(value: float | None, digits: int = 1) -> str:
     return "—" if value is None else f"{value:.{digits}f}"
+
+
+def _env_bool_dynamic(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.lower() in ("true", "1", "yes", "on")
 
 
 def _gate_blockers(metrics: dict[str, Any], funding_rate: float | None) -> list[str]:
@@ -157,6 +165,68 @@ def _meanrev_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[
             "reason": f"RSI {rsi:.0f} 과매도 + 볼린저 하단 이탈 — 통계적 과냉, 평균회귀 롱",
         }
     return None
+
+
+def _failed_pump_short_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """단타: failed-pump / trend exhaustion short.
+
+    This catches the case the old engine missed: a coin has already run hard
+    over the past week, then starts dumping intraday while the short-term trend
+    structure breaks. It is not the same as mean reversion: mean reversion fades
+    an overbought extension immediately, while this waits for failure evidence.
+    """
+    if not _env_bool_dynamic("SETUP_FAILED_PUMP_ENABLED", True):
+        return None
+
+    pct_7d = metrics.get("pct_7d")
+    pct_24h = metrics.get("pct_24h")
+    last = metrics.get("last_price")
+    sma20 = metrics.get("sma_20")
+    macd_state = metrics.get("macd")
+    rsi = metrics.get("rsi_14")
+    corr = metrics.get("btc_correlation")
+
+    if pct_7d is None or pct_24h is None or last is None or sma20 is None:
+        return None
+
+    had_pump = pct_7d >= max(config.MOMENTUM_7D_STRONG_PCT * 3, 15.0)
+    intraday_reversal = pct_24h <= -3.0
+    broke_structure = last < sma20
+    macd_down = bool(macd_state and macd_state.get("hist", 0) < 0)
+    rsi_not_overheated = rsi is None or rsi <= 60
+
+    if not (had_pump and intraday_reversal and (broke_structure or macd_down) and rsi_not_overheated):
+        return None
+
+    score = 0.58
+    if pct_7d >= 20:
+        score += 0.05
+    if pct_24h <= -5:
+        score += 0.05
+    if broke_structure:
+        score += 0.04
+    if macd_down:
+        score += 0.04
+    if rsi is not None and rsi <= 50:
+        score += 0.02
+    if corr is not None and corr >= 0.75:
+        score -= 0.05
+
+    evidence = []
+    if broke_structure:
+        evidence.append("SMA20 이탈")
+    if macd_down:
+        evidence.append("MACD 하방")
+    if rsi is not None:
+        evidence.append(f"RSI {rsi:.0f}")
+
+    return {
+        "style": STYLE_SCALP,
+        "strategy": "failed_pump_short",
+        "direction": "SHORT",
+        "score": round(min(0.82, max(0.05, score)), 2),
+        "reason": f"7d +{pct_7d:.1f}% 급등 후 24h {pct_24h:.1f}% 되밀림 + {', '.join(evidence)} — 펌프 실패 숏",
+    }
 
 
 def _breakout_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[str, Any] | None:
@@ -432,11 +502,13 @@ def evaluate_symbol(
 
     setups: list[dict[str, Any]] = []
     policy_notes: list[str] = []
+    policy_blocked_setups: list[dict[str, Any]] = []
     if not blockers:
         for setup in (
             _funding_setup(metrics, funding_rate),
             _volume_setup(metrics),
             _meanrev_setup(metrics, funding_rate),
+            _failed_pump_short_setup(metrics),
             _swing_setup(metrics),
             _breakout_setup(metrics, funding_rate),
             _tsmom28_setup(metrics),
@@ -445,16 +517,18 @@ def evaluate_symbol(
                 continue
             direction = setup["direction"]
             if not config.direction_allowed(direction):
-                policy_notes.append(
+                note = (
                     f"{setup['style']} {direction} 셋업 감지 — 롱 금지 정책으로 스킵"
                     if direction == "LONG"
                     else f"{setup['style']} {direction} 셋업 감지 — 숏 금지 정책으로 스킵"
                 )
+                policy_notes.append(note)
+                policy_blocked_setups.append({**setup, "blocked_reason": note})
                 continue
             if direction_blocked(regime, direction):
-                policy_notes.append(
-                    f"{setup['style']} {direction} 셋업 감지 — {regime.get('reason', 'BTC 레짐 차단')}"
-                )
+                note = f"{setup['style']} {direction} 셋업 감지 — {regime.get('reason', 'BTC 레짐 차단')}"
+                policy_notes.append(note)
+                policy_blocked_setups.append({**setup, "blocked_reason": note})
                 continue
             calibrated = calibrate_score(
                 setup["score"], setup["strategy"], direction, calibration
@@ -496,6 +570,7 @@ def evaluate_symbol(
         "verdict": best,
         "confidence": confidence,
         "other_setups": setups[1:],
+        "policy_blocked_setups": policy_blocked_setups,
         "why_not": why_not,
         "metrics": metrics,
     }
@@ -525,9 +600,9 @@ def evaluate_all(
         )
     results.sort(
         key=lambda r: (
-            0 if r["tradable"] else 1,
-            -r["confidence"],
-            -(r["metrics"].get("dollar_volume_24h") or 0.0),
+            not r["tradable"],
+            -(r.get("confidence") or 0),
+            r["symbol"],
         )
     )
     return results
