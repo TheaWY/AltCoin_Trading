@@ -203,9 +203,12 @@ def build_event_study_grid(storage: Storage | None = None) -> dict[str, Any]:
 
 def build_research_payload(storage: Storage | None = None) -> dict[str, Any]:
     storage = storage or get_storage()
+    from src.research.report import build_report
+
     return {
         "experiments": build_research_experiments(storage),
         "event_study": build_event_study_grid(storage),
+        "report": build_report(storage),
     }
 
 

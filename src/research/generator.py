@@ -27,6 +27,7 @@ import yaml
 from src import config
 from src.data.storage import get_storage
 from src.research.promotion import _ensure_schema, config_hash
+from src.research.report import build_report, trial_budget_status
 
 SPACE_PATH = Path(config.DATA_DIR).parent / "research_space.yaml" \
     if str(config.DATA_DIR).endswith("data") else Path("research_space.yaml")
@@ -113,10 +114,25 @@ def _ordered_candidates(
     return ordered
 
 
-def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str, int]:
+def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str, Any]:
     _ensure_schema()
     space = _load_space(space_path)
     axes: dict[str, list[Any]] = space["axes"]
+    total_space = 1
+    for values in axes.values():
+        total_space *= len(values)
+    budget = trial_budget_status()
+    if budget.get("exhausted"):
+        report = build_report(limit=8)
+        return {
+            "total_space": total_space,
+            "already_run_or_queued": budget["counts"]["done"] + budget["counts"]["queued"],
+            "newly_queued": 0,
+            "champion_hash": "",
+            "budget_exhausted": True,
+            "trial_budget": budget,
+            "next_candidates": len(report["recommended_narrowed_space"]["next_candidates"]),
+        }
     families = space.get("priority_families", [])
     max_new = int(space.get("limits", {}).get("max_new_per_run", 300))
 
@@ -162,9 +178,6 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
             )
         queued += 1
 
-    total_space = 1
-    for values in axes.values():
-        total_space *= len(values)
     return {
         "total_space": total_space,
         "already_run_or_queued": len(existing),

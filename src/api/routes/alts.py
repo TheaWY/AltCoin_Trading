@@ -52,10 +52,14 @@ def _enrich_portfolio(payload: dict) -> dict:
     portfolio.update(
         {
             "paper_value": paper_value,
+            "equity": paper_value,
+            "available_cash": cash,
             "open_trades": len(positions),
             "open_positions": positions,
             "total_invested_open": sum(float(p.get("invested") or 0.0) for p in positions),
+            "reserved_margin": sum(float(p.get("invested") or 0.0) for p in positions),
             "total_open_value": open_value,
+            "open_position_value": open_value,
             "total_unrealized_pnl": unrealized,
             "total_realized_pnl": realized,
             "pnl_vs_start": paper_value - starting,
