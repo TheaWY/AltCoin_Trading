@@ -3,7 +3,12 @@
 
 Usage:
     python scripts/storage_smoke.py                  # SQLite in a temp file
-    STORAGE_SMOKE_POSTGRES=1 DATABASE_URL=postgres://... python scripts/storage_smoke.py
+    STORAGE_SMOKE_POSTGRES=1 STORAGE_SMOKE_ALLOW_DISPOSABLE_POSTGRES=YES \
+      STORAGE_SMOKE_DATABASE_URL=postgres://... python scripts/storage_smoke.py
+
+Postgres smoke tests must never use the normal application DATABASE_URL. A
+prior unsafe version of this script truncated live paper tables when it was run
+against the configured app database.
 """
 
 from __future__ import annotations
@@ -143,12 +148,22 @@ def main() -> int:
         exercise(sqlite_storage, "sqlite")
 
     database_url = os.getenv("DATABASE_URL", "").strip()
+    smoke_database_url = os.getenv("STORAGE_SMOKE_DATABASE_URL", "").strip()
     run_postgres = os.getenv("STORAGE_SMOKE_POSTGRES", "").lower() in {"1", "true", "yes"}
     if database_url and not run_postgres:
         print("[SKIP] postgres: set STORAGE_SMOKE_POSTGRES=1 with a disposable DB")
         return 0
-    if database_url:
-        pg = Storage(database_url=database_url)
+    if run_postgres:
+        if not smoke_database_url:
+            print("[REFUSE] postgres: set STORAGE_SMOKE_DATABASE_URL for a disposable database")
+            return 2
+        if database_url and smoke_database_url == database_url:
+            print("[REFUSE] postgres: STORAGE_SMOKE_DATABASE_URL must not equal DATABASE_URL")
+            return 2
+        if os.getenv("STORAGE_SMOKE_ALLOW_DISPOSABLE_POSTGRES") != "YES":
+            print("[REFUSE] postgres: set STORAGE_SMOKE_ALLOW_DISPOSABLE_POSTGRES=YES")
+            return 2
+        pg = Storage(database_url=smoke_database_url)
         # start from a clean slate for repeatable assertions
         with pg._connect() as conn:
             for table in (

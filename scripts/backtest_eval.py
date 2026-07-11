@@ -17,7 +17,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from scripts.backtest import BacktestEngine, _default_end, _default_start, _parse_datetime, _parse_symbols  # noqa: E402
+from scripts.backtest import (  # noqa: E402
+    BacktestEngine,
+    _default_end,
+    _default_start,
+    _parse_datetime,
+    _parse_symbols,
+    resolve_replay_storage,
+)
 from src import config  # noqa: E402
 
 
@@ -27,12 +34,14 @@ def run_replay(
     end: datetime,
     symbols: list[str],
     strategy: str,
+    database_path: str | None = None,
 ) -> dict:
     return BacktestEngine(
         start=start,
         end=end,
         symbols=symbols,
         strategy_name=strategy,
+        storage=resolve_replay_storage(database_path),
     ).run()
 
 
@@ -43,12 +52,23 @@ def main() -> int:
     parser.add_argument("--symbols", default=None)
     parser.add_argument("--strategy", default=config.PRIMARY_STRATEGY)
     parser.add_argument("--out", default=None)
+    parser.add_argument(
+        "--database-path",
+        default=None,
+        help="Separate SQLite database for replay data. Refuses live DATABASE_PATH/DATABASE_URL.",
+    )
     args = parser.parse_args()
 
     start = _parse_datetime(args.start) if args.start else _default_start()
     end = _parse_datetime(args.end) if args.end else _default_end()
     symbols = _parse_symbols(args.symbols)
-    report = run_replay(start=start, end=end, symbols=symbols, strategy=args.strategy)
+    report = run_replay(
+        start=start,
+        end=end,
+        symbols=symbols,
+        strategy=args.strategy,
+        database_path=args.database_path,
+    )
 
     output_path = (
         Path(args.out)
@@ -64,4 +84,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

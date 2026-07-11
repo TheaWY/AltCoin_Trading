@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -27,6 +28,32 @@ from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
 
 SECONDS_PER_DAY = 24 * 60 * 60
+
+
+def _live_sqlite_path() -> Path:
+    return Path(config.DATABASE_PATH).expanduser().resolve()
+
+
+def resolve_replay_storage(database_path: str | None = None) -> Storage:
+    """Return isolated replay storage for CLI backtests.
+
+    Historical replay must never attach to the live application DB by accident.
+    In production-like environments where DATABASE_URL is set, callers must
+    explicitly provide a separate SQLite replay DB via --database-path or
+    REPLAY_DATABASE_PATH.
+    """
+    explicit = database_path or os.getenv("REPLAY_DATABASE_PATH")
+    if config.DATABASE_URL and not explicit:
+        raise SystemExit(
+            "Refusing replay against configured DATABASE_URL. Set REPLAY_DATABASE_PATH "
+            "or pass --database-path pointing at a separate replay SQLite database."
+        )
+    replay_path = Path(explicit or config.DATABASE_PATH).expanduser().resolve()
+    if explicit and replay_path == _live_sqlite_path():
+        raise SystemExit(
+            f"Refusing replay: target {replay_path} equals live DATABASE_PATH."
+        )
+    return Storage(db_path=replay_path, database_url="")
 
 
 def _execution_cost_components(notional: float) -> tuple[float, float]:
@@ -962,6 +989,11 @@ def main() -> int:
         default=config.PRIMARY_STRATEGY,
         help=f"Strategy name (available: {', '.join(list_strategies())})",
     )
+    parser.add_argument(
+        "--database-path",
+        default=None,
+        help="Separate SQLite database for replay data. Refuses live DATABASE_PATH/DATABASE_URL.",
+    )
     args = parser.parse_args()
 
     start = _parse_datetime(args.start) if args.start else _default_start()
@@ -973,6 +1005,7 @@ def main() -> int:
         end=end,
         symbols=symbols,
         strategy_name=args.strategy,
+        storage=resolve_replay_storage(args.database_path),
     ).run()
 
     output_dir = PROJECT_ROOT / "data"
