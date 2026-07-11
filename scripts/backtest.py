@@ -44,6 +44,8 @@ def resolve_replay_storage(database_path: str | None = None) -> Storage:
     """
     explicit = database_path or os.getenv("REPLAY_DATABASE_PATH")
     if config.DATABASE_URL and not explicit:
+        if os.getenv("REPLAY_ALLOW_DATABASE_URL_READONLY") == "1":
+            return get_storage()
         raise SystemExit(
             "Refusing replay against configured DATABASE_URL. Set REPLAY_DATABASE_PATH "
             "or pass --database-path pointing at a separate replay SQLite database."

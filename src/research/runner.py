@@ -74,6 +74,7 @@ def _run_subprocess(overrides: dict[str, Any], start: str, end: str) -> dict[str
     # only ACTIVE_STRATEGY would otherwise test the wrong strategy.
     if "ACTIVE_STRATEGY" in overrides and "ACTIVE_STRATEGIES" not in overrides:
         env["ACTIVE_STRATEGIES"] = str(overrides["ACTIVE_STRATEGY"])
+    env["REPLAY_ALLOW_DATABASE_URL_READONLY"] = "1"
 
     try:
         proc = subprocess.run(

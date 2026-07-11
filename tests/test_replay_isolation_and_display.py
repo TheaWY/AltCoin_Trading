@@ -3,6 +3,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from scripts import backtest
@@ -12,10 +13,15 @@ class ReplayStorageIsolationTests(unittest.TestCase):
     def setUp(self):
         self._database_url = backtest.config.DATABASE_URL
         self._database_path = backtest.config.DATABASE_PATH
+        self._allow_readonly = os.environ.pop("REPLAY_ALLOW_DATABASE_URL_READONLY", None)
 
     def tearDown(self):
         backtest.config.DATABASE_URL = self._database_url
         backtest.config.DATABASE_PATH = self._database_path
+        if self._allow_readonly is not None:
+            os.environ["REPLAY_ALLOW_DATABASE_URL_READONLY"] = self._allow_readonly
+        else:
+            os.environ.pop("REPLAY_ALLOW_DATABASE_URL_READONLY", None)
 
     def test_refuses_configured_database_url_without_replay_path(self):
         backtest.config.DATABASE_URL = "postgresql://altcoin:secret@localhost:5432/altcoin_trading"
@@ -39,6 +45,12 @@ class ReplayStorageIsolationTests(unittest.TestCase):
             storage = backtest.resolve_replay_storage(str(replay))
             self.assertFalse(storage.is_postgres)
             self.assertEqual(storage.db_path.resolve(), replay.resolve())
+
+    def test_research_runner_can_opt_into_configured_db_readonly(self):
+        backtest.config.DATABASE_URL = "postgresql://altcoin:secret@localhost:5432/altcoin_trading"
+        os.environ["REPLAY_ALLOW_DATABASE_URL_READONLY"] = "1"
+        with mock.patch.object(backtest, "get_storage", return_value="readonly-storage"):
+            self.assertEqual(backtest.resolve_replay_storage(), "readonly-storage")
 
 
 class DashboardPriceFormatTests(unittest.TestCase):
