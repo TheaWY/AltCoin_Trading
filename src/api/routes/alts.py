@@ -16,22 +16,27 @@ router = APIRouter(prefix="/alts", tags=["alts"])
 def _enrich_portfolio(payload: dict) -> dict:
     """Make portfolio PnL explicit even when the symbol is not in the current UI list.
 
-    Older UI code inferred open-position PnL from `alts[].investment`. That breaks
-    when the active symbol universe/ranking changes and an open trade is not in
-    the first rendered list. The portfolio card should be driven by open trades
-    directly, not by whether the coin card happens to be visible.
+    Portfolio cards must be driven by open trades directly, not by whether the
+    relevant coin card happens to be visible in the current ranked universe.
+
+    Important accounting rule for the UI/API:
+    - `equity` / `paper_value` means starting capital + realized PnL + current
+      unrealized PnL, using latest prices.
+    - `reserved_margin` / `total_invested_open` means entry notional currently
+      allocated to open paper positions.
+    - `available_cash` is a display-safe estimate and should not make the top
+      equity card negative just because the internal cash ledger was distorted by
+      older short-accounting logic.
     """
     storage = get_storage()
     trader = PaperTrader(storage)
     open_trades = storage.get_open_trades()
     positions: list[dict] = []
-    prices: dict[str, float] = {}
 
     for trade in open_trades:
         symbol = trade["symbol"]
         latest = storage.get_latest_price(symbol)
         current_price = float(latest["close"]) if latest else float(trade["entry_price"])
-        prices[symbol] = current_price
         inv = trader.investment_for_symbol(symbol, current_price)
         inv["symbol"] = symbol
         inv["base"] = symbol.split("/")[0]
@@ -41,28 +46,38 @@ def _enrich_portfolio(payload: dict) -> dict:
     btc_price = float(btc["close"]) if btc else None
     portfolio = trader.summary(btc_price)
 
-    # Ensure totals are exactly the sum of current cash + open position values.
-    # This makes the top portfolio card and the open position table agree.
-    cash = float(portfolio.get("cash") or 0.0)
+    reserved_margin = sum(float(p.get("invested") or 0.0) for p in positions)
     open_value = sum(float(p.get("current_value") or 0.0) for p in positions)
     unrealized = sum(float(p.get("unrealized_pnl") or 0.0) for p in positions)
     realized = float(portfolio.get("total_realized_pnl") or 0.0)
-    paper_value = cash + open_value
     starting = float(portfolio.get("starting_capital") or config.PAPER_STARTING_CAPITAL)
+
+    # Equity is the reliable paper-account value. Do not derive it from raw cash
+    # if older accounting has allowed cash to become negative for short trades.
+    equity = starting + realized + unrealized
+    available_cash = max(0.0, equity - reserved_margin)
+    raw_cash = float(portfolio.get("cash") or 0.0)
+
     portfolio.update(
         {
-            "paper_value": paper_value,
-            "equity": paper_value,
-            "available_cash": cash,
+            "paper_value": equity,
+            "equity": equity,
+            "cash": available_cash,
+            "available_cash": available_cash,
+            "raw_cash": raw_cash,
             "open_trades": len(positions),
             "open_positions": positions,
-            "total_invested_open": sum(float(p.get("invested") or 0.0) for p in positions),
-            "reserved_margin": sum(float(p.get("invested") or 0.0) for p in positions),
+            "total_invested_open": reserved_margin,
+            "reserved_margin": reserved_margin,
             "total_open_value": open_value,
             "open_position_value": open_value,
             "total_unrealized_pnl": unrealized,
             "total_realized_pnl": realized,
-            "pnl_vs_start": paper_value - starting,
+            "pnl_vs_start": equity - starting,
+            "accounting_note": (
+                "equity=starting_capital+realized_pnl+unrealized_pnl; "
+                "raw_cash retained separately for audit"
+            ),
         }
     )
     payload["portfolio"] = portfolio
