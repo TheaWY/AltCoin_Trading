@@ -304,7 +304,7 @@ def get_history() -> dict[str, Any]:
         if decisions_enabled:
             for r in _rows(
                 "SELECT action, COUNT(*) AS n FROM research_decisions "
-                "WHERE created_at >= ? AND created_at < ? GROUP BY action",
+                "WHERE ts >= ? AND ts < ? GROUP BY action",
                 (ws_ts, we_ts),
             ):
                 decision_counts[str(r["action"])] = int(r["n"])

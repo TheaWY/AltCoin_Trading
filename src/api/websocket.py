@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.encoders import jsonable_encoder
 
 from src.api.dashboard_data import build_alts_payload
 
@@ -18,20 +19,30 @@ router = APIRouter()
 class ConnectionManager:
     def __init__(self) -> None:
         self.active: list[WebSocket] = []
+        self._send_locks: dict[WebSocket, asyncio.Lock] = {}
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         self.active.append(websocket)
+        self._send_locks[websocket] = asyncio.Lock()
 
     def disconnect(self, websocket: WebSocket) -> None:
         if websocket in self.active:
             self.active.remove(websocket)
+        self._send_locks.pop(websocket, None)
+
+    async def send(self, websocket: WebSocket, payload: dict[str, Any]) -> None:
+        lock = self._send_locks.get(websocket)
+        if lock is None:
+            return
+        async with lock:
+            await websocket.send_json(jsonable_encoder(payload))
 
     async def broadcast(self, payload: dict[str, Any]) -> None:
         dead: list[WebSocket] = []
         for ws in self.active:
             try:
-                await ws.send_json(payload)
+                await self.send(ws, payload)
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -74,7 +85,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         while True:
             snapshot = await asyncio.to_thread(build_snapshot)
             if id(snapshot) != last_sent_id:
-                await websocket.send_json(snapshot)
+                await manager.send(websocket, snapshot)
                 last_sent_id = id(snapshot)
             try:
                 text = await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
