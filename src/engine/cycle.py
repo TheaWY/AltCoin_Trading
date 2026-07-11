@@ -220,7 +220,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             if not price_row:
                 continue
             result = result | {
-                "style": "scalp" if analysis.get("recommended_style") == "short_term" else "swing",
+                "style": config.normalize_holding_style(analysis.get("recommended_style")) or "swing",
             }
             opened = trader.process_signal(result, float(price_row["close"]), require_worth=True)
             if opened.get("opened"):
@@ -247,7 +247,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 "direction": direction,
                 "reason": verdict.get("reason"),
                 "entry_price": float(price_row["close"]),
-                "style": STYLE_MAP.get(verdict.get("style"), "swing"),
+                "style": config.normalize_holding_style(STYLE_MAP.get(verdict.get("style"))),
                 "metadata": {
                     "decision_engine": "evaluation",
                     "confidence": candidate.get("confidence"),

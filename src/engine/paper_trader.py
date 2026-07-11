@@ -135,6 +135,9 @@ class PaperTrader:
         if not config.direction_allowed(direction):
             return {"opened": False, "reason": f"{direction} entries disabled by policy"}
 
+        if not config.holding_style_allowed(signal_result.get("style")):
+            return {"opened": False, "reason": "holding style disabled or unbounded"}
+
         if self.storage.get_open_trade_for_symbol(symbol):
             return {"opened": False, "reason": f"position already open for {symbol}"}
 
@@ -260,6 +263,7 @@ class PaperTrader:
         state = self.ensure_portfolio(current_price)
         portfolio = self.portfolio_value()
         direction = signal_result["direction"]
+        style = config.normalize_holding_style(signal_result.get("style"))
 
         atr = self._atr_pct(symbol)
         stop_loss, take_profit = self._exit_levels(direction, current_price, atr)
@@ -286,7 +290,7 @@ class PaperTrader:
                 "opened_at": now_ts,
                 "closed_at": None,
                 "strategy": signal_result.get("strategy"),
-                "style": signal_result.get("style"),
+                "style": style,
                 "atr_pct": atr,
                 "trail_price": current_price,
                 "exit_reason": None,
@@ -381,11 +385,7 @@ class PaperTrader:
             if price <= target:
                 return "take_profit"
 
-        max_hours = (
-            config.SCALP_MAX_HOLD_HOURS
-            if (trade.get("style") or "") == "scalp"
-            else config.SWING_MAX_HOLD_HOURS
-        )
+        max_hours = config.max_hold_hours_for_style(trade.get("style"))
         opened_at = trade.get("opened_at")
         if opened_at and max_hours > 0:
             age_hours = (

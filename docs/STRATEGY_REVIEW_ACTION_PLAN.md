@@ -48,14 +48,14 @@ category volume_surge
 
 Interpretation:
 
-This is not automatically a short. Extreme negative funding means shorts are paying longs, so the market may be short-crowded while price is pumping. That is a possible short squeeze / banned LONG setup under the current `ALLOW_LONG=false` policy.
+This is not automatically a short. Extreme negative funding means shorts are paying longs, so the market may be short-crowded while price is pumping. That is a possible short squeeze / short-term upside setup, not 장투.
 
 The correct behavior is:
 
 ```text
-detect 단타 LONG/funding squeeze candidate
-skip because long policy is disabled
-show the skipped setup clearly in UI/logs
+detect 단타 상승/funding squeeze candidate
+only hold it back if confidence, risk, or regime filters fail
+show the setup and any risk/regime block clearly in UI/logs
 ```
 
 ### SKL-like case
@@ -112,7 +112,7 @@ bash scripts/run_safety_tests.sh
 This currently covers:
 
 - SKL-like failed-pump rollover -> SHORT 단타 setup
-- T-like squeeze/pump with negative funding -> not short; detects banned LONG funding setup
+- T-like squeeze/pump with negative funding -> not short; detects short-term upside funding setup
 
 ## Next engineering steps
 

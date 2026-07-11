@@ -198,11 +198,12 @@ POS_SHORT_OI_PROXIMITY = float(os.getenv("POS_SHORT_OI_PROXIMITY", "0.05"))
 POS_SHORT_MIN_HISTORY_DAYS = int(os.getenv("POS_SHORT_MIN_HISTORY_DAYS", "90"))
 POS_SHORT_OI_WINDOW_DAYS = int(os.getenv("POS_SHORT_OI_WINDOW_DAYS", "30"))
 
-# --- Direction policy ---
-# ALLOW_LONG=false (default): the engine never opens LONG positions and the
-# dashboard never recommends them — SHORT scalps and SHORT swings only.
-ALLOW_LONG = _env_bool("ALLOW_LONG", default=False)
+# --- Direction / holding-horizon policy ---
+# Directional LONG means an upside trade with active exits. It is distinct from
+# long-term holding (장투), which remains disabled by policy.
+ALLOW_LONG = _env_bool("ALLOW_LONG", default=True)
 ALLOW_SHORT = _env_bool("ALLOW_SHORT", default=True)
+LONG_TERM_HOLD_ENABLED = _env_bool("LONG_TERM_HOLD_ENABLED", default=False)
 
 
 def direction_allowed(direction: str | None) -> bool:
@@ -211,6 +212,37 @@ def direction_allowed(direction: str | None) -> bool:
     if direction == "SHORT":
         return ALLOW_SHORT
     return False
+
+
+def normalize_holding_style(style: str | None) -> str | None:
+    raw = (style or "").strip().lower()
+    if raw in ("scalp", "short_term", "short-term", "단타"):
+        return "scalp"
+    if raw in ("swing", "스윙"):
+        return "swing"
+    if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
+        return "long_term_hold"
+    return None
+
+
+def holding_style_allowed(style: str | None) -> bool:
+    normalized = normalize_holding_style(style)
+    if normalized in ("scalp", "swing"):
+        return True
+    if normalized == "long_term_hold":
+        return LONG_TERM_HOLD_ENABLED
+    return False
+
+
+def max_hold_hours_for_style(style: str | None) -> float:
+    normalized = normalize_holding_style(style)
+    if normalized == "scalp":
+        return SCALP_MAX_HOLD_HOURS
+    if normalized == "swing":
+        return SWING_MAX_HOLD_HOURS
+    if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
+        return SWING_MAX_HOLD_HOURS
+    return 0.0
 
 
 # --- Paper trading ---
@@ -229,8 +261,9 @@ ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "2.5"))
 # Risk this fraction of portfolio value per trade (position size is derived
 # from the stop distance, so volatile coins automatically get smaller size).
 RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.01"))
-# Time stops: scalps must resolve fast; swings get up to one month — anything
-# still open after that is a long-term hold, which this system never does.
+# Time stops: scalps must resolve fast; swings get up to one month. Anything
+# beyond active scalp/swing exits is treated as long-term holding, disabled by
+# LONG_TERM_HOLD_ENABLED=false.
 SCALP_MAX_HOLD_HOURS = float(os.getenv("SCALP_MAX_HOLD_HOURS", "48"))
 SWING_MAX_HOLD_HOURS = float(os.getenv("SWING_MAX_HOLD_HOURS", "720"))
 # Trailing stop for swing trades: once price moves 1 ATR in favor, trail the

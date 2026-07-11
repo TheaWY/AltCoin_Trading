@@ -24,6 +24,29 @@ STYLE_SCALP = "단타"
 STYLE_SWING = "스윙"
 
 
+def _direction_label(direction: str | None) -> str:
+    if direction == "LONG":
+        return "상승 포지션"
+    if direction == "SHORT":
+        return "하락 포지션"
+    return "방향 미정"
+
+
+def _style_label(style: str | None) -> str:
+    normalized = config.normalize_holding_style(style)
+    if normalized == "scalp":
+        return "단타"
+    if normalized == "swing":
+        return "스윙"
+    if normalized == "long_term_hold":
+        return "장투"
+    return str(style or "보유기간 미정")
+
+
+def _setup_label(setup: dict[str, Any]) -> str:
+    return f"{_style_label(setup.get('style'))} {_direction_label(setup.get('direction'))} 감지"
+
+
 def _fmt(value: float | None, digits: int = 1) -> str:
     return "—" if value is None else f"{value:.{digits}f}"
 
@@ -516,17 +539,20 @@ def evaluate_symbol(
             if setup is None:
                 continue
             direction = setup["direction"]
-            if not config.direction_allowed(direction):
+            if not config.holding_style_allowed(setup.get("style")):
                 note = (
-                    f"{setup['style']} {direction} 셋업 감지 — 롱 금지 정책으로 스킵"
-                    if direction == "LONG"
-                    else f"{setup['style']} {direction} 셋업 감지 — 숏 금지 정책으로 스킵"
+                    f"{_setup_label(setup)} — 장투/무기한 보유는 비활성화되어 보류"
                 )
                 policy_notes.append(note)
                 policy_blocked_setups.append({**setup, "blocked_reason": note})
                 continue
+            if not config.direction_allowed(direction):
+                note = f"{_setup_label(setup)} — 방향 정책으로 보류"
+                policy_notes.append(note)
+                policy_blocked_setups.append({**setup, "blocked_reason": note})
+                continue
             if direction_blocked(regime, direction):
-                note = f"{setup['style']} {direction} 셋업 감지 — {regime.get('reason', 'BTC 레짐 차단')}"
+                note = f"{_setup_label(setup)} — {regime.get('reason', 'BTC 레짐 차단')}"
                 policy_notes.append(note)
                 policy_blocked_setups.append({**setup, "blocked_reason": note})
                 continue

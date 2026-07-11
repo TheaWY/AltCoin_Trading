@@ -56,7 +56,7 @@ Case A: T-like
 - funding about -2.00%
 - category volume_surge
 Expected behavior:
-Do NOT short this automatically. It is a possible squeeze / banned LONG case. Since ALLOW_LONG=false, it should appear as policy-blocked LONG/watch-only, not as a SHORT entry.
+Do NOT short this automatically. It is a possible short-term squeeze/upside case, not 장투. Directional LONG trades are allowed when they are scalp/swing trades with bounded exits; it should appear as a 단타 상승 candidate unless risk/regime filters block it.
 
 Case B: SKL-like
 - 7d +29.54%

@@ -8,9 +8,8 @@ Exits (stop / take profit / trailing) are the trader's job, not the
 strategy's — consistent with how PaperTrader sizes ATR-based exit levels
 for every strategy in this repo.
 
-Note: with the default direction policy (ALLOW_LONG=false) the LONG side
-of this strategy is filtered out downstream. The strategy still emits it
-so backtests can evaluate both legs when the policy allows.
+Directional LONG is an upside trade, not 장투. It is allowed when the
+downstream trader can attach bounded scalp/swing exits.
 """
 
 from __future__ import annotations

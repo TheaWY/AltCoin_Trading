@@ -18,6 +18,7 @@ from src.engine.evaluation import (  # noqa: E402
     _failed_pump_short_setup,
     _funding_setup,
 )
+from src import config  # noqa: E402
 
 
 def base_metrics(**overrides):
@@ -71,7 +72,7 @@ class EvaluationSetupTests(unittest.TestCase):
         self.assertIn("펌프 실패 숏", setup["reason"])
 
     def test_pump_with_negative_funding_is_not_failed_pump_short(self):
-        """A live pump with extreme negative funding is a banned LONG/squeeze case, not a short."""
+        """A live pump with extreme negative funding is an upside/squeeze case, not a short."""
         metrics = base_metrics(
             pct_7d=19.23,
             pct_24h=34.54,
@@ -88,6 +89,30 @@ class EvaluationSetupTests(unittest.TestCase):
         self.assertIsNotNone(funding_setup)
         self.assertEqual(funding_setup["style"], STYLE_SCALP)
         self.assertEqual(funding_setup["direction"], "LONG")
+
+    def test_directional_long_scalp_is_allowed_when_policy_allows_long(self):
+        """No 장투 must not mean no directional 상승 trades."""
+        old_allow_long = config.ALLOW_LONG
+        old_long_term = config.LONG_TERM_HOLD_ENABLED
+        try:
+            config.ALLOW_LONG = True
+            config.LONG_TERM_HOLD_ENABLED = False
+            self.assertTrue(config.direction_allowed("LONG"))
+            self.assertTrue(config.holding_style_allowed("scalp"))
+            self.assertTrue(config.holding_style_allowed(STYLE_SCALP))
+        finally:
+            config.ALLOW_LONG = old_allow_long
+            config.LONG_TERM_HOLD_ENABLED = old_long_term
+
+    def test_long_term_hold_style_is_blocked_when_disabled(self):
+        old_long_term = config.LONG_TERM_HOLD_ENABLED
+        try:
+            config.LONG_TERM_HOLD_ENABLED = False
+            self.assertFalse(config.holding_style_allowed("long_term_hold"))
+            self.assertFalse(config.holding_style_allowed("장투"))
+            self.assertEqual(config.max_hold_hours_for_style("long_term_hold"), 0.0)
+        finally:
+            config.LONG_TERM_HOLD_ENABLED = old_long_term
 
 
 if __name__ == "__main__":

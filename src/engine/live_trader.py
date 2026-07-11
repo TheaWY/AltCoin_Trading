@@ -48,6 +48,9 @@ class LiveTrader(PaperTrader):
         if not config.direction_allowed(direction):
             return {"opened": False, "reason": f"{direction} entries disabled by policy"}
 
+        if not config.holding_style_allowed(signal_result.get("style")):
+            return {"opened": False, "reason": "holding style disabled or unbounded"}
+
         if self.storage.get_open_trade_for_symbol(symbol):
             return {"opened": False, "reason": f"position already tracked for {symbol}"}
 
@@ -134,6 +137,7 @@ class LiveTrader(PaperTrader):
         symbol = signal_result.get("symbol", config.SYMBOL)
         state = self.ensure_portfolio(current_price)
         direction = signal_result["direction"]
+        style = config.normalize_holding_style(signal_result.get("style"))
         notional = quantity * current_price
 
         atr = self._atr_pct(symbol)
@@ -163,7 +167,7 @@ class LiveTrader(PaperTrader):
                 "opened_at": now_ts,
                 "closed_at": None,
                 "strategy": signal_result.get("strategy"),
-                "style": signal_result.get("style"),
+                "style": style,
                 "atr_pct": atr,
                 "trail_price": current_price,
             }

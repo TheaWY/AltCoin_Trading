@@ -534,6 +534,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "direction_policy": {
             "allow_long": config.ALLOW_LONG,
             "allow_short": config.ALLOW_SHORT,
+            "long_term_hold_enabled": config.LONG_TERM_HOLD_ENABLED,
         },
         "strategy_config": {
             "scalp_max_hold_hours": config.SCALP_MAX_HOLD_HOURS,
