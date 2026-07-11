@@ -54,6 +54,11 @@ def _ensure_schema() -> None:
         for stmt in _SCHEMA.split(";"):
             if stmt.strip():
                 conn.execute(stmt)
+        if conn.is_postgres:
+            for column in ("gap_start", "gap_end", "gap_seconds", "detected_at"):
+                conn.execute(
+                    f"ALTER TABLE data_gaps ALTER COLUMN {column} TYPE BIGINT"
+                )
 
 
 def _row_value(row: Any, key: str, index: int = 0) -> Any:
