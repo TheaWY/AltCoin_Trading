@@ -15,6 +15,9 @@ axes:
   SETUP_TSMOM_ENABLED: [false, true]
   SETUP_VOLUME_ENABLED: [false, true]
   SETUP_FUNDING_ENABLED: [true]
+  # Failed pump short: catches coins that ran hard over 7d and then roll over
+  # intraday with structure break. Added after dashboard review of SKL-like cases.
+  SETUP_FAILED_PUMP_ENABLED: [true, false]
 
   # mean reversion thresholds
   MEANREV_RSI_HIGH: [68, 70, 74]
@@ -40,9 +43,12 @@ priority_families:
       SETUP_BREAKOUT_ENABLED: false
       SETUP_TSMOM_ENABLED: false
       SETUP_VOLUME_ENABLED: false
+      SETUP_FAILED_PUMP_ENABLED: true
       MIN_CONFIDENCE: 0.70
       COOLDOWN_HOURS_PER_SYMBOL: 48
       FEE_MODE: "taker"
+  - name: "failed_pump_short_check"
+    match: { SETUP_FAILED_PUMP_ENABLED: true, SETUP_VOLUME_ENABLED: false, FEE_MODE: "taker" }
   - name: "no_breakout_no_tsmom"
     match: { SETUP_BREAKOUT_ENABLED: false, SETUP_TSMOM_ENABLED: false }
   - name: "fewer_trades"
