@@ -364,9 +364,15 @@ class Storage:
                 yield _Connection(conn, True)
             return
 
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        # WAL: one writer + many readers concurrently. Without this, a bulk
+        # backfill locks the DB and blocks the live worker's writes (stale
+        # prices -> dashboard Offline -> stalled position management).
+        conn.execute("PRAGMA journal_mode = WAL")
+        conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA synchronous = NORMAL")
         try:
             yield _Connection(conn, False)
             conn.commit()

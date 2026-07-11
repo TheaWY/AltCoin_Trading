@@ -45,7 +45,10 @@ MARKER_END = "===RESULT_JSON_END==="
 HOLDOUT_START = os.getenv("RESEARCH_HOLDOUT_START", "2026-06-01")
 
 WINDOW_TEST_DAYS = int(os.getenv("RESEARCH_WINDOW_TEST_DAYS", "60"))
-WINDOW_COUNT = int(os.getenv("RESEARCH_WINDOW_COUNT", "6"))
+WINDOW_COUNT = int(os.getenv("RESEARCH_WINDOW_COUNT", "18"))
+# step < test length = overlapping windows (more active-regime coverage,
+# but overlap adds no independent data — the trial budget uses SPAN, not count)
+WINDOW_STEP_DAYS = int(os.getenv("RESEARCH_WINDOW_STEP_DAYS", str(WINDOW_TEST_DAYS)))
 SYMBOLS = os.getenv("RESEARCH_SYMBOLS", "BTC/USDT,ETH/USDT")
 TIMEOUT_S = int(os.getenv("RESEARCH_RUN_TIMEOUT_S", "600"))
 
@@ -65,7 +68,7 @@ def _windows() -> list[tuple[str, str]]:
     end = datetime.strptime(HOLDOUT_START, "%Y-%m-%d").replace(tzinfo=timezone.utc)
     out: list[tuple[str, str]] = []
     for i in range(WINDOW_COUNT, 0, -1):
-        w_end = end.timestamp() - (i - 1) * WINDOW_TEST_DAYS * 86400
+        w_end = end.timestamp() - (i - 1) * WINDOW_STEP_DAYS * 86400
         w_start = w_end - WINDOW_TEST_DAYS * 86400
         out.append(
             (
@@ -123,7 +126,9 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
     # MinBTL trial budget: refuse to exceed the number of independent configs
     # this much walk-forward history can statistically support (Bailey et al.
     # 2014). Without this cap the nightly queue is an overfitting machine.
-    history_years = WINDOW_COUNT * WINDOW_TEST_DAYS / 365.0
+    # calendar span actually covered: (count-1)*step + test — overlapping
+    # windows do NOT extend the span, so they do not raise the budget.
+    history_years = ((WINDOW_COUNT - 1) * WINDOW_STEP_DAYS + WINDOW_TEST_DAYS) / 365.0
     budget_override = int(os.getenv("RESEARCH_TRIAL_BUDGET", "0"))
     budget = budget_override if budget_override > 0 else max_trials_for_history(history_years)
     with storage._connect() as conn:  # noqa: SLF001
