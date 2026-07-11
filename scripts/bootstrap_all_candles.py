@@ -218,10 +218,8 @@ def _collect_history(
 ) -> SymbolResult:
     try:
         coverage = _coverage(storage, symbol, timeframe)
-        expected = _expected_candles(start_ts, end_ts, timeframe)
         if (
             skip_ready
-            and coverage["n"] >= expected
             and coverage["min_ts"] is not None
             and int(coverage["min_ts"]) <= start_ts + TIMEFRAME_SECONDS.get(timeframe, 3600)
         ):

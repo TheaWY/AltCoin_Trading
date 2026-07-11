@@ -9,24 +9,9 @@
 axes:
   ACTIVE_STRATEGY: [momentum, volume_spike, mean_reversion, funding_rate]
 
-  # setup on/off toggles. Defaults now reflect the last backtest weakness:
-  # start with fewer, cleaner hypotheses; re-enable noisy branches only if they
-  # survive walk-forward + fresh-data promotion.
-  SETUP_MEANREV_ENABLED: [true, false]
-  SETUP_BREAKOUT_ENABLED: [false, true]
-  SETUP_TSMOM_ENABLED: [false, true]
-  SETUP_VOLUME_ENABLED: [false, true]
-  SETUP_FUNDING_ENABLED: [true]
-
-  # mean reversion thresholds
-  MEANREV_RSI_HIGH: [68, 70, 74]
-  MEANREV_MIN_BANDWIDTH_PCT: [1.0, 2.0, 4.0]
-
-  # confluence weights
-  CONFLUENCE_ALIGNED_BONUS: [0.03, 0.05, 0.08]
-  CONFLUENCE_CONFLICT_PENALTY: [0.08, 0.12]
-
-  # trade-frequency control — primary lever after fees dominated the hourly run.
+  # Axes below are proven live in scripts/run_backtest_once.py A/B probes.
+  # Setup/confluence knobs are intentionally absent until a strategy path
+  # demonstrates outcome sensitivity to them.
   MIN_CONFIDENCE: [0.70, 0.75, 0.80]
   COOLDOWN_HOURS_PER_SYMBOL: [24, 48, 72]
 
@@ -43,16 +28,6 @@ priority_families:
     match: { ACTIVE_STRATEGY: volume_spike }
   - name: "strategy_mean_reversion"
     match: { ACTIVE_STRATEGY: mean_reversion }
-  - name: "conservative_core"
-    match:
-      SETUP_BREAKOUT_ENABLED: false
-      SETUP_TSMOM_ENABLED: false
-      SETUP_VOLUME_ENABLED: false
-      MIN_CONFIDENCE: 0.70
-      COOLDOWN_HOURS_PER_SYMBOL: 48
-      FEE_MODE: "taker"
-  - name: "no_breakout_no_tsmom"
-    match: { SETUP_BREAKOUT_ENABLED: false, SETUP_TSMOM_ENABLED: false }
   - name: "fewer_trades"
     match: { COOLDOWN_HOURS_PER_SYMBOL: 72, MIN_CONFIDENCE: 0.80 }
   - name: "maker_fees_sensitivity_only"
