@@ -30,21 +30,35 @@ def build_data_health(
 ) -> dict[str, Any]:
     """Dashboard health based on newest market data, not server worker state."""
     storage = storage or get_storage()
-    latest_ts: int | None = None
+    now = int(time.time())
+
+    hb = storage.get_system_status("worker_heartbeat")
+    hb_age = None
+    if hb and hb.get("updated_at"):
+        hb_age = max(0, now - int(hb["updated_at"]))
+
+    latest_ts = None
     with storage._connect() as conn:  # noqa: SLF001
         row = conn.execute("SELECT MAX(timestamp) AS ts FROM prices").fetchone()
-    if row:
-        raw_ts = row.get("ts") if isinstance(row, dict) else row[0]
-        latest_ts = int(raw_ts) if raw_ts else None
+        if row:
+            raw_ts = row.get("ts") if isinstance(row, dict) else row[0]
+            latest_ts = int(raw_ts) if raw_ts else None
+    price_age = max(0, now - latest_ts) if latest_ts else None
 
-    now = int(time.time())
-    age_seconds = max(0, now - latest_ts) if latest_ts else None
-    online = age_seconds is not None and age_seconds < max_age_seconds
+    if hb_age is not None:
+        online = hb_age < max_age_seconds
+        basis = "heartbeat"
+    else:
+        online = price_age is not None and price_age < max(max_age_seconds, 75 * 60)
+        basis = "price_data"
+
     return {
         "status": "online" if online else "offline",
         "live": online,
+        "basis": basis,
+        "heartbeat_age_seconds": hb_age,
         "latest_price_ts": latest_ts,
-        "price_age_seconds": age_seconds,
+        "price_age_seconds": price_age,
         "max_age_seconds": max_age_seconds,
     }
 

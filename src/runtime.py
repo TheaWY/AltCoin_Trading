@@ -34,6 +34,14 @@ def trading_cycle() -> None:
         logger.debug("WebSocket broadcast skipped", exc_info=True)
 
     health.mark_cycle(result.get("ok", False), result.get("error"))
+    try:
+        # cross-process heartbeat: the dashboard (separate process) keys its
+        # online/offline dot on this, not on candle bar-open times.
+        from src.data.storage import get_storage
+
+        get_storage().set_system_status("worker_heartbeat", "ok")
+    except Exception:
+        logger.debug("heartbeat write skipped", exc_info=True)
     logger.info(
         "Trading cycle finished — %s symbols, %s signals, %s new trades",
         result.get("symbols", 0),

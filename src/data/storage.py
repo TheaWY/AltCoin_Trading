@@ -11,6 +11,7 @@ import json
 import math
 import re
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -570,6 +571,39 @@ class Storage:
         }
 
     # --- funding rates ---
+
+    def set_system_status(self, key: str, value: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS system_status ("
+                "key TEXT PRIMARY KEY, value TEXT, updated_at BIGINT)"
+            )
+            if self.is_postgres:
+                conn.execute(
+                    "INSERT INTO system_status (key, value, updated_at) "
+                    "VALUES (%s, %s, %s) ON CONFLICT (key) DO UPDATE SET "
+                    "value = EXCLUDED.value, updated_at = EXCLUDED.updated_at",
+                    (key, value, int(time.time())),
+                )
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO system_status (key, value, updated_at) "
+                    "VALUES (?, ?, ?)",
+                    (key, value, int(time.time())),
+                )
+
+    def get_system_status(self, key: str) -> dict[str, Any] | None:
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT value, updated_at FROM system_status WHERE key = ?"
+                    if not self.is_postgres
+                    else "SELECT value, updated_at FROM system_status WHERE key = %s",
+                    (key,),
+                ).fetchone()
+                return dict(row) if row else None
+        except Exception:
+            return None  # table may not exist yet on first boot
 
     def insert_funding_rates(self, rows: Iterable[dict[str, Any]]) -> int:
         rows = list(rows)
