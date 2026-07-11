@@ -3,7 +3,7 @@
 
 Usage:
     python scripts/storage_smoke.py                  # SQLite in a temp file
-    DATABASE_URL=postgres://... python scripts/storage_smoke.py   # also Postgres
+    STORAGE_SMOKE_POSTGRES=1 DATABASE_URL=postgres://... python scripts/storage_smoke.py
 """
 
 from __future__ import annotations
@@ -143,6 +143,10 @@ def main() -> int:
         exercise(sqlite_storage, "sqlite")
 
     database_url = os.getenv("DATABASE_URL", "").strip()
+    run_postgres = os.getenv("STORAGE_SMOKE_POSTGRES", "").lower() in {"1", "true", "yes"}
+    if database_url and not run_postgres:
+        print("[SKIP] postgres: set STORAGE_SMOKE_POSTGRES=1 with a disposable DB")
+        return 0
     if database_url:
         pg = Storage(database_url=database_url)
         # start from a clean slate for repeatable assertions

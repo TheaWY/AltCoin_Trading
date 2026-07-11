@@ -89,7 +89,7 @@ insert_experiment(
     metrics([25, 18, 12, 9], expectancy=2.5),
 )
 insert_fresh("cccc3333", NOW - 16 * DAY, NOW - 8 * DAY, 8, 40.0)
-insert_fresh("cccc3333", NOW - 8 * DAY, NOW - 1 * DAY, 7, 25.0)
+insert_fresh("cccc3333", NOW - 16 * DAY, NOW - 1 * DAY, 15, 65.0)
 
 result = promotion.promote_if_ready()
 check("promotes the fully-gated challenger", result.get("promoted") and result["hash"] == "cccc3333", str(result.get("hash")))

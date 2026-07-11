@@ -77,6 +77,9 @@ class PaperTrader:
     def __init__(self, storage: Storage | None = None) -> None:
         self.storage = storage or get_storage()
 
+    def _now_ts(self) -> int:
+        return int(datetime.now(timezone.utc).timestamp())
+
     def ensure_portfolio(self, current_price: float | None = None) -> dict[str, Any]:
         state = self.storage.get_portfolio_state()
         if state is None:
@@ -252,7 +255,7 @@ class PaperTrader:
         if not opened_times:
             return False
         last_opened = max(opened_times)
-        age_hours = (datetime.now(timezone.utc).timestamp() - last_opened) / 3600.0
+        age_hours = (self._now_ts() - last_opened) / 3600.0
         return age_hours < hours
 
     def _open_trade(self, signal_result: dict[str, Any], current_price: float) -> dict[str, Any]:
@@ -270,7 +273,7 @@ class PaperTrader:
             return {"opened": False, "reason": "no cash / zero position size"}
         quantity = notional / current_price
 
-        now_ts = int(datetime.now(timezone.utc).timestamp())
+        now_ts = self._now_ts()
         trade_id = self.storage.insert_paper_trade(
             {
                 "signal_id": signal_result.get("signal_id"),
@@ -327,7 +330,7 @@ class PaperTrader:
         cash = float(state["cash"]) if state else 0.0
         self.storage.update_portfolio_cash(cash + notional + pnl)
 
-        now_ts = int(datetime.now(timezone.utc).timestamp())
+        now_ts = self._now_ts()
         self.storage.update_paper_trade(
             int(trade["id"]),
             {
@@ -388,9 +391,7 @@ class PaperTrader:
         )
         opened_at = trade.get("opened_at")
         if opened_at and max_hours > 0:
-            age_hours = (
-                datetime.now(timezone.utc).timestamp() - float(opened_at)
-            ) / 3600.0
+            age_hours = (self._now_ts() - float(opened_at)) / 3600.0
             if age_hours >= max_hours:
                 return "time_stop"
         return None

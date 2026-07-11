@@ -10,10 +10,10 @@ import ccxt
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.market.bars import is_bar_closed, timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
 
-_TIMEFRAME_UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
 _PLACEHOLDER_KEYS = {
     "",
     "your_testnet_api_key",
@@ -33,8 +33,8 @@ def _clean_credential(value: str | None) -> str:
 
 def _timeframe_seconds(timeframe: str) -> int | None:
     try:
-        return int(timeframe[:-1]) * _TIMEFRAME_UNIT_SECONDS[timeframe[-1]]
-    except (KeyError, ValueError):
+        return timeframe_to_seconds(timeframe)
+    except ValueError:
         return None
 
 
@@ -52,23 +52,26 @@ def _closed_candles(
     candle timestamps identify the interval start, so a candle is complete only
     when ``open_time + timeframe <= now``.
     """
-    timeframe_seconds = _timeframe_seconds(timeframe)
-    if timeframe_seconds is None:
+    try:
+        decision_time = (
+            int(now_ms // 1000)
+            if now_ms is not None
+            else int(datetime.now(timezone.utc).timestamp())
+        )
+    except Exception:
+        decision_time = int(datetime.now(timezone.utc).timestamp())
+    try:
+        timeframe_to_seconds(timeframe)
+    except ValueError:
         logger.warning(
             "Unknown timeframe %s; refusing to infer candle completion",
             timeframe,
         )
         return []
-    cutoff_ms = (
-        int(now_ms)
-        if now_ms is not None
-        else int(datetime.now(timezone.utc).timestamp() * 1000)
-    )
-    duration_ms = timeframe_seconds * 1000
     return [
         candle
         for candle in candles
-        if candle and int(candle[0]) + duration_ms <= cutoff_ms
+        if candle and is_bar_closed({"timestamp": int(candle[0] // 1000)}, timeframe, decision_time)
     ]
 
 
@@ -151,6 +154,14 @@ class BinanceCollector:
         timeframe: str,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
+        report = self.collect_ohlcv_report(timeframe, limit)
+        return report["rows"]
+
+    def collect_ohlcv_report(
+        self,
+        timeframe: str,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
         if limit is None:
             limit = self._incremental_limit(timeframe, config.OHLCV_LIMIT)
 
@@ -165,6 +176,12 @@ class BinanceCollector:
             for candle in candles
         ]
         inserted = self.storage.insert_prices(rows, timeframe=timeframe)
+        latest = self.storage.get_latest_price(self.symbol, timeframe)
+        latest_ts = int(latest["timestamp"]) if latest else None
+        seconds = _timeframe_seconds(timeframe)
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        expected_next = latest_ts + seconds if latest_ts is not None and seconds else None
+        candle_age = now_ts - latest_ts if latest_ts is not None else None
         logger.info(
             "OHLCV collected for %s %s: %d fetched, %d completed, %d new rows",
             self.symbol,
@@ -173,7 +190,18 @@ class BinanceCollector:
             len(rows),
             inserted,
         )
-        return rows
+        return {
+            "symbol": self.symbol,
+            "timeframe": timeframe,
+            "success": True,
+            "latest_completed_candle_ts": latest_ts,
+            "expected_next_timestamp": expected_next,
+            "candle_age_seconds": candle_age,
+            "rows_fetched": len(fetched),
+            "rows_inserted": inserted,
+            "error_category": None,
+            "rows": rows,
+        }
 
     def _incremental_limit(self, timeframe: str, max_limit: int) -> int:
         """Only request candles missing since the newest stored closed candle."""
@@ -356,7 +384,7 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
         authenticated=False,
     )
     storage = get_storage()
-    results: dict[str, Any] = {}
+    reports: list[dict[str, Any]] = []
 
     logger.info(
         "Market data collection using Binance %s endpoints for %d symbols",
@@ -373,6 +401,7 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
         logger.warning("Market metrics collection failed", exc_info=True)
 
     for spot in symbols:
+        timeframes = list(config.OHLCV_TIMEFRAMES) if spot in core else ["1h"]
         try:
             collector = BinanceCollector(
                 storage=storage,
@@ -380,12 +409,50 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
                 symbol=spot,
                 futures_symbol=ccxt_symbol(spot),
             )
-            results[spot] = collector.collect_all(
-                funding_row=funding_batch.get(spot),
-                timeframes=None if spot in core else ["1h"],
-            )
+            for timeframe in timeframes:
+                try:
+                    report = collector.collect_ohlcv_report(timeframe)
+                    reports.append({k: v for k, v in report.items() if k != "rows"})
+                except Exception as exc:
+                    logger.exception("OHLCV collection failed for %s %s", spot, timeframe)
+                    reports.append(
+                        {
+                            "symbol": spot,
+                            "timeframe": timeframe,
+                            "success": False,
+                            "latest_completed_candle_ts": None,
+                            "expected_next_timestamp": None,
+                            "candle_age_seconds": None,
+                            "rows_fetched": 0,
+                            "rows_inserted": 0,
+                            "error_category": exc.__class__.__name__,
+                        }
+                    )
+            if spot not in funding_batch:
+                try:
+                    collector.collect_funding_rate()
+                except Exception:
+                    logger.warning("Funding collection failed for %s", spot, exc_info=True)
         except Exception:
             logger.exception("Collection failed for %s", spot)
-            results[spot] = {"error": True}
+            for timeframe in timeframes:
+                reports.append(
+                    {
+                        "symbol": spot,
+                        "timeframe": timeframe,
+                        "success": False,
+                        "latest_completed_candle_ts": None,
+                        "expected_next_timestamp": None,
+                        "candle_age_seconds": None,
+                        "rows_fetched": 0,
+                        "rows_inserted": 0,
+                        "error_category": "symbol_collection_failed",
+                    }
+                )
 
-    return results
+    return {
+        "ok": all(r["success"] for r in reports),
+        "reports": reports,
+        "symbols": len(symbols),
+        "partial": any(r["success"] for r in reports) and not all(r["success"] for r in reports),
+    }

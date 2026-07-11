@@ -137,6 +137,81 @@ CREATE TABLE IF NOT EXISTS portfolio_state (
     benchmark_started_at INTEGER,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS cycle_leases (
+    name TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS order_intents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_order_id TEXT NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    intent_type TEXT NOT NULL,
+    quantity REAL,
+    limit_price REAL,
+    status TEXT NOT NULL DEFAULT 'created',
+    reason TEXT,
+    metadata TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS exchange_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_order_id TEXT NOT NULL,
+    exchange_order_id TEXT,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    status TEXT NOT NULL,
+    quantity REAL,
+    filled_quantity REAL,
+    avg_fill_price REAL,
+    raw TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(client_order_id, exchange_order_id)
+);
+
+CREATE TABLE IF NOT EXISTS fills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_order_id TEXT NOT NULL,
+    exchange_order_id TEXT,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    price REAL NOT NULL,
+    quantity REAL NOT NULL,
+    fee REAL,
+    fee_asset TEXT,
+    filled_at INTEGER NOT NULL,
+    raw TEXT,
+    UNIQUE(client_order_id, exchange_order_id, filled_at, price, quantity)
+);
+
+CREATE TABLE IF NOT EXISTS position_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    entry_price REAL,
+    mark_price REAL,
+    source TEXT NOT NULL,
+    captured_at INTEGER NOT NULL,
+    raw TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reconciliation_incidents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    reason TEXT NOT NULL,
+    symbol TEXT,
+    detail TEXT,
+    created_at INTEGER NOT NULL,
+    resolved_at INTEGER
+);
 """
 
 PG_SCHEMA = """
@@ -262,6 +337,81 @@ CREATE TABLE IF NOT EXISTS portfolio_state (
     benchmark_started_at BIGINT,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS cycle_leases (
+    name TEXT PRIMARY KEY,
+    owner TEXT NOT NULL,
+    expires_at BIGINT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS order_intents (
+    id BIGSERIAL PRIMARY KEY,
+    client_order_id TEXT NOT NULL UNIQUE,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    intent_type TEXT NOT NULL,
+    quantity DOUBLE PRECISION,
+    limit_price DOUBLE PRECISION,
+    status TEXT NOT NULL DEFAULT 'created',
+    reason TEXT,
+    metadata TEXT,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS exchange_orders (
+    id BIGSERIAL PRIMARY KEY,
+    client_order_id TEXT NOT NULL,
+    exchange_order_id TEXT,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    status TEXT NOT NULL,
+    quantity DOUBLE PRECISION,
+    filled_quantity DOUBLE PRECISION,
+    avg_fill_price DOUBLE PRECISION,
+    raw TEXT,
+    created_at BIGINT NOT NULL,
+    updated_at BIGINT NOT NULL,
+    UNIQUE(client_order_id, exchange_order_id)
+);
+
+CREATE TABLE IF NOT EXISTS fills (
+    id BIGSERIAL PRIMARY KEY,
+    client_order_id TEXT NOT NULL,
+    exchange_order_id TEXT,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL,
+    price DOUBLE PRECISION NOT NULL,
+    quantity DOUBLE PRECISION NOT NULL,
+    fee DOUBLE PRECISION,
+    fee_asset TEXT,
+    filled_at BIGINT NOT NULL,
+    raw TEXT,
+    UNIQUE(client_order_id, exchange_order_id, filled_at, price, quantity)
+);
+
+CREATE TABLE IF NOT EXISTS position_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    quantity DOUBLE PRECISION NOT NULL,
+    entry_price DOUBLE PRECISION,
+    mark_price DOUBLE PRECISION,
+    source TEXT NOT NULL,
+    captured_at BIGINT NOT NULL,
+    raw TEXT
+);
+
+CREATE TABLE IF NOT EXISTS reconciliation_incidents (
+    id BIGSERIAL PRIMARY KEY,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'open',
+    reason TEXT NOT NULL,
+    symbol TEXT,
+    detail TEXT,
+    created_at BIGINT NOT NULL,
+    resolved_at BIGINT
+);
 """
 
 _NAMED_PARAM_RE = re.compile(r"(?<!:):([a-zA-Z_][a-zA-Z0-9_]*)")
@@ -332,8 +482,8 @@ class Storage:
         db_path: Path | str | None = None,
         database_url: str | None = None,
     ) -> None:
-        self.database_url = (
-            database_url if database_url is not None else config.DATABASE_URL
+        self.database_url = database_url if database_url is not None else (
+            "" if db_path is not None else config.DATABASE_URL
         )
         self.is_postgres = bool(self.database_url)
         self._pg_pool: Any = None
@@ -554,6 +704,94 @@ class Storage:
                 )
                 deleted[timeframe] = cursor.rowcount
         return deleted
+
+    # --- cycle leases / broker state ---
+
+    def acquire_cycle_lease(self, name: str, owner: str, ttl_seconds: int) -> bool:
+        """Acquire or renew an expiring DB-backed cycle lease."""
+        now_ts = int(time.time())
+        expires_at = now_ts + int(ttl_seconds)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT owner, expires_at FROM cycle_leases WHERE name = ?",
+                (name,),
+            ).fetchone()
+            if row and int(row["expires_at"]) > now_ts and row["owner"] != owner:
+                return False
+            if self.is_postgres:
+                conn.execute(
+                    "INSERT INTO cycle_leases (name, owner, expires_at, updated_at) "
+                    "VALUES (%s, %s, %s, now()) "
+                    "ON CONFLICT (name) DO UPDATE SET "
+                    "owner = EXCLUDED.owner, expires_at = EXCLUDED.expires_at, updated_at = now()",
+                    (name, owner, expires_at),
+                )
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO cycle_leases (name, owner, expires_at, updated_at) "
+                    "VALUES (?, ?, ?, datetime('now'))",
+                    (name, owner, expires_at),
+                )
+        return True
+
+    def release_cycle_lease(self, name: str, owner: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM cycle_leases WHERE name = ? AND owner = ?",
+                (name, owner),
+            )
+
+    def insert_order_intent(self, row: dict[str, Any]) -> int:
+        now_ts = int(time.time())
+        payload = dict(row)
+        payload.setdefault("status", "created")
+        payload.setdefault("created_at", now_ts)
+        payload.setdefault("updated_at", now_ts)
+        payload.setdefault("metadata", None)
+        payload.setdefault("quantity", None)
+        payload.setdefault("limit_price", None)
+        payload.setdefault("reason", None)
+        sql = """
+            INSERT INTO order_intents
+                (client_order_id, symbol, side, intent_type, quantity, limit_price,
+                 status, reason, metadata, created_at, updated_at)
+            VALUES
+                (:client_order_id, :symbol, :side, :intent_type, :quantity, :limit_price,
+                 :status, :reason, :metadata, :created_at, :updated_at)
+        """
+        with self._connect() as conn:
+            return conn.insert_returning_id(sql, payload)
+
+    def record_reconciliation_incident(
+        self,
+        severity: str,
+        reason: str,
+        *,
+        symbol: str | None = None,
+        detail: dict[str, Any] | str | None = None,
+    ) -> int:
+        payload = json.dumps(detail) if isinstance(detail, dict) else (detail or "")
+        sql = """
+            INSERT INTO reconciliation_incidents
+                (severity, status, reason, symbol, detail, created_at, resolved_at)
+            VALUES
+                (?, 'open', ?, ?, ?, ?, NULL)
+        """
+        with self._connect() as conn:
+            return conn.insert_returning_id(
+                sql,
+                (severity, reason, symbol, payload, int(time.time())),
+            )
+
+    def open_reconciliation_incidents(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT * FROM reconciliation_incidents "
+                    "WHERE status = 'open' ORDER BY created_at DESC"
+                ).fetchall()
+            ]
 
     def get_volume_stats(
         self, symbol: str, timeframe: str = "1h", lookback: int = 24
