@@ -1,0 +1,198 @@
+{
+  "params": {
+    "start": "2025-07-31T00:00:00+00:00",
+    "end": "2026-07-07T23:00:00+00:00",
+    "symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "SOL/USDT",
+      "BNB/USDT",
+      "XRP/USDT",
+      "DOGE/USDT",
+      "ADA/USDT",
+      "AVAX/USDT",
+      "LINK/USDT",
+      "DOT/USDT"
+    ],
+    "allow_long": true,
+    "allow_short": true,
+    "regime_filter": true,
+    "atr_stop_mult": 1.5,
+    "atr_tp_mult": 2.5,
+    "risk_per_trade_pct": 0.01,
+    "fees_slippage_round_trip_pct": 0.16
+  },
+  "summary": {
+    "starting_capital": 10000.0,
+    "final_value": 7585.14,
+    "return_pct": -24.15,
+    "btc_buy_hold_return_pct": -46.49,
+    "max_drawdown_pct": 33.37,
+    "closed_trades": 919,
+    "win_rate_pct": 36.3,
+    "profit_factor": 0.84,
+    "avg_win": 36.77,
+    "avg_loss": -25.12,
+    "avg_hold_hours": 8.9,
+    "total_fees": 2435.76,
+    "evaluations": 3376,
+    "entries_attempted": 919
+  },
+  "by_strategy": {
+    "breakout": {
+      "trades": 24,
+      "wins": 12,
+      "win_rate_pct": 50.0,
+      "total_pnl": 86.96
+    },
+    "funding_rate": {
+      "trades": 10,
+      "wins": 2,
+      "win_rate_pct": 20.0,
+      "total_pnl": -190.88
+    },
+    "mean_reversion": {
+      "trades": 19,
+      "wins": 5,
+      "win_rate_pct": 26.3,
+      "total_pnl": -156.88
+    },
+    "momentum": {
+      "trades": 374,
+      "wins": 150,
+      "win_rate_pct": 40.1,
+      "total_pnl": 21.94
+    },
+    "tsmom_28d": {
+      "trades": 383,
+      "wins": 126,
+      "win_rate_pct": 32.9,
+      "total_pnl": -1899.02
+    },
+    "volume_spike": {
+      "trades": 109,
+      "wins": 39,
+      "win_rate_pct": 35.8,
+      "total_pnl": -276.99
+    }
+  },
+  "by_style": {
+    "scalp": {
+      "trades": 138,
+      "wins": 46,
+      "win_rate_pct": 33.3,
+      "total_pnl": -624.74
+    },
+    "swing": {
+      "trades": 781,
+      "wins": 288,
+      "win_rate_pct": 36.9,
+      "total_pnl": -1790.12
+    }
+  },
+  "by_direction": {
+    "LONG": {
+      "trades": 346,
+      "wins": 119,
+      "win_rate_pct": 34.4,
+      "total_pnl": -1829.93
+    },
+    "SHORT": {
+      "trades": 573,
+      "wins": 215,
+      "win_rate_pct": 37.5,
+      "total_pnl": -584.93
+    }
+  },
+  "by_exit_reason": {
+    "stop_loss": {
+      "trades": 646,
+      "wins": 61,
+      "win_rate_pct": 9.4,
+      "total_pnl": -14449.54
+    },
+    "take_profit": {
+      "trades": 273,
+      "wins": 273,
+      "win_rate_pct": 100.0,
+      "total_pnl": 12034.68
+    }
+  },
+  "by_symbol": {
+    "ADA/USDT": {
+      "trades": 96,
+      "wins": 31,
+      "win_rate_pct": 32.3,
+      "total_pnl": -435.8
+    },
+    "AVAX/USDT": {
+      "trades": 76,
+      "wins": 18,
+      "win_rate_pct": 23.7,
+      "total_pnl": -787.53
+    },
+    "BNB/USDT": {
+      "trades": 87,
+      "wins": 41,
+      "win_rate_pct": 47.1,
+      "total_pnl": 67.01
+    },
+    "BTC/USDT": {
+      "trades": 75,
+      "wins": 31,
+      "win_rate_pct": 41.3,
+      "total_pnl": 31.33
+    },
+    "DOGE/USDT": {
+      "trades": 120,
+      "wins": 45,
+      "win_rate_pct": 37.5,
+      "total_pnl": -106.72
+    },
+    "DOT/USDT": {
+      "trades": 82,
+      "wins": 28,
+      "win_rate_pct": 34.1,
+      "total_pnl": -258.6
+    },
+    "ETH/USDT": {
+      "trades": 112,
+      "wins": 39,
+      "win_rate_pct": 34.8,
+      "total_pnl": -365.08
+    },
+    "LINK/USDT": {
+      "trades": 63,
+      "wins": 24,
+      "win_rate_pct": 38.1,
+      "total_pnl": -460.43
+    },
+    "SOL/USDT": {
+      "trades": 120,
+      "wins": 46,
+      "win_rate_pct": 38.3,
+      "total_pnl": 17.22
+    },
+    "XRP/USDT": {
+      "trades": 88,
+      "wins": 31,
+      "win_rate_pct": 35.2,
+      "total_pnl": -116.25
+    }
+  },
+  "monthly_return_pct": {
+    "2025-07": 0.0,
+    "2025-08": -6.0,
+    "2025-09": -0.36,
+    "2025-10": -5.55,
+    "2025-11": -7.66,
+    "2025-12": -10.57,
+    "2026-01": -3.08,
+    "2026-02": 10.02,
+    "2026-03": -1.21,
+    "2026-04": -4.02,
+    "2026-05": -2.48,
+    "2026-06": 9.27,
+    "2026-07": -2.17
+  }
+}
