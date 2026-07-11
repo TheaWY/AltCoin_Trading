@@ -29,10 +29,15 @@ def main() -> int:
     parser.add_argument("--end", required=True)
     parser.add_argument("--symbols", required=True)
     parser.add_argument("--strategy", default=None)
+    parser.add_argument(
+        "--database-path",
+        default=None,
+        help="Separate SQLite database for replay data. Refuses live DATABASE_PATH/DATABASE_URL.",
+    )
     args = parser.parse_args()
 
     # Import AFTER env is set by the parent — config reads env at import.
-    from scripts.backtest import BacktestEngine, _parse_datetime, _parse_symbols  # noqa: E402
+    from scripts.backtest import BacktestEngine, _parse_datetime, _parse_symbols, resolve_replay_storage  # noqa: E402
     from src import config  # noqa: E402
 
     result = BacktestEngine(
@@ -40,6 +45,7 @@ def main() -> int:
         end=_parse_datetime(args.end),
         symbols=_parse_symbols(args.symbols),
         strategy_name=args.strategy or config.PRIMARY_STRATEGY,
+        storage=resolve_replay_storage(args.database_path),
     ).run()
 
     trades = result.get("closed_trade_pnls", [])

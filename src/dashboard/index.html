@@ -44,7 +44,7 @@
 const KRW_RATE=1400,$=id=>document.getElementById(id),num=v=>Number(v??0);
 const esc=v=>String(v??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const krw=v=>v==null?'—':'₩'+Math.round(num(v)*KRW_RATE).toLocaleString('ko-KR');
-const usd=v=>v==null?'—':'$'+num(v).toLocaleString(undefined,{maximumFractionDigits:num(v)>=10?2:4});
+function usd(v){if(v==null)return '—';const n=num(v);if(!Number.isFinite(n))return '—';if(Math.abs(n)>0&&Math.abs(n)<1){return '$'+n.toFixed(8).replace(/0+$/,'').replace(/\.$/,'');}return '$'+n.toLocaleString(undefined,{maximumFractionDigits:Math.abs(n)>=10?2:4});}
 const pct=v=>v==null?'—':`${num(v)>=0?'+':''}${num(v).toFixed(2)}%`;
 const fx=(v,d=1)=>v==null?'—':num(v).toFixed(d),tone=v=>num(v)>0?'pos':num(v)<0?'neg':'muted';
 const pill=v=>`<span class="pill ${(v||'none').toLowerCase()}">${esc(v||'NONE')}</span>`;

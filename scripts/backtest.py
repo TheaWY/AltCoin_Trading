@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -18,13 +19,63 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
+from src.engine import indicators  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
+from src.market import bars  # noqa: E402
 from src.strategies.base import SignalDirection  # noqa: E402
 from src.strategies.funding_carry import settlement_rates  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
 
 SECONDS_PER_DAY = 24 * 60 * 60
+
+
+def _live_sqlite_path() -> Path:
+    return Path(config.DATABASE_PATH).expanduser().resolve()
+
+
+def resolve_replay_storage(database_path: str | None = None) -> Storage:
+    """Return isolated replay storage for CLI backtests.
+
+    Historical replay must never attach to the live application DB by accident.
+    In production-like environments where DATABASE_URL is set, callers must
+    explicitly provide a separate SQLite replay DB via --database-path or
+    REPLAY_DATABASE_PATH.
+    """
+    explicit = database_path or os.getenv("REPLAY_DATABASE_PATH")
+    if config.DATABASE_URL and not explicit:
+        if os.getenv("REPLAY_ALLOW_DATABASE_URL_READONLY") == "1":
+            return get_storage()
+        raise SystemExit(
+            "Refusing replay against configured DATABASE_URL. Set REPLAY_DATABASE_PATH "
+            "or pass --database-path pointing at a separate replay SQLite database."
+        )
+    replay_path = Path(explicit or config.DATABASE_PATH).expanduser().resolve()
+    if explicit and replay_path == _live_sqlite_path():
+        raise SystemExit(
+            f"Refusing replay: target {replay_path} equals live DATABASE_PATH."
+        )
+    return Storage(db_path=replay_path, database_url="")
+
+
+def _execution_cost_components(notional: float) -> tuple[float, float]:
+    spread = abs(notional) * config.SPREAD_PCT_PER_SIDE
+    slippage = abs(notional) * config.SLIPPAGE_PCT_PER_SIDE
+    return spread, slippage
+
+
+def _apply_entry_cost(direction: str, raw_open: float) -> float:
+    cost = config.SPREAD_PCT_PER_SIDE + config.SLIPPAGE_PCT_PER_SIDE
+    if direction == SignalDirection.LONG.value:
+        return raw_open * (1 + cost)
+    return raw_open * (1 - cost)
+
+
+def _apply_exit_cost(direction: str, raw_price: float) -> float:
+    cost = config.SPREAD_PCT_PER_SIDE + config.SLIPPAGE_PCT_PER_SIDE
+    if direction == SignalDirection.LONG.value:
+        return raw_price * (1 - cost)
+    return raw_price * (1 + cost)
 
 
 @dataclass
@@ -38,15 +89,36 @@ class BacktestTrade:
     opened_at: int
     strategy: str | None = None
     metadata: dict[str, Any] | None = None
+    atr_pct: float | None = None
     exit_price: float | None = None
     closed_at: int | None = None
     pnl: float | None = None
     exit_reason: str | None = None
     fees: float | None = None
+    signal_time: int | None = None
+    signal_bar_close: int | None = None
+    intended_execution_time: int | None = None
+    actual_fill_time: int | None = None
+    spread_cost: float = 0.0
+    slippage: float = 0.0
+    entry_fee: float = 0.0
+    exit_fee: float = 0.0
+    ambiguous_exit: bool = False
 
     @property
     def notional(self) -> float:
         return self.quantity * self.entry_price
+
+
+@dataclass
+class PendingOrder:
+    symbol: str
+    direction: str
+    signal_time: int
+    signal_bar_close: int
+    execution_bar_open: int
+    strategy: str | None
+    metadata: dict[str, Any] | None = None
 
 
 @dataclass
@@ -65,6 +137,12 @@ class BacktestPortfolio:
         *,
         strategy: str | None = None,
         metadata: dict[str, Any] | None = None,
+        signal_time: int | None = None,
+        signal_bar_close: int | None = None,
+        intended_execution_time: int | None = None,
+        atr_pct: float | None = None,
+        spread_cost: float = 0.0,
+        slippage: float = 0.0,
     ) -> BacktestTrade | None:
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return None
@@ -78,18 +156,19 @@ class BacktestPortfolio:
         if self._symbol_in_cooldown(symbol, timestamp):
             return None
 
+        stop_loss, take_profit = self._exit_levels(direction, price, atr_pct)
         portfolio_value = self.value({}, timestamp)
-        notional = portfolio_value * config.MAX_POSITION_PCT
+        notional = self._position_notional(
+            portfolio_value,
+            self.cash,
+            price,
+            stop_loss,
+        )
         if notional <= 0 or self.cash < notional:
             return None
 
         quantity = notional / price
-        if direction == SignalDirection.LONG.value:
-            stop_loss = price * (1 - config.STOP_LOSS_PCT)
-            take_profit = price * (1 + config.TAKE_PROFIT_PCT)
-        else:
-            stop_loss = price * (1 + config.STOP_LOSS_PCT)
-            take_profit = price * (1 - config.TAKE_PROFIT_PCT)
+        entry_fee = notional * config.fee_pct_per_side()
 
         trade = BacktestTrade(
             symbol=symbol,
@@ -101,8 +180,16 @@ class BacktestPortfolio:
             opened_at=timestamp,
             strategy=strategy,
             metadata=metadata,
+            signal_time=signal_time,
+            signal_bar_close=signal_bar_close,
+            intended_execution_time=intended_execution_time,
+            actual_fill_time=timestamp,
+            spread_cost=spread_cost,
+            slippage=slippage,
+            entry_fee=entry_fee,
+            atr_pct=atr_pct,
         )
-        self.cash -= notional
+        self.cash -= notional + entry_fee
         self.open_trades.append(trade)
         return trade
 
@@ -118,33 +205,178 @@ class BacktestPortfolio:
                 still_open.append(trade)
         self.open_trades = still_open
 
+    def process_candle_exits(
+        self,
+        candles: dict[str, dict[str, Any]],
+        timestamp: int,
+    ) -> int:
+        """Evaluate stops/targets during a completed candle.
+
+        If stop and target are both inside the bar, use adverse-first ordering.
+        If the bar opens beyond a stop, fill at that adverse open.
+        """
+        ambiguous = 0
+        still_open: list[BacktestTrade] = []
+        for trade in self.open_trades:
+            candle = candles.get(trade.symbol)
+            if not candle:
+                still_open.append(trade)
+                continue
+            close_price = float(candle["close"])
+            exit_price, reason, is_ambiguous = self._candle_exit_price(trade, candle)
+            if exit_price is None:
+                self._update_trailing_stop_from_candle(trade, candle)
+                if self._time_stop_reached(trade, timestamp):
+                    exit_price, reason, is_ambiguous = close_price, "time_stop", False
+            if exit_price is not None and reason is not None:
+                spread, slip = _execution_cost_components(trade.notional)
+                self.close_trade(
+                    trade,
+                    _apply_exit_cost(trade.direction, exit_price),
+                    timestamp,
+                    reason,
+                    spread_cost=spread,
+                    slippage=slip,
+                    ambiguous_exit=is_ambiguous,
+                )
+                ambiguous += 1 if is_ambiguous else 0
+            else:
+                still_open.append(trade)
+        self.open_trades = still_open
+        return ambiguous
+
+    def _candle_exit_price(
+        self, trade: BacktestTrade, candle: dict[str, Any]
+    ) -> tuple[float | None, str | None, bool]:
+        open_ = float(candle["open"])
+        high = float(candle["high"])
+        low = float(candle["low"])
+        stop = float(trade.stop_loss)
+        target = float(trade.take_profit)
+        is_long = trade.direction == SignalDirection.LONG.value
+
+        if is_long:
+            if open_ <= stop:
+                return open_, "stop_loss_gap", False
+            if open_ >= target:
+                return open_, "take_profit_gap", False
+            hit_stop = low <= stop
+            hit_target = high >= target
+            if hit_stop and hit_target:
+                return stop, "stop_loss", True
+            if hit_stop:
+                return stop, "stop_loss", False
+            if hit_target:
+                return target, "take_profit", False
+        else:
+            if open_ >= stop:
+                return open_, "stop_loss_gap", False
+            if open_ <= target:
+                return open_, "take_profit_gap", False
+            hit_stop = high >= stop
+            hit_target = low <= target
+            if hit_stop and hit_target:
+                return stop, "stop_loss", True
+            if hit_stop:
+                return stop, "stop_loss", False
+            if hit_target:
+                return target, "take_profit", False
+        return None, None, False
+
+    def _update_trailing_stop_from_candle(
+        self, trade: BacktestTrade, candle: dict[str, Any]
+    ) -> None:
+        if not config.TRAILING_STOP_ENABLED or not trade.atr_pct:
+            return
+        atr_frac = float(trade.atr_pct) / 100.0
+        entry = float(trade.entry_price)
+        best = float(trade.metadata.get("trail_price", entry) if trade.metadata else entry)
+        stop = float(trade.stop_loss)
+        if trade.direction == SignalDirection.LONG.value:
+            best = max(best, float(candle["high"]))
+            if best >= entry * (1 + atr_frac):
+                trade.stop_loss = max(stop, best * (1 - config.TRAIL_ATR_MULT * atr_frac))
+        else:
+            best = min(best, float(candle["low"]))
+            if best <= entry * (1 - atr_frac):
+                trade.stop_loss = min(stop, best * (1 + config.TRAIL_ATR_MULT * atr_frac))
+        trade.metadata = {**(trade.metadata or {}), "trail_price": best}
+
+    def _time_stop_reached(self, trade: BacktestTrade, timestamp: int) -> bool:
+        max_hours = (
+            config.SCALP_MAX_HOLD_HOURS
+            if (trade.metadata or {}).get("style") == "scalp"
+            else config.SWING_MAX_HOLD_HOURS
+        )
+        return max_hours > 0 and (timestamp - int(trade.opened_at)) / 3600.0 >= max_hours
+
     def close_all(self, prices: dict[str, float], timestamp: int) -> None:
         for trade in list(self.open_trades):
             price = prices.get(trade.symbol, trade.entry_price)
-            self.close_trade(trade, price, timestamp, "end_of_backtest")
+            spread, slip = _execution_cost_components(trade.notional)
+            self.close_trade(
+                trade,
+                _apply_exit_cost(trade.direction, price),
+                timestamp,
+                "end_of_backtest",
+                spread_cost=spread,
+                slippage=slip,
+            )
         self.open_trades = []
 
     def close_trade(
-        self, trade: BacktestTrade, price: float, timestamp: int, reason: str
+        self,
+        trade: BacktestTrade,
+        price: float,
+        timestamp: int,
+        reason: str,
+        *,
+        spread_cost: float = 0.0,
+        slippage: float = 0.0,
+        ambiguous_exit: bool = False,
     ) -> None:
-        pnl = self._realized_pnl(trade, price, timestamp)
-        fees = 0.0
+        gross_pnl = self._realized_pnl(trade, price, timestamp)
         if (
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
         ):
-            fees = trade.notional * config.CARRY_FEE_ROUNDTRIP
-            pnl -= fees
+            exit_fee = max(0.0, trade.notional * config.CARRY_FEE_ROUNDTRIP - trade.entry_fee)
         else:
-            fees = trade.notional * config.round_trip_cost_pct()
-            pnl -= fees
-        trade.fees = fees
+            exit_fee = trade.notional * config.fee_pct_per_side()
+        pnl = gross_pnl - trade.entry_fee - exit_fee
+        trade.exit_fee = exit_fee
+        trade.fees = trade.entry_fee + exit_fee
+        trade.spread_cost += spread_cost
+        trade.slippage += slippage
+        trade.ambiguous_exit = ambiguous_exit
         trade.exit_price = price
         trade.closed_at = timestamp
         trade.pnl = pnl
         trade.exit_reason = reason
-        self.cash += trade.notional + pnl
+        self.cash += trade.notional + gross_pnl - exit_fee
         self.closed_trades.append(trade)
+
+    def _exit_levels(
+        self, direction: str, price: float, atr_pct: float | None
+    ) -> tuple[float, float]:
+        if atr_pct:
+            stop_frac = config.ATR_STOP_MULT * atr_pct / 100.0
+            tp_frac = config.ATR_TP_MULT * atr_pct / 100.0
+        else:
+            stop_frac = config.STOP_LOSS_PCT
+            tp_frac = config.TAKE_PROFIT_PCT
+        if direction == SignalDirection.LONG.value:
+            return price * (1 - stop_frac), price * (1 + tp_frac)
+        return price * (1 + stop_frac), price * (1 - tp_frac)
+
+    def _position_notional(
+        self, portfolio: float, cash: float, price: float, stop_loss: float
+    ) -> float:
+        stop_frac = abs(price - stop_loss) / price if price else 0.0
+        if stop_frac <= 0:
+            return 0.0
+        notional = (portfolio * config.RISK_PER_TRADE_PCT) / stop_frac
+        return max(0.0, min(notional, portfolio * config.MAX_POSITION_PCT, cash))
 
     def value(self, prices: dict[str, float], timestamp: int | None) -> float:
         total = self.cash
@@ -283,21 +515,24 @@ class SnapshotStorage:
     def __init__(
         self,
         storage: Storage,
-        timestamp: int,
+        decision_time: int,
         latest_signal: dict[str, Any] | None,
     ) -> None:
         self.storage = storage
-        self.timestamp = timestamp
+        self.decision_time = decision_time
         self.latest_signal = latest_signal
+
+    def _visible_before(self, timeframe: str) -> int:
+        return bars.latest_visible_open_timestamp(timeframe, self.decision_time)
 
     def get_latest_price(self, symbol: str, timeframe: str = "1h") -> dict[str, Any] | None:
         prices = self.storage.get_prices(
-            symbol, limit=1, before=self.timestamp, timeframe=timeframe
+            symbol, limit=1, before=self._visible_before(timeframe), timeframe=timeframe
         )
         return prices[-1] if prices else None
 
     def get_latest_funding_rate(self, symbol: str) -> dict[str, Any] | None:
-        rows = self.storage.get_funding_rates(symbol, limit=1, before=self.timestamp)
+        rows = self.storage.get_funding_rates(symbol, limit=1, before=self.decision_time)
         return rows[-1] if rows else None
 
     def get_latest_signal(
@@ -319,9 +554,8 @@ class SnapshotStorage:
         before: int | None = None,
         timeframe: str = "1h",
     ) -> list[dict[str, Any]]:
-        effective_before = min(
-            value for value in (before, self.timestamp) if value is not None
-        )
+        visible_before = self._visible_before(timeframe)
+        effective_before = min(value for value in (before, visible_before) if value is not None)
         return self.storage.get_prices(
             symbol,
             limit=limit,
@@ -352,7 +586,7 @@ class SnapshotStorage:
         before: int | None = None,
     ) -> list[dict[str, Any]]:
         effective_before = min(
-            value for value in (before, self.timestamp) if value is not None
+            value for value in (before, self.decision_time) if value is not None
         )
         return self.storage.get_funding_rates(
             symbol, limit=limit, since=since, before=effective_before
@@ -366,7 +600,7 @@ class SnapshotStorage:
         before: int | None = None,
     ) -> list[dict[str, Any]]:
         effective_before = min(
-            value for value in (before, self.timestamp) if value is not None
+            value for value in (before, self.decision_time) if value is not None
         )
         return self.storage.get_ls_ratio_history(
             symbol, limit=limit, since=since, before=effective_before
@@ -380,7 +614,7 @@ class SnapshotStorage:
         before: int | None = None,
     ) -> list[dict[str, Any]]:
         effective_before = min(
-            value for value in (before, self.timestamp) if value is not None
+            value for value in (before, self.decision_time) if value is not None
         )
         return self.storage.get_open_interest_history(
             symbol, limit=limit, since=since, before=effective_before
@@ -419,22 +653,79 @@ class BacktestEngine:
         signal_count = 0
         confidence_pass_count = 0
         opened_count = 0
+        orders_queued = 0
+        orders_filled = 0
+        ambiguous_bars = 0
         equity_curve: list[dict[str, float | int]] = []
         symbol_curves: dict[str, list[float]] = {symbol: [] for symbol in self.symbols}
+        pending_orders: list[PendingOrder] = []
+        last_decision_bar_by_symbol: dict[str, int] = {}
 
         last_prices: dict[str, float] = {}
         price_index = {symbol: 0 for symbol in self.symbols}
 
         for ts in timeline:
+            if ts < self.start_ts or ts > self.end_ts:
+                self._advance_prices(prices_by_symbol, price_index, ts)
+                continue
+
             current_prices = self._advance_prices(prices_by_symbol, price_index, ts)
             last_prices.update(current_prices)
-            portfolio.check_exits(current_prices, ts)
+            current_candles = {
+                symbol: self._bar_at(prices_by_symbol, symbol, ts)
+                for symbol in self.symbols
+            }
+            current_candles = {k: v for k, v in current_candles.items() if v}
+
+            still_pending: list[PendingOrder] = []
+            for order in pending_orders:
+                if order.execution_bar_open > ts:
+                    still_pending.append(order)
+                    continue
+                candle = current_candles.get(order.symbol)
+                if not candle:
+                    still_pending.append(order)
+                    continue
+                raw_open = float(candle["open"])
+                fill_price = _apply_entry_cost(order.direction, raw_open)
+                notional_hint = portfolio.value(last_prices, ts) * config.MAX_POSITION_PCT
+                spread, slip = _execution_cost_components(notional_hint)
+                snapshot = SnapshotStorage(self.storage, order.signal_bar_close, None)
+                atr_pct = self._atr_pct(snapshot, order.symbol)
+                opened = portfolio.open_trade(
+                    order.symbol,
+                    order.direction,
+                    fill_price,
+                    ts,
+                    strategy=order.strategy,
+                    metadata=order.metadata,
+                    signal_time=order.signal_time,
+                    signal_bar_close=order.signal_bar_close,
+                    intended_execution_time=order.execution_bar_open,
+                    atr_pct=atr_pct,
+                    spread_cost=spread,
+                    slippage=slip,
+                )
+                if opened:
+                    orders_filled += 1
+                    opened_count += 1
+            pending_orders = still_pending
+
+            ambiguous_bars += portfolio.process_candle_exits(
+                current_candles,
+                ts + bars.timeframe_to_seconds("1h"),
+            )
 
             for symbol in self.symbols:
+                if symbol not in current_candles:
+                    continue
+                if last_decision_bar_by_symbol.get(symbol) == ts:
+                    continue
+                signal_bar_close = bars.bar_close_timestamp(current_candles[symbol], "1h")
                 # Same data path as live trading: the snapshot hides rows
-                # after `ts`, and gather_strategy_data fetches exactly what
-                # the strategy declares in get_required_data().
-                snapshot = SnapshotStorage(self.storage, ts, None)
+                # whose close is after `decision_time`, and gather_strategy_data
+                # fetches exactly what the strategy declares in get_required_data().
+                snapshot = SnapshotStorage(self.storage, signal_bar_close, None)
                 data = gather_strategy_data(snapshot, self.strategy, symbol)
                 if self.strategy.validate_data(data):
                     continue
@@ -452,12 +743,16 @@ class BacktestEngine:
                 signal_row = {
                     "strategy": self.strategy_name,
                     "symbol": symbol,
-                    "timestamp": ts,
+                    "timestamp": signal_bar_close,
                     "direction": signal.direction.value,
                     "reason": signal.reason,
                     "entry_price": signal.entry_price,
                     "funding_rate": funding_row.get("funding_rate"),
-                    "metadata": signal.metadata,
+                    "metadata": {
+                        **(signal.metadata or {}),
+                        "signal_bar_close": signal_bar_close,
+                        "execution_bar_open": signal_bar_close,
+                    },
                 }
                 snapshot.latest_signal = signal_row
                 analysis = AltAnalyzer(snapshot).analyze(
@@ -466,16 +761,23 @@ class BacktestEngine:
                 confidence_passed = analysis["confidence"] >= config.MIN_CONFIDENCE
                 if confidence_passed:
                     confidence_pass_count += 1
-                    opened = portfolio.open_trade(
-                        symbol,
-                        signal.direction.value,
-                        float(price_row["close"]),
-                        ts,
-                        strategy=self.strategy_name,
-                        metadata=signal.metadata,
+                    execution_bar_open = signal_bar_close
+                    pending_orders.append(
+                        PendingOrder(
+                            symbol=symbol,
+                            direction=signal.direction.value,
+                            signal_time=signal_bar_close,
+                            signal_bar_close=signal_bar_close,
+                            execution_bar_open=execution_bar_open,
+                            strategy=self.strategy_name,
+                            metadata={
+                                **(signal.metadata or {}),
+                                "style": analysis.get("recommended_style"),
+                            },
+                        )
                     )
-                    if opened:
-                        opened_count += 1
+                    orders_queued += 1
+                last_decision_bar_by_symbol[symbol] = ts
 
             equity_curve.append({"timestamp": ts, "value": portfolio.value(last_prices, ts)})
             symbol_pnl = portfolio.pnl_by_symbol(last_prices, ts)
@@ -485,7 +787,13 @@ class BacktestEngine:
                 )
 
         if timeline:
-            portfolio.close_all(last_prices, timeline[-1])
+            portfolio.close_all(last_prices, min(timeline[-1], self.end_ts))
+            equity_curve.append(
+                {
+                    "timestamp": min(timeline[-1], self.end_ts),
+                    "value": portfolio.value(last_prices, min(timeline[-1], self.end_ts)),
+                }
+            )
 
         final_value = portfolio.value(last_prices, timeline[-1] if timeline else None)
         return {
@@ -505,8 +813,18 @@ class BacktestEngine:
                 "btc_buy_hold_return_pct": self._btc_buy_hold_return(prices_by_symbol),
                 "signals": signal_count,
                 "confidence_passed": confidence_pass_count,
+                "orders_queued": orders_queued,
+                "orders_filled": orders_filled,
+                "ambiguous_bars": ambiguous_bars,
                 "trades_opened": opened_count,
                 "closed_trades": len(portfolio.closed_trades),
+                "gross_pnl": round(sum((t.pnl or 0.0) + (t.fees or 0.0) for t in portfolio.closed_trades), 2),
+                "fees": round(sum(float(t.fees or 0.0) for t in portfolio.closed_trades), 2),
+                "spread_cost": round(sum(float(t.spread_cost or 0.0) for t in portfolio.closed_trades), 2),
+                "slippage": round(sum(float(t.slippage or 0.0) for t in portfolio.closed_trades), 2),
+                "funding": 0.0,
+                "net_pnl": round(sum(float(t.pnl or 0.0) for t in portfolio.closed_trades), 2),
+                "cash_benchmark_return_pct": 0.0,
             },
             "symbols": self._symbol_results(portfolio.closed_trades, symbol_curves),
             # Per-trade detail for the research stack (expectancy / PF / walk-forward
@@ -517,19 +835,45 @@ class BacktestEngine:
                     "strategy": getattr(t, "strategy", None),
                     "pnl": round(float(t.pnl or 0.0), 6),
                     "fees": round(float(getattr(t, "fees", 0.0) or 0.0), 6),
+                    "spread_cost": round(float(getattr(t, "spread_cost", 0.0) or 0.0), 6),
+                    "slippage": round(float(getattr(t, "slippage", 0.0) or 0.0), 6),
                     "opened_at": getattr(t, "opened_at", None),
                     "closed_at": getattr(t, "closed_at", None),
+                    "signal_time": getattr(t, "signal_time", None),
+                    "signal_bar_close": getattr(t, "signal_bar_close", None),
+                    "intended_execution_time": getattr(t, "intended_execution_time", None),
+                    "actual_fill_time": getattr(t, "actual_fill_time", None),
+                    "actual_fill": getattr(t, "entry_price", None),
+                    "exit_reason": getattr(t, "exit_reason", None),
                 }
                 for t in portfolio.closed_trades
             ],
         }
 
+    def _bar_at(
+        self,
+        prices_by_symbol: dict[str, list[dict[str, Any]]],
+        symbol: str,
+        timestamp: int,
+    ) -> dict[str, Any] | None:
+        for row in prices_by_symbol.get(symbol, []):
+            if int(row["timestamp"]) == timestamp:
+                return row
+        return None
+
+    def _atr_pct(self, snapshot: SnapshotStorage, symbol: str) -> float | None:
+        rows = snapshot.get_prices(symbol, limit=48, timeframe="1h")
+        if len(rows) < 15:
+            return None
+        return indicators.atr_pct(rows, period=14)
+
     def _load_prices(self) -> dict[str, list[dict[str, Any]]]:
+        warmup_start = self.start_ts - 720 * bars.timeframe_to_seconds("1h")
         return {
             symbol: self.storage.get_prices(
                 symbol,
                 limit=1_000_000,
-                since=self.start_ts,
+                since=warmup_start,
                 before=self.end_ts,
                 timeframe="1h",
             )
@@ -647,6 +991,11 @@ def main() -> int:
         default=config.PRIMARY_STRATEGY,
         help=f"Strategy name (available: {', '.join(list_strategies())})",
     )
+    parser.add_argument(
+        "--database-path",
+        default=None,
+        help="Separate SQLite database for replay data. Refuses live DATABASE_PATH/DATABASE_URL.",
+    )
     args = parser.parse_args()
 
     start = _parse_datetime(args.start) if args.start else _default_start()
@@ -658,6 +1007,7 @@ def main() -> int:
         end=end,
         symbols=symbols,
         strategy_name=args.strategy,
+        storage=resolve_replay_storage(args.database_path),
     ).run()
 
     output_dir = PROJECT_ROOT / "data"

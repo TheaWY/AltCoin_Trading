@@ -241,6 +241,7 @@ TRAIL_ATR_MULT = float(os.getenv("TRAIL_ATR_MULT", "2.0"))
 # is 0.05%; slippage assumed 0.03% on liquid perps).
 FEE_PCT_PER_SIDE = float(os.getenv("FEE_PCT_PER_SIDE", "0.0005"))
 SLIPPAGE_PCT_PER_SIDE = float(os.getenv("SLIPPAGE_PCT_PER_SIDE", "0.0003"))
+SPREAD_PCT_PER_SIDE = float(os.getenv("SPREAD_PCT_PER_SIDE", "0.0001"))
 # FEE_MODE=taker (default) uses FEE_PCT_PER_SIDE. Use maker only with a maker-fill simulator.
 FEE_MODE = os.getenv("FEE_MODE", "taker").strip().lower()
 FEE_MAKER_PCT_PER_SIDE = float(os.getenv("FEE_MAKER_PCT_PER_SIDE", "0.0002"))

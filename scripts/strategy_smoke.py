@@ -13,6 +13,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 os.environ.setdefault("SYMBOL_UNIVERSE", "static")
+os.environ.setdefault("MIN_CONFIDENCE", "0.60")
+os.environ.setdefault("SETUP_BREAKOUT_ENABLED", "true")
+os.environ.setdefault("SETUP_TSMOM_ENABLED", "true")
 
 from src import config  # noqa: E402
 from src.data.storage import Storage  # noqa: E402

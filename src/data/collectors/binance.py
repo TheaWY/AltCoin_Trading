@@ -10,10 +10,10 @@ import ccxt
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.market.bars import is_bar_closed, timeframe_to_seconds
 
 logger = logging.getLogger(__name__)
 
-_TIMEFRAME_UNIT_SECONDS = {"m": 60, "h": 3600, "d": 86400, "w": 604800}
 _PLACEHOLDER_KEYS = {
     "",
     "your_testnet_api_key",
@@ -33,19 +33,58 @@ def _clean_credential(value: str | None) -> str:
 
 def _timeframe_seconds(timeframe: str) -> int | None:
     try:
-        return int(timeframe[:-1]) * _TIMEFRAME_UNIT_SECONDS[timeframe[-1]]
-    except (KeyError, ValueError):
+        return timeframe_to_seconds(timeframe)
+    except ValueError:
         return None
 
 
-def _build_exchange(use_testnet: bool | None = None, *, authenticated: bool | None = None) -> ccxt.binance:
+def _closed_candles(
+    candles: list[list[Any]],
+    timeframe: str,
+    *,
+    now_ms: int | None = None,
+) -> list[list[Any]]:
+    """Return only candles whose full interval has elapsed.
+
+    CCXT may include the current, still-forming candle in ``fetch_ohlcv``.
+    Persisting that row is unsafe because its high/low/close/volume can change
+    and strategy code may mistake it for a completed observation. Binance/CCXT
+    candle timestamps identify the interval start, so a candle is complete only
+    when ``open_time + timeframe <= now``.
+    """
+    try:
+        decision_time = (
+            int(now_ms // 1000)
+            if now_ms is not None
+            else int(datetime.now(timezone.utc).timestamp())
+        )
+    except Exception:
+        decision_time = int(datetime.now(timezone.utc).timestamp())
+    try:
+        timeframe_to_seconds(timeframe)
+    except ValueError:
+        logger.warning(
+            "Unknown timeframe %s; refusing to infer candle completion",
+            timeframe,
+        )
+        return []
+    return [
+        candle
+        for candle in candles
+        if candle and is_bar_closed({"timestamp": int(candle[0] // 1000)}, timeframe, decision_time)
+    ]
+
+
+def _build_exchange(
+    use_testnet: bool | None = None,
+    *,
+    authenticated: bool | None = None,
+) -> ccxt.binance:
     """Build a Binance futures exchange.
 
-    LiveTrader calls this with the legacy default (`BINANCE_TESTNET`) for order
-    safety and needs credentials. Data collectors pass
-    `BINANCE_MARKET_DATA_TESTNET=false` and do NOT need credentials; sending an
-    invalid/placeholder key causes ccxt to call signed SAPI endpoints and fail
-    before public OHLCV can load.
+    LiveTrader calls this with the legacy default (``BINANCE_TESTNET``) for
+    order safety and needs credentials. Data collectors use public endpoints
+    and do not need credentials.
     """
     if use_testnet is None:
         use_testnet = config.BINANCE_TESTNET
@@ -62,7 +101,9 @@ def _build_exchange(use_testnet: bool | None = None, *, authenticated: bool | No
         options["apiKey"] = api_key
         options["secret"] = api_secret
     elif authenticated:
-        logger.warning("Binance exchange requested authenticated mode but API keys are blank/placeholders")
+        logger.warning(
+            "Binance exchange requested authenticated mode but API keys are blank/placeholders"
+        )
 
     exchange = ccxt.binance(options)
     if use_testnet:
@@ -82,7 +123,10 @@ class BinanceCollector:
         timeframe: str | None = None,
     ) -> None:
         self.storage = storage or get_storage()
-        self.exchange = exchange or _build_exchange(use_testnet=config.BINANCE_MARKET_DATA_TESTNET, authenticated=False)
+        self.exchange = exchange or _build_exchange(
+            use_testnet=config.BINANCE_MARKET_DATA_TESTNET,
+            authenticated=False,
+        )
         self.symbol = symbol or config.SYMBOL
         self.futures_symbol = futures_symbol or config.CCXT_SYMBOL
         self.timeframe = timeframe
@@ -93,7 +137,7 @@ class BinanceCollector:
         limit: int | None = None,
         timeframes: list[str] | None = None,
     ) -> list[dict[str, Any]] | dict[str, list[dict[str, Any]]]:
-        """Fetch OHLCV candles and persist raw rows to the prices table."""
+        """Fetch completed OHLCV candles and persist them to the prices table."""
         if timeframe is None and self.timeframe is None:
             return {
                 tf: self._collect_ohlcv_for_timeframe(tf, limit)
@@ -110,36 +154,66 @@ class BinanceCollector:
         timeframe: str,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        if limit is None:
-            # Scheduled collection: only fetch candles missing since last run.
-            limit = self._incremental_limit(timeframe, config.OHLCV_LIMIT)
-        # Explicit limit (e.g. backfill) is honored as-is.
+        report = self.collect_ohlcv_report(timeframe, limit)
+        return report["rows"]
 
-        candles = self.exchange.fetch_ohlcv(
-            self.futures_symbol, timeframe=timeframe, limit=limit
+    def collect_ohlcv_report(
+        self,
+        timeframe: str,
+        limit: int | None = None,
+    ) -> dict[str, Any]:
+        if limit is None:
+            limit = self._incremental_limit(timeframe, config.OHLCV_LIMIT)
+
+        fetched = self.exchange.fetch_ohlcv(
+            self.futures_symbol,
+            timeframe=timeframe,
+            limit=limit,
         )
-        rows = [_candle_to_price_row(self.symbol, candle, timeframe) for candle in candles]
+        candles = _closed_candles(fetched, timeframe)
+        rows = [
+            _candle_to_price_row(self.symbol, candle, timeframe)
+            for candle in candles
+        ]
         inserted = self.storage.insert_prices(rows, timeframe=timeframe)
+        latest = self.storage.get_latest_price(self.symbol, timeframe)
+        latest_ts = int(latest["timestamp"]) if latest else None
+        seconds = _timeframe_seconds(timeframe)
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        expected_next = latest_ts + seconds if latest_ts is not None and seconds else None
+        candle_age = now_ts - latest_ts if latest_ts is not None else None
         logger.info(
-            "OHLCV collected for %s %s: %d candles fetched, %d new rows",
+            "OHLCV collected for %s %s: %d fetched, %d completed, %d new rows",
             self.symbol,
             timeframe,
+            len(fetched),
             len(rows),
             inserted,
         )
-        return rows
+        return {
+            "symbol": self.symbol,
+            "timeframe": timeframe,
+            "success": True,
+            "latest_completed_candle_ts": latest_ts,
+            "expected_next_timestamp": expected_next,
+            "candle_age_seconds": candle_age,
+            "rows_fetched": len(fetched),
+            "rows_inserted": inserted,
+            "error_category": None,
+            "rows": rows,
+        }
 
     def _incremental_limit(self, timeframe: str, max_limit: int) -> int:
-        """Only request the candles missing since the newest stored one."""
-        tf_seconds = _timeframe_seconds(timeframe)
-        if not tf_seconds:
+        """Only request candles missing since the newest stored closed candle."""
+        timeframe_seconds = _timeframe_seconds(timeframe)
+        if not timeframe_seconds:
             return max_limit
         latest = self.storage.get_latest_price(self.symbol, timeframe)
         if not latest:
             return max_limit
         now_ts = int(datetime.now(timezone.utc).timestamp())
-        # +2 candle overlap: re-fetch the (mutable) current candle and its predecessor
-        missing = (now_ts - int(latest["timestamp"])) // tf_seconds + 2
+        # Re-fetch a small overlap; the current candle is filtered before insert.
+        missing = (now_ts - int(latest["timestamp"])) // timeframe_seconds + 2
         return max(2, min(max_limit, int(missing)))
 
     def collect_funding_rate(self) -> dict[str, Any] | None:
@@ -164,17 +238,21 @@ class BinanceCollector:
         funding_row: dict[str, Any] | None = None,
         timeframes: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Run all Binance collectors in one pass.
-
-        `funding_row` lets run_collection() pass a rate that was already
-        fetched in the batch call, skipping the per-symbol request.
-        """
+        """Run all Binance collectors in one pass."""
         ohlcv = self.collect_ohlcv(timeframes=timeframes)
-        funding = funding_row if funding_row is not None else self.collect_funding_rate()
+        funding = (
+            funding_row
+            if funding_row is not None
+            else self.collect_funding_rate()
+        )
         return {"ohlcv": ohlcv, "funding_rate": funding}
 
 
-def _candle_to_price_row(symbol: str, candle: list, timeframe: str) -> dict[str, Any]:
+def _candle_to_price_row(
+    symbol: str,
+    candle: list[Any],
+    timeframe: str,
+) -> dict[str, Any]:
     ts_ms, open_, high, low, close, volume = candle
     return {
         "symbol": symbol,
@@ -189,28 +267,26 @@ def _candle_to_price_row(symbol: str, candle: list, timeframe: str) -> dict[str,
 
 
 def _funding_to_row(symbol: str, funding: dict[str, Any]) -> dict[str, Any]:
-    ts = funding.get("timestamp")
-    if ts is None:
-        ts = int(datetime.now(timezone.utc).timestamp() * 1000)
+    timestamp = funding.get("timestamp")
+    if timestamp is None:
+        timestamp = int(datetime.now(timezone.utc).timestamp() * 1000)
     rate = funding.get("fundingRate")
     if rate is None:
         rate = funding.get("info", {}).get("lastFundingRate", 0)
 
     return {
         "symbol": symbol,
-        "timestamp": int(ts // 1000),
+        "timestamp": int(timestamp // 1000),
         "funding_rate": float(rate),
     }
 
 
 def _collect_funding_batch(
-    exchange: ccxt.binance, storage: Storage, symbols: list[str]
+    exchange: ccxt.binance,
+    storage: Storage,
+    symbols: list[str],
 ) -> dict[str, dict[str, Any]]:
-    """Fetch funding rates for every symbol in one API call.
-
-    Returns spot symbol -> stored funding row. An empty dict means the batch
-    failed and callers should fall back to per-symbol requests.
-    """
+    """Fetch funding rates for every symbol in one API call."""
     from src.symbols import ccxt_symbol
 
     mapping = {ccxt_symbol(spot): spot for spot in symbols}
@@ -232,19 +308,19 @@ def _collect_funding_batch(
 
     if rows:
         storage.insert_funding_rates(list(rows.values()))
-        logger.info("Funding rates collected in one batch call for %d symbols", len(rows))
+        logger.info(
+            "Funding rates collected in one batch call for %d symbols",
+            len(rows),
+        )
     return rows
 
 
 def _collect_market_metrics(
-    exchange: ccxt.binance, storage: Storage, symbols: list[str]
+    exchange: ccxt.binance,
+    storage: Storage,
+    symbols: list[str],
 ) -> int:
-    """Collect open interest + global long/short account ratio.
-
-    Both are per-symbol endpoints on Binance futures, so this only runs for
-    the core symbol list (not the full 500+ universe) to keep request volume
-    sane. Failures are non-fatal — these metrics are enrichment, not gates.
-    """
+    """Collect open interest and global long/short account ratio."""
     from src.symbols import ccxt_symbol
 
     now_ts = int(datetime.now(timezone.utc).timestamp())
@@ -259,11 +335,15 @@ def _collect_market_metrics(
             "long_short_ratio": None,
         }
         try:
-            oi = exchange.fetch_open_interest(market_symbol)
-            row["open_interest"] = oi.get("openInterestAmount")
-            row["open_interest_usd"] = oi.get("openInterestValue")
+            open_interest = exchange.fetch_open_interest(market_symbol)
+            row["open_interest"] = open_interest.get("openInterestAmount")
+            row["open_interest_usd"] = open_interest.get("openInterestValue")
         except Exception:
-            logger.debug("Open interest fetch failed for %s", spot, exc_info=True)
+            logger.debug(
+                "Open interest fetch failed for %s",
+                spot,
+                exc_info=True,
+            )
         try:
             market_id = exchange.market(market_symbol)["id"]
             data = exchange.fapiDataGetGlobalLongShortAccountRatio(
@@ -272,34 +352,39 @@ def _collect_market_metrics(
             if data:
                 row["long_short_ratio"] = float(data[-1]["longShortRatio"])
         except Exception:
-            logger.debug("Long/short ratio fetch failed for %s", spot, exc_info=True)
+            logger.debug(
+                "Long/short ratio fetch failed for %s",
+                spot,
+                exc_info=True,
+            )
 
-        if row["open_interest"] is not None or row["long_short_ratio"] is not None:
+        if (
+            row["open_interest"] is not None
+            or row["long_short_ratio"] is not None
+        ):
             rows.append(row)
 
     inserted = storage.insert_market_metrics(rows)
     if rows:
         logger.info(
-            "Market metrics (OI / long-short) collected for %d symbols", len(rows)
+            "Market metrics (OI / long-short) collected for %d symbols",
+            len(rows),
         )
     return inserted
 
 
 def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
-    """Collect OHLCV + funding for all configured symbols.
-
-    Core symbols (the static TRADING_SYMBOLS list) get every configured
-    timeframe; the extended auto-discovered universe gets 1h only, which is
-    all the evaluation metrics need — this keeps the request count sane with
-    hundreds of symbols.
-    """
+    """Collect OHLCV and funding for configured symbols."""
     from src.symbols import ccxt_symbol, core_symbols, trading_symbols
 
     symbols = symbols or trading_symbols()
     core = set(core_symbols())
-    exchange = _build_exchange(use_testnet=config.BINANCE_MARKET_DATA_TESTNET, authenticated=False)
+    exchange = _build_exchange(
+        use_testnet=config.BINANCE_MARKET_DATA_TESTNET,
+        authenticated=False,
+    )
     storage = get_storage()
-    results: dict[str, Any] = {}
+    reports: list[dict[str, Any]] = []
 
     logger.info(
         "Market data collection using Binance %s endpoints for %d symbols",
@@ -316,6 +401,7 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
         logger.warning("Market metrics collection failed", exc_info=True)
 
     for spot in symbols:
+        timeframes = list(config.OHLCV_TIMEFRAMES) if spot in core else ["1h"]
         try:
             collector = BinanceCollector(
                 storage=storage,
@@ -323,12 +409,50 @@ def run_collection(symbols: list[str] | None = None) -> dict[str, Any]:
                 symbol=spot,
                 futures_symbol=ccxt_symbol(spot),
             )
-            results[spot] = collector.collect_all(
-                funding_row=funding_batch.get(spot),
-                timeframes=None if spot in core else ["1h"],
-            )
+            for timeframe in timeframes:
+                try:
+                    report = collector.collect_ohlcv_report(timeframe)
+                    reports.append({k: v for k, v in report.items() if k != "rows"})
+                except Exception as exc:
+                    logger.exception("OHLCV collection failed for %s %s", spot, timeframe)
+                    reports.append(
+                        {
+                            "symbol": spot,
+                            "timeframe": timeframe,
+                            "success": False,
+                            "latest_completed_candle_ts": None,
+                            "expected_next_timestamp": None,
+                            "candle_age_seconds": None,
+                            "rows_fetched": 0,
+                            "rows_inserted": 0,
+                            "error_category": exc.__class__.__name__,
+                        }
+                    )
+            if spot not in funding_batch:
+                try:
+                    collector.collect_funding_rate()
+                except Exception:
+                    logger.warning("Funding collection failed for %s", spot, exc_info=True)
         except Exception:
             logger.exception("Collection failed for %s", spot)
-            results[spot] = {"error": True}
+            for timeframe in timeframes:
+                reports.append(
+                    {
+                        "symbol": spot,
+                        "timeframe": timeframe,
+                        "success": False,
+                        "latest_completed_candle_ts": None,
+                        "expected_next_timestamp": None,
+                        "candle_age_seconds": None,
+                        "rows_fetched": 0,
+                        "rows_inserted": 0,
+                        "error_category": "symbol_collection_failed",
+                    }
+                )
 
-    return results
+    return {
+        "ok": all(r["success"] for r in reports),
+        "reports": reports,
+        "symbols": len(symbols),
+        "partial": any(r["success"] for r in reports) and not all(r["success"] for r in reports),
+    }

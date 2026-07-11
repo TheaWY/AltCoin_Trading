@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
+import time
+import uuid
 from typing import Any
 
 from src import config
@@ -19,6 +22,9 @@ from src.symbols import trading_symbols
 logger = logging.getLogger(__name__)
 
 STYLE_MAP = {"단타": "scalp", "스윙": "swing"}
+LEASE_NAME = "trading_cycle"
+LEASE_TTL_SECONDS = 10 * 60
+STALE_1H_SECONDS = 75 * 60
 
 
 def _active_cycle_symbols(symbols: list[str]) -> list[str]:
@@ -35,8 +41,46 @@ def _category_allowed(storage: Storage, symbol: str) -> tuple[bool, dict[str, An
         allowed, reason, category = is_symbol_trade_allowed(storage, symbol)
         return allowed, category, reason
     except Exception:
-        logger.exception("Category filter failed for %s; allowing legacy behaviour", symbol)
-        return True, None, "category filter unavailable"
+        logger.exception("Category filter failed for %s; blocking entry", symbol)
+        return False, None, "category filter exception"
+
+
+def _fresh_1h(storage: Storage, symbol: str, now_ts: int | None = None) -> tuple[bool, str]:
+    now_ts = now_ts or int(time.time())
+    try:
+        row = storage.get_latest_price(symbol, timeframe="1h")
+        if not row:
+            return False, "missing 1h candle"
+        age = now_ts - int(row["timestamp"])
+        if age > STALE_1H_SECONDS:
+            return False, f"stale 1h candle age={age}s"
+        return True, "fresh"
+    except Exception as exc:
+        logger.exception("Freshness check failed for %s", symbol)
+        return False, f"freshness exception: {exc.__class__.__name__}"
+
+
+def _collection_blocks(
+    collection_report: dict[str, Any] | None,
+    symbols: list[str],
+) -> dict[str, str]:
+    blocks: dict[str, str] = {}
+    if not collection_report:
+        return {symbol: "collection report missing" for symbol in symbols}
+    for report in collection_report.get("reports", []):
+        if report.get("timeframe") != "1h":
+            continue
+        if not report.get("success"):
+            blocks[str(report.get("symbol"))] = str(report.get("error_category") or "collection failed")
+    if collection_report.get("partial"):
+        for symbol in symbols:
+            if symbol not in {
+                str(r.get("symbol"))
+                for r in collection_report.get("reports", [])
+                if r.get("timeframe") == "1h" and r.get("success")
+            }:
+                blocks.setdefault(symbol, "partial collection missing symbol")
+    return blocks
 
 
 def _entry_candidates_from_evaluation(
@@ -112,6 +156,16 @@ def _entry_candidates_from_legacy_analyzer(
 def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     """Full cycle: collect → signal → evaluate → paper trade → outcomes."""
     storage = storage or get_storage()
+    lease_owner = f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+    if not storage.acquire_cycle_lease(LEASE_NAME, lease_owner, LEASE_TTL_SECONDS):
+        logger.warning("Trading cycle skipped — another worker holds the lease")
+        return {
+            "ok": False,
+            "error": "cycle lease held",
+            "symbols": 0,
+            "signals_run": 0,
+            "trades_opened": 0,
+        }
     universe_symbols = trading_symbols()
     symbols = _active_cycle_symbols(universe_symbols)
     if len(symbols) != len(universe_symbols):
@@ -122,11 +176,15 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         )
     cycle_ok = True
     cycle_error = None
+    collection_report: dict[str, Any] | None = None
 
     try:
         from src.data.collectors.binance import run_collection
 
-        run_collection(symbols)
+        collection_report = run_collection(symbols)
+        if not collection_report.get("ok", False):
+            cycle_ok = False
+            cycle_error = "partial collection failure"
         storage.cleanup_old_prices()
     except Exception as exc:
         cycle_ok = False
@@ -153,10 +211,13 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
 
     if config.LIVE_TRADING:
         from src.engine.live_trader import LiveTrader
+        from src.engine.broker_state import reconcile_cycle
 
         trader = LiveTrader(storage)
+        reconciliation = reconcile_cycle(storage, getattr(trader, "exchange", None))
     else:
         trader = PaperTrader(storage)
+        reconciliation = None
     signal_engine = SignalEngine(storage)
     market = MarketCompare(storage)
 
@@ -177,8 +238,12 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         from src.research.data_quality import verdict as data_health_verdict
 
         data_health = data_health_verdict()
-    except Exception:
+    except Exception as exc:
         logger.exception("Data health check failed")
+        data_health = {
+            "healthy": False,
+            "action": f"data health exception: {exc.__class__.__name__}",
+        }
 
     signals_run = 0
     trades_opened = 0
@@ -196,11 +261,31 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 signal_results_by_symbol[symbol] = result
                 market.register_from_signal(result)
 
-    regime = btc_regime(storage)
+    entry_blocks = _collection_blocks(collection_report, symbols)
+    btc_fresh, btc_reason = _fresh_1h(storage, config.SYMBOL)
+    if not btc_fresh:
+        for symbol in symbols:
+            entry_blocks[symbol] = f"BTC regime data blocked: {btc_reason}"
+    else:
+        now_ts = int(time.time())
+        for symbol in symbols:
+            fresh, reason = _fresh_1h(storage, symbol, now_ts)
+            if not fresh:
+                entry_blocks[symbol] = reason
+
+    try:
+        regime = btc_regime(storage)
+    except Exception as exc:
+        logger.exception("BTC regime failed; blocking entries")
+        regime = {"blocked_directions": ["LONG", "SHORT"], "reason": f"regime exception: {exc.__class__.__name__}"}
+        for symbol in symbols:
+            entry_blocks[symbol] = regime["reason"]
     if regime.get("reason"):
         logger.info("BTC regime filter active: %s", regime["reason"])
 
-    if not data_health.get("healthy", True):
+    if reconciliation is not None and not reconciliation.ok:
+        logger.warning("Skipping new entries — reconciliation incidents open")
+    elif not data_health.get("healthy", True):
         logger.warning(
             "Skipping new entries this cycle — %s",
             data_health.get("action", "data unhealthy"),
@@ -208,6 +293,9 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     elif config.ENTRY_DECISION_ENGINE == "signal":
         for analysis in _entry_candidates_from_legacy_analyzer(storage, symbols):
             symbol = analysis["symbol"]
+            if symbol in entry_blocks:
+                logger.info("Entry blocked for %s — %s", symbol, entry_blocks[symbol])
+                continue
             result = signal_results_by_symbol.get(symbol)
             if not result or result.get("direction") not in ("LONG", "SHORT"):
                 continue
@@ -229,6 +317,9 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         for candidate in _entry_candidates_from_evaluation(storage, symbols, regime):
             verdict = candidate.get("verdict") or {}
             symbol = candidate["symbol"]
+            if symbol in entry_blocks:
+                logger.info("Entry blocked for %s — %s", symbol, entry_blocks[symbol])
+                continue
             direction = verdict.get("direction")
             if direction not in ("LONG", "SHORT"):
                 continue
@@ -271,12 +362,17 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         except Exception:
             logger.exception("Ngrok keepalive check failed")
 
-    return {
+    result = {
         "ok": cycle_ok,
         "error": cycle_error,
         "symbols": len(symbols),
         "signals_run": signals_run,
         "trades_opened": trades_opened,
         "data_health": data_health,
+        "collection": collection_report,
+        "entry_blocks": entry_blocks,
+        "reconciliation_ok": reconciliation.ok if reconciliation is not None else True,
         "entry_decision_engine": config.ENTRY_DECISION_ENGINE,
     }
+    storage.release_cycle_lease(LEASE_NAME, lease_owner)
+    return result

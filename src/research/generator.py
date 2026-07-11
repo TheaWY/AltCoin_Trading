@@ -28,8 +28,11 @@ from src import config
 from src.data.storage import get_storage
 from src.research.promotion import _ensure_schema, config_hash
 
-SPACE_PATH = Path(config.DATA_DIR).parent / "research_space.yaml" \
-    if str(config.DATA_DIR).endswith("data") else Path("research_space.yaml")
+SPACE_PATH = (
+    Path(config.DATA_DIR).parent / "research_space.yaml"
+    if str(config.DATA_DIR).endswith("data")
+    else Path("research_space.yaml")
+)
 
 
 def _row_value(row: Any, key: str, index: int = 0) -> Any:
@@ -42,7 +45,10 @@ def _load_space(path: Path | None = None) -> dict[str, Any]:
     p = path or SPACE_PATH
     if not p.exists():
         p = Path(__file__).resolve().parents[2] / "research_space.yaml"
-    return yaml.safe_load(p.read_text())
+    loaded = yaml.safe_load(p.read_text())
+    if not isinstance(loaded, dict) or not isinstance(loaded.get("axes"), dict):
+        raise ValueError(f"Invalid research space: {p}")
+    return loaded
 
 
 def _combos(axes: dict[str, list[Any]]) -> list[dict[str, Any]]:
@@ -54,26 +60,42 @@ def _priority(combo: dict[str, Any], families: list[dict[str, Any]]) -> int:
     for rank, family in enumerate(families):
         match = family.get("match", {})
         if all(combo.get(k) == v for k, v in match.items()):
-            return rank  # lower = earlier
+            return rank
     return 100
 
 
+def _coerce_like(value: Any, sample: Any) -> Any:
+    """Coerce env/config values to the type used by the search axis."""
+    if isinstance(sample, bool):
+        if isinstance(value, str):
+            return value.lower() in ("true", "1", "yes", "on")
+        return bool(value)
+    if isinstance(sample, int) and not isinstance(sample, bool):
+        return int(float(value))
+    if isinstance(sample, float):
+        return float(value)
+    return str(value)
+
+
 def _champion_config(axes: dict[str, list[Any]]) -> dict[str, Any]:
-    """Current live value for each axis key: env/overrides if set, else the
-    first candidate in the axis (treated as the conservative default)."""
+    """Resolve the configuration that is actually active.
+
+    Promotion overrides are loaded into ``os.environ`` by ``src.config`` before
+    this module runs, so an explicit environment/override value wins. When no
+    environment value exists, read the resolved constant from ``src.config``
+    instead of incorrectly treating the first search-grid value as the live
+    champion. The first candidate is only a last-resort fallback for axes that
+    do not have a corresponding config constant.
+    """
     champion: dict[str, Any] = {}
     for key, candidates in axes.items():
-        raw = os.getenv(key)
+        if not candidates:
+            raise ValueError(f"Research axis {key!r} has no candidates")
+        sample = candidates[0]
+        raw: Any = os.getenv(key)
         if raw is None:
-            champion[key] = candidates[0]
-        else:
-            sample = candidates[0]
-            if isinstance(sample, bool):
-                champion[key] = raw.lower() in ("true", "1", "yes", "on")
-            elif isinstance(sample, (int, float)):
-                champion[key] = type(sample)(float(raw))
-            else:
-                champion[key] = raw
+            raw = getattr(config, key, candidates[0])
+        champion[key] = _coerce_like(raw, sample)
     return champion
 
 
@@ -113,7 +135,7 @@ def _ordered_candidates(
     return ordered
 
 
-def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str, int]:
+def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str, int | str]:
     _ensure_schema()
     space = _load_space(space_path)
     axes: dict[str, list[Any]] = space["axes"]
@@ -130,37 +152,45 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
     now = int(time.time())
     queued = 0
 
-    # champion baseline: refresh nightly (delete stale queued baseline, insert new)
-    champ = _champion_config(axes)
-    champ_hash = config_hash(champ)
+    champion = _champion_config(axes)
+    champ_hash = config_hash(champion)
     if not dry_run:
         with storage._connect() as conn:  # noqa: SLF001
             conn.execute(
                 "INSERT OR IGNORE INTO experiments (config_hash, config_json, status, "
                 "priority, is_champion_baseline, created_at) VALUES (?, ?, 'queued', -1, 1, ?)",
-                (champ_hash, json.dumps(champ, sort_keys=True), now),
+                (champ_hash, json.dumps(champion, sort_keys=True), now),
             )
-            # a previously-done baseline stays done; runner re-runs baseline nightly
             conn.execute(
-                "UPDATE experiments SET status = 'queued' "
-                "WHERE config_hash = ? AND is_champion_baseline = 1",
-                (champ_hash,),
+                "UPDATE experiments SET status = 'queued', config_json = ?, "
+                "is_champion_baseline = 1 WHERE config_hash = ?",
+                (json.dumps(champion, sort_keys=True), champ_hash),
             )
 
     candidates = _ordered_candidates(axes, families, existing, champ_hash)[:max_new]
 
-    for queue_priority, combo in enumerate(candidates):
-        if dry_run:
-            queued += 1
-            continue
+    if not dry_run and candidates:
+        rows = [
+            {
+                "config_hash": config_hash(combo),
+                "config_json": json.dumps(combo, sort_keys=True),
+                "priority": queue_priority
+                if "ACTIVE_STRATEGY" in axes
+                else _priority(combo, families),
+                "created_at": now,
+            }
+            for queue_priority, combo in enumerate(candidates)
+        ]
         with storage._connect() as conn:  # noqa: SLF001
-            conn.execute(
+            conn.executemany(
                 "INSERT OR IGNORE INTO experiments (config_hash, config_json, status, "
-                "priority, is_champion_baseline, created_at) VALUES (?, ?, 'queued', ?, 0, ?)",
-                (config_hash(combo), json.dumps(combo, sort_keys=True),
-                 queue_priority if "ACTIVE_STRATEGY" in axes else _priority(combo, families), now),
+                "priority, is_champion_baseline, created_at) "
+                "VALUES (:config_hash, :config_json, 'queued', :priority, 0, :created_at)",
+                rows,
             )
-        queued += 1
+        queued = len(rows)
+    elif dry_run:
+        queued = len(candidates)
 
     total_space = 1
     for values in axes.values():
