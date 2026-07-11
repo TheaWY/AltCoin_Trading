@@ -7,6 +7,8 @@
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
 
 axes:
+  ACTIVE_STRATEGY: [momentum, volume_spike, mean_reversion, funding_rate]
+
   # setup on/off toggles. Defaults now reflect the last backtest weakness:
   # start with fewer, cleaner hypotheses; re-enable noisy branches only if they
   # survive walk-forward + fresh-data promotion.
@@ -35,6 +37,12 @@ axes:
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:
+  - name: "strategy_momentum"
+    match: { ACTIVE_STRATEGY: momentum }
+  - name: "strategy_volume_spike"
+    match: { ACTIVE_STRATEGY: volume_spike }
+  - name: "strategy_mean_reversion"
+    match: { ACTIVE_STRATEGY: mean_reversion }
   - name: "conservative_core"
     match:
       SETUP_BREAKOUT_ENABLED: false

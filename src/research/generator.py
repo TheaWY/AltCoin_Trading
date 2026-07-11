@@ -77,6 +77,42 @@ def _champion_config(axes: dict[str, list[Any]]) -> dict[str, Any]:
     return champion
 
 
+def _ordered_candidates(
+    axes: dict[str, list[Any]],
+    families: list[dict[str, Any]],
+    existing: set[str],
+    champ_hash: str,
+) -> list[dict[str, Any]]:
+    candidates = [
+        c
+        for c in _combos(axes)
+        if config_hash(c) not in existing and config_hash(c) != champ_hash
+    ]
+    if "ACTIVE_STRATEGY" not in axes:
+        return sorted(candidates, key=lambda c: _priority(c, families))
+
+    strategy_order = sorted(
+        axes["ACTIVE_STRATEGY"],
+        key=lambda strategy: (
+            _priority({"ACTIVE_STRATEGY": strategy}, families),
+            axes["ACTIVE_STRATEGY"].index(strategy),
+        ),
+    )
+    grouped = {
+        strategy: sorted(
+            (c for c in candidates if c.get("ACTIVE_STRATEGY") == strategy),
+            key=lambda c: (_priority(c, families), json.dumps(c, sort_keys=True)),
+        )
+        for strategy in strategy_order
+    }
+    ordered: list[dict[str, Any]] = []
+    while any(grouped.values()):
+        for strategy in strategy_order:
+            if grouped[strategy]:
+                ordered.append(grouped[strategy].pop(0))
+    return ordered
+
+
 def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str, int]:
     _ensure_schema()
     space = _load_space(space_path)
@@ -111,12 +147,9 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
                 (champ_hash,),
             )
 
-    candidates = sorted(
-        (c for c in _combos(axes) if config_hash(c) not in existing and config_hash(c) != champ_hash),
-        key=lambda c: _priority(c, families),
-    )[:max_new]
+    candidates = _ordered_candidates(axes, families, existing, champ_hash)[:max_new]
 
-    for combo in candidates:
+    for queue_priority, combo in enumerate(candidates):
         if dry_run:
             queued += 1
             continue
@@ -125,7 +158,7 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
                 "INSERT OR IGNORE INTO experiments (config_hash, config_json, status, "
                 "priority, is_champion_baseline, created_at) VALUES (?, ?, 'queued', ?, 0, ?)",
                 (config_hash(combo), json.dumps(combo, sort_keys=True),
-                 _priority(combo, families), now),
+                 queue_priority if "ACTIVE_STRATEGY" in axes else _priority(combo, families), now),
             )
         queued += 1
 
