@@ -16,6 +16,7 @@ os.environ.setdefault("SETUP_FAILED_PUMP_ENABLED", "true")
 from src.engine.evaluation import (  # noqa: E402
     STYLE_SCALP,
     _failed_pump_short_setup,
+    _filter_setups_by_category,
     _funding_setup,
 )
 from src import config  # noqa: E402
@@ -113,6 +114,28 @@ class EvaluationSetupTests(unittest.TestCase):
             self.assertEqual(config.max_hold_hours_for_style("long_term_hold"), 0.0)
         finally:
             config.LONG_TERM_HOLD_ENABLED = old_long_term
+
+    def test_category_strategy_mode_drops_unmatched_momentum_only_when_matched(self):
+        setup = {
+            "strategy": "momentum",
+            "direction": "LONG",
+            "style": STYLE_SCALP,
+            "score": 0.76,
+        }
+        old_mode = config.CATEGORY_STRATEGY_MODE
+        try:
+            config.CATEGORY_STRATEGY_MODE = "off"
+            kept, blocked = _filter_setups_by_category([setup], "range_meanrev")
+            self.assertEqual(kept, [setup])
+            self.assertEqual(blocked, [])
+
+            config.CATEGORY_STRATEGY_MODE = "matched"
+            kept, blocked = _filter_setups_by_category([setup], "range_meanrev")
+            self.assertEqual(kept, [])
+            self.assertEqual(len(blocked), 1)
+            self.assertIn("not matched", blocked[0]["blocked_reason"])
+        finally:
+            config.CATEGORY_STRATEGY_MODE = old_mode
 
 
 if __name__ == "__main__":
