@@ -478,10 +478,17 @@ class Storage:
         if not prepared_rows:
             return 0
         sql = """
-            INSERT OR IGNORE INTO prices
+            INSERT INTO prices
                 (symbol, timestamp, timeframe, open, high, low, close, volume)
             VALUES
                 (:symbol, :timestamp, :timeframe, :open, :high, :low, :close, :volume)
+            ON CONFLICT(symbol, timestamp, timeframe) DO UPDATE SET
+                open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                created_at = datetime('now')
         """
         with self._connect() as conn:
             cursor = conn.executemany(sql, prepared_rows)

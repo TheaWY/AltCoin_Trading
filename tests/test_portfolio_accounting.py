@@ -97,6 +97,27 @@ class PortfolioAccountingTests(unittest.TestCase):
         self.assertEqual(summary["open_position_value"], 220.0)
         self.assertGreater(summary["equity"], 0.0)
 
+    def test_price_insert_refreshes_existing_candle(self):
+        storage = _storage()
+        ts = int(time.time())
+        base = {
+            "symbol": "AAA/USDT",
+            "timestamp": ts,
+            "timeframe": "1h",
+            "open": 10.0,
+            "high": 10.0,
+            "low": 10.0,
+            "close": 10.0,
+            "volume": 1.0,
+        }
+        storage.insert_prices([base], timeframe="1h")
+        storage.insert_prices([{**base, "close": 11.0, "high": 11.0}], timeframe="1h")
+
+        latest = storage.get_latest_price("AAA/USDT", timeframe="1h")
+
+        self.assertIsNotNone(latest)
+        self.assertEqual(latest["close"], 11.0)
+
 
 if __name__ == "__main__":
     unittest.main()
