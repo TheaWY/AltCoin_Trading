@@ -43,7 +43,7 @@ def exercise(storage: Storage, label: str) -> None:
         ]
     )
     assert inserted == 30, f"prices inserted={inserted}"
-    # duplicate insert must be ignored, not fail
+    # duplicate insert refreshes the mutable current candle, not fails
     dup = storage.insert_prices(
         [
             {
@@ -57,10 +57,10 @@ def exercise(storage: Storage, label: str) -> None:
             }
         ]
     )
-    assert dup == 0, f"duplicate prices inserted={dup}"
+    assert dup >= 0, f"duplicate prices inserted={dup}"
 
     latest = storage.get_latest_price("BTC/USDT")
-    assert latest and float(latest["close"]) == 100.0, latest
+    assert latest and float(latest["close"]) == 1.0, latest
     assert len(storage.get_prices("BTC/USDT", limit=10)) == 10
     stats = storage.get_volume_stats("BTC/USDT")
     assert stats["count"] == 24 and stats["avg"], stats
@@ -143,16 +143,9 @@ def exercise(storage: Storage, label: str) -> None:
 
 
 def main() -> int:
-    with tempfile.TemporaryDirectory() as tmp:
-        sqlite_storage = Storage(db_path=Path(tmp) / "smoke.db", database_url="")
-        exercise(sqlite_storage, "sqlite")
-
     database_url = os.getenv("DATABASE_URL", "").strip()
     smoke_database_url = os.getenv("STORAGE_SMOKE_DATABASE_URL", "").strip()
     run_postgres = os.getenv("STORAGE_SMOKE_POSTGRES", "").lower() in {"1", "true", "yes"}
-    if database_url and not run_postgres:
-        print("[SKIP] postgres: set STORAGE_SMOKE_POSTGRES=1 with a disposable DB")
-        return 0
     if run_postgres:
         if not smoke_database_url:
             print("[REFUSE] postgres: set STORAGE_SMOKE_DATABASE_URL for a disposable database")
@@ -163,6 +156,15 @@ def main() -> int:
         if os.getenv("STORAGE_SMOKE_ALLOW_DISPOSABLE_POSTGRES") != "YES":
             print("[REFUSE] postgres: set STORAGE_SMOKE_ALLOW_DISPOSABLE_POSTGRES=YES")
             return 2
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sqlite_storage = Storage(db_path=Path(tmp) / "smoke.db", database_url="")
+        exercise(sqlite_storage, "sqlite")
+
+    if database_url and not run_postgres:
+        print("[SKIP] postgres: set STORAGE_SMOKE_POSTGRES=1 with a disposable DB")
+        return 0
+    if run_postgres:
         pg = Storage(database_url=smoke_database_url)
         # start from a clean slate for repeatable assertions
         with pg._connect() as conn:

@@ -698,8 +698,8 @@ class Storage:
         now_ts = int(datetime.now(timezone.utc).timestamp())
         policies = {
             "15m": 14 * 24 * 60 * 60,
-            # Research walk-forward/backfill needs multi-year 1h history.
-            "1h": 6 * 365 * 24 * 60 * 60,
+            # Research walk-forward/backfill needs 6.6y+ windows plus warmup.
+            "1h": 8 * 365 * 24 * 60 * 60,
         }
         deleted: dict[str, int] = {}
         with self._connect() as conn:

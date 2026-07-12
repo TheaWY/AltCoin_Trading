@@ -180,7 +180,10 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
             "next_candidates": len(report["recommended_narrowed_space"]["next_candidates"]),
         }
     families = space.get("priority_families", [])
-    max_new = int(space.get("limits", {}).get("max_new_per_run", 300))
+    max_new = min(
+        int(space.get("limits", {}).get("max_new_per_run", 300)),
+        max(0, remaining_budget - queued_count),
+    )
 
     storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001

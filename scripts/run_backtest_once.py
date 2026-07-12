@@ -70,6 +70,9 @@ def main() -> int:
         "gross_pnl": round(sum(pnls) + sum(t["fees"] for t in trades), 4),
         "max_drawdown_pct": result["summary"].get("max_drawdown_pct"),
         "portfolio_return_pct": result["summary"].get("portfolio_return_pct"),
+        "category_checks": result["summary"].get("category_checks", 0),
+        "category_present": result["summary"].get("category_present", 0),
+        "category_coverage_pct": result["summary"].get("category_coverage_pct"),
         # for DSR (per-trade return series) and correlation gates — capped
         "trade_pnls": [round(p, 4) for p in pnls[:5000]],
         "daily_pnl": daily,

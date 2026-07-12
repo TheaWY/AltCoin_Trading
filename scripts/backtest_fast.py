@@ -44,14 +44,14 @@ def _strategy_category_allowed(
     symbol: str,
     timestamp: int,
     strategy_name: str,
-) -> bool:
+) -> tuple[bool, bool, bool]:
     if config.CATEGORY_STRATEGY_MODE != "matched":
-        return True
+        return True, False, False
     category = category_at(storage, symbol, timestamp)
     category_name = str((category or {}).get("category") or "")
     if not category_name:
-        return True
-    return category_name in STRATEGY_CATEGORY_MAP.get(strategy_name, set())
+        return True, True, False
+    return category_name in STRATEGY_CATEGORY_MAP.get(strategy_name, set()), True, True
 
 
 @dataclass
@@ -202,6 +202,8 @@ class FastBacktestEngine:
         opened_count = 0
         skipped_direction = 0
         skipped_missing = 0
+        category_checks = 0
+        category_present = 0
         equity_curve: list[dict[str, float | int]] = []
         last_prices: dict[str, float] = {}
 
@@ -220,7 +222,12 @@ class FastBacktestEngine:
                 signal = self.strategy.generate_signal(data)
                 if signal.direction == SignalDirection.NONE:
                     continue
-                if not _strategy_category_allowed(self.storage, symbol, ts, self.strategy_name):
+                category_allowed, category_checked, category_found = _strategy_category_allowed(
+                    self.storage, symbol, ts, self.strategy_name
+                )
+                category_checks += 1 if category_checked else 0
+                category_present += 1 if category_found else 0
+                if not category_allowed:
                     continue
                 signal_count += 1
                 if not config.direction_allowed(signal.direction.value):
@@ -274,6 +281,11 @@ class FastBacktestEngine:
                 "profit_factor": round(gross_profit / gross_loss, 3) if gross_loss else None,
                 "skipped_missing_data": skipped_missing,
                 "skipped_direction_policy": skipped_direction,
+                "category_checks": category_checks,
+                "category_present": category_present,
+                "category_coverage_pct": round(
+                    category_present / category_checks * 100.0, 2
+                ) if category_checks else None,
             },
             "closed_trade_pnls": [
                 {
