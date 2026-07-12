@@ -8,6 +8,7 @@
 
 axes:
   ACTIVE_STRATEGY: [momentum, volume_spike, mean_reversion, funding_rate]
+  ALLOW_LONG: [true, false]
 
   # setup on/off toggles. Defaults now reflect the last backtest weakness:
   # start with fewer, cleaner hypotheses; re-enable noisy branches only if they
