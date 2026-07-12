@@ -31,10 +31,27 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
+from src.engine.evaluation import STRATEGY_CATEGORY_MAP  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
+from src.research.market_categories import category_at  # noqa: E402
 from src.strategies.base import SignalDirection  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 from scripts.backtest import BacktestPortfolio, _max_drawdown, _parse_datetime, _pct_return  # noqa: E402
+
+
+def _strategy_category_allowed(
+    storage: Storage,
+    symbol: str,
+    timestamp: int,
+    strategy_name: str,
+) -> bool:
+    if config.CATEGORY_STRATEGY_MODE != "matched":
+        return True
+    category = category_at(storage, symbol, timestamp)
+    category_name = str((category or {}).get("category") or "")
+    if not category_name:
+        return True
+    return category_name in STRATEGY_CATEGORY_MAP.get(strategy_name, set())
 
 
 @dataclass
@@ -202,6 +219,8 @@ class FastBacktestEngine:
                     continue
                 signal = self.strategy.generate_signal(data)
                 if signal.direction == SignalDirection.NONE:
+                    continue
+                if not _strategy_category_allowed(self.storage, symbol, ts, self.strategy_name):
                     continue
                 signal_count += 1
                 if not config.direction_allowed(signal.direction.value):

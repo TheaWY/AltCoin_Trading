@@ -49,6 +49,7 @@ def _new_entry_funnel(symbols: list[str]) -> dict[str, Any]:
         "max_confidence_seen": 0.0,
         "blocked_regime": 0,
         "blocked_category": 0,
+        "blocked_category_strategy": 0,
         "in_cooldown": 0,
         "entered": 0,
         "slots_full": 0,
@@ -179,17 +180,18 @@ def _entry_candidates_from_evaluation(
     for symbol in symbols:
         if storage.get_open_trade_for_symbol(symbol):
             continue
+        allowed, category, reason = _category_allowed(storage, symbol)
         result = evaluate_symbol(
             storage,
             symbol,
             btc_rows if symbol != config.SYMBOL else None,
             regime=regime,
             calibration=calibration,
+            category=(category or {}).get("category") if category else None,
         )
         verdict = result.get("verdict")
         if not result.get("tradable") or not verdict:
             continue
-        allowed, category, reason = _category_allowed(storage, symbol)
         result["category"] = category
         result["category_filter_reason"] = reason
         if not allowed:
@@ -431,15 +433,36 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 continue
 
             entry_funnel["symbols_evaluated"] += 1
+            allowed, category, category_reason = _category_allowed(storage, symbol)
             candidate = evaluate_symbol(
                 storage,
                 symbol,
                 btc_rows if symbol != config.SYMBOL else None,
                 regime=regime,
                 calibration=calibration,
+                category=(category or {}).get("category") if category else None,
             )
+            candidate["category"] = category
+            candidate["category_filter_reason"] = category_reason
             verdict = candidate.get("verdict") or {}
             if not verdict:
+                if int(candidate.get("category_strategy_blocked") or 0) > 0:
+                    entry_funnel["setups_fired"] += 1
+                    entry_funnel["blocked_category_strategy"] += 1
+                    blocked = candidate.get("category_strategy_blocked_setups") or []
+                    detail = "; ".join(
+                        str(item.get("blocked_reason") or "")
+                        for item in blocked[:3]
+                        if item.get("blocked_reason")
+                    )
+                    _record_candidate_stop(
+                        entry_funnel,
+                        symbol,
+                        "blocked_category_strategy",
+                        detail or "strategy not matched to current category",
+                        float(candidate.get("confidence") or 0.0),
+                    )
+                    continue
                 _record_candidate_stop(
                     entry_funnel,
                     symbol,
@@ -485,17 +508,14 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     confidence,
                 )
                 continue
-            allowed, category, reason = _category_allowed(storage, symbol)
-            candidate["category"] = category
-            candidate["category_filter_reason"] = reason
             if not allowed:
-                logger.info("Entry blocked by market category: %s — %s", symbol, reason)
+                logger.info("Entry blocked by market category: %s — %s", symbol, category_reason)
                 entry_funnel["blocked_category"] += 1
                 _record_candidate_stop(
                     entry_funnel,
                     symbol,
                     "blocked_category",
-                    reason or "market category blocked",
+                    category_reason or "market category blocked",
                     confidence,
                 )
                 continue

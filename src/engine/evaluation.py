@@ -20,6 +20,16 @@ from src.engine import indicators
 from src.engine.calibration import build_calibration_map, calibrate_score
 from src.engine.regime import btc_regime, direction_blocked
 
+STRATEGY_CATEGORY_MAP = {
+    "momentum": {"liquid_trend", "large_beta"},
+    "mean_reversion": {"range_meanrev"},
+    "volume_spike": {"volume_surge", "liquid_trend"},
+    "funding_rate": {"crowded_funding"},
+    "funding_carry": {"crowded_funding"},
+    "positioning_short": {"crowded_funding"},
+    "failed_pump_short": {"liquid_trend", "volume_surge"},
+}
+
 STYLE_SCALP = "단타"
 STYLE_SWING = "스윙"
 
@@ -501,12 +511,38 @@ def _attach_market_metrics(storage: Storage, symbol: str, metrics: dict[str, Any
         metrics["long_short_ratio"] = row.get("long_short_ratio")
 
 
+def _filter_setups_by_category(
+    setups: list[dict[str, Any]],
+    category: str | None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    if config.CATEGORY_STRATEGY_MODE != "matched" or not category:
+        return setups, []
+    kept: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    for setup in setups:
+        strategy = str(setup.get("strategy") or "")
+        allowed_categories = STRATEGY_CATEGORY_MAP.get(strategy, set())
+        if category in allowed_categories:
+            kept.append(setup)
+        else:
+            blocked.append(
+                {
+                    **setup,
+                    "blocked_reason": (
+                        f"strategy {strategy or 'unknown'} not matched to category {category}"
+                    ),
+                }
+            )
+    return kept, blocked
+
+
 def evaluate_symbol(
     storage: Storage,
     symbol: str,
     btc_rows: list[dict[str, Any]] | None,
     regime: dict[str, Any] | None = None,
     calibration: dict[tuple[str, str], dict[str, Any]] | None = None,
+    category: str | None = None,
 ) -> dict[str, Any]:
     regime = regime or {"blocked_directions": []}
     calibration = calibration or {}
@@ -526,6 +562,7 @@ def evaluate_symbol(
     setups: list[dict[str, Any]] = []
     policy_notes: list[str] = []
     policy_blocked_setups: list[dict[str, Any]] = []
+    category_strategy_blocked_setups: list[dict[str, Any]] = []
     if not blockers:
         for setup in (
             _funding_setup(metrics, funding_rate),
@@ -556,11 +593,15 @@ def evaluate_symbol(
                 policy_notes.append(note)
                 policy_blocked_setups.append({**setup, "blocked_reason": note})
                 continue
+            setups.append(setup)
+        setups, category_strategy_blocked_setups = _filter_setups_by_category(
+            setups, category
+        )
+        for setup in setups:
             calibrated = calibrate_score(
-                setup["score"], setup["strategy"], direction, calibration
+                setup["score"], setup["strategy"], setup["direction"], calibration
             )
             setup.update(calibrated)
-            setups.append(setup)
         setups.sort(key=lambda s: -s["score"])
 
     best = setups[0] if setups else None
@@ -584,7 +625,12 @@ def evaluate_symbol(
             ]
         else:
             seen: set[str] = set()
-            for reason in policy_notes + _why_not(metrics, funding_rate):
+            category_notes = [
+                setup.get("blocked_reason", "")
+                for setup in category_strategy_blocked_setups
+                if setup.get("blocked_reason")
+            ]
+            for reason in policy_notes + category_notes + _why_not(metrics, funding_rate):
                 if reason not in seen:
                     seen.add(reason)
                     why_not.append(reason)
@@ -598,6 +644,8 @@ def evaluate_symbol(
         "confidence": confidence,
         "other_setups": setups[1:],
         "policy_blocked_setups": policy_blocked_setups,
+        "category_strategy_blocked": len(category_strategy_blocked_setups),
+        "category_strategy_blocked_setups": category_strategy_blocked_setups,
         "why_not": why_not,
         "metrics": metrics,
     }
@@ -613,6 +661,12 @@ def evaluate_all(
     btc_rows = storage.get_prices(config.SYMBOL, limit=720, timeframe="1h")
     regime = btc_regime(storage)
     calibration = build_calibration_map(storage)
+    try:
+        from src.research.market_categories import latest_category_map
+
+        categories = latest_category_map(storage)
+    except Exception:
+        categories = {}
 
     results = []
     for symbol in symbols:
@@ -623,6 +677,7 @@ def evaluate_all(
                 btc_rows if symbol != config.SYMBOL else None,
                 regime=regime,
                 calibration=calibration,
+                category=(categories.get(symbol) or {}).get("category"),
             )
         )
     results.sort(

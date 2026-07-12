@@ -18,13 +18,30 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
+from src.engine.evaluation import STRATEGY_CATEGORY_MAP  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
+from src.research.market_categories import category_at  # noqa: E402
 from src.strategies.base import SignalDirection  # noqa: E402
 from src.strategies.funding_carry import settlement_rates  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
 
 SECONDS_PER_DAY = 24 * 60 * 60
+
+
+def _strategy_category_allowed(
+    storage: Storage,
+    symbol: str,
+    timestamp: int,
+    strategy_name: str,
+) -> tuple[bool, str | None]:
+    if config.CATEGORY_STRATEGY_MODE != "matched":
+        return True, None
+    category = category_at(storage, symbol, timestamp)
+    category_name = str((category or {}).get("category") or "")
+    if not category_name:
+        return True, None
+    return category_name in STRATEGY_CATEGORY_MAP.get(strategy_name, set()), category_name
 
 
 @dataclass
@@ -446,6 +463,11 @@ class BacktestEngine:
                 price_row = data.get("latest_price")
                 if not price_row:
                     continue
+                category_allowed, category_name = _strategy_category_allowed(
+                    self.storage, symbol, ts, self.strategy_name
+                )
+                if not category_allowed:
+                    continue
 
                 signal_count += 1
                 funding_row = data.get("funding_rate") or {}
@@ -457,7 +479,11 @@ class BacktestEngine:
                     "reason": signal.reason,
                     "entry_price": signal.entry_price,
                     "funding_rate": funding_row.get("funding_rate"),
-                    "metadata": signal.metadata,
+                    "metadata": {
+                        **(signal.metadata or {}),
+                        "market_category": category_name,
+                        "category_strategy_mode": config.CATEGORY_STRATEGY_MODE,
+                    },
                 }
                 snapshot.latest_signal = signal_row
                 analysis = AltAnalyzer(snapshot).analyze(

@@ -278,21 +278,50 @@ def _tick_burst_map(storage: Storage, now_ts: int) -> dict[str, dict[str, float]
     return out
 
 
-def build_feature_rows(storage: Storage, symbols: list[str], now_ts: int | None = None) -> list[dict[str, Any]]:
+def _latest_funding_rate_at(storage: Storage, symbol: str, now_ts: int) -> dict[str, Any]:
+    rows = storage.get_funding_rates(symbol, limit=1, before=now_ts) or []
+    return rows[-1] if rows else {}
+
+
+def _assert_rows_at_or_before(rows: list[dict[str, Any]], now_ts: int, label: str) -> None:
+    if not rows:
+        return
+    max_ts = max(int(row["timestamp"]) for row in rows)
+    assert max_ts <= now_ts, f"{label} leaked future candle {max_ts} > {now_ts}"
+
+
+def build_feature_rows(
+    storage: Storage,
+    symbols: list[str],
+    now_ts: int | None = None,
+    *,
+    point_in_time: bool = False,
+    use_tick_bursts: bool = True,
+) -> list[dict[str, Any]]:
     now_ts = now_ts or int(time.time())
-    btc_rows = storage.get_prices(config.SYMBOL, limit=720, timeframe="1h")
-    tick_bursts = _tick_burst_map(storage, now_ts)
+    before = now_ts if point_in_time else None
+    btc_rows = storage.get_prices(config.SYMBOL, limit=720, before=before, timeframe="1h")
+    if point_in_time:
+        _assert_rows_at_or_before(btc_rows, now_ts, config.SYMBOL)
+    tick_bursts = _tick_burst_map(storage, now_ts) if use_tick_bursts else {}
     rows: list[dict[str, Any]] = []
     for symbol in symbols:
-        candles = storage.get_prices(symbol, limit=720, timeframe="1h")
+        candles = storage.get_prices(symbol, limit=720, before=before, timeframe="1h")
         if len(candles) < 48:
             continue
+        if point_in_time:
+            _assert_rows_at_or_before(candles, now_ts, symbol)
         metrics = indicators.compute_all(candles, btc_rows if symbol != config.SYMBOL else None)
-        funding = storage.get_latest_funding_rate(symbol) or {}
+        funding = (
+            _latest_funding_rate_at(storage, symbol, now_ts)
+            if point_in_time
+            else storage.get_latest_funding_rate(symbol) or {}
+        )
         features = {
             "symbol": symbol,
             "base": _base(symbol),
             "candles": len(candles),
+            "max_candle_ts": max(int(row["timestamp"]) for row in candles),
             "log_dollar_volume_24h": math.log1p(max(0.0, _safe_float(metrics.get("dollar_volume_24h")))),
             "dollar_volume_24h": _safe_float(metrics.get("dollar_volume_24h")),
             "atr_pct": _safe_float(metrics.get("atr_pct")),
@@ -354,6 +383,9 @@ def categorize_symbols(
     symbols: list[str] | None = None,
     now_ts: int | None = None,
     k: int = DEFAULT_K,
+    *,
+    point_in_time: bool = False,
+    use_tick_bursts: bool = True,
 ) -> list[CategorySnapshot]:
     storage = storage or get_storage()
     now_ts = now_ts or int(time.time())
@@ -361,7 +393,13 @@ def categorize_symbols(
         from src.symbols import trading_symbols
 
         symbols = trading_symbols()
-    features = build_feature_rows(storage, symbols, now_ts)
+    features = build_feature_rows(
+        storage,
+        symbols,
+        now_ts,
+        point_in_time=point_in_time,
+        use_tick_bursts=use_tick_bursts,
+    )
     if not features:
         return []
     keys = [
@@ -431,6 +469,37 @@ def latest_category_map(storage: Storage | None = None, max_age_seconds: int | N
         item["trade_allowed"] = bool(item.get("trade_allowed"))
         out[item["symbol"]] = item
     return out
+
+
+def category_at(
+    storage: Storage,
+    symbol: str,
+    timestamp: int,
+    version: str = CATEGORY_VERSION,
+) -> dict[str, Any] | None:
+    ensure_schema(storage)
+    try:
+        with storage._connect() as conn:  # noqa: SLF001
+            row = conn.execute(
+                """
+                SELECT * FROM market_categories
+                WHERE symbol = ? AND version = ? AND timestamp <= ?
+                ORDER BY timestamp DESC
+                LIMIT 1
+                """,
+                (symbol, version, int(timestamp)),
+            ).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    item = dict(row)
+    try:
+        item["features"] = json.loads(item.get("features_json") or "{}")
+    except Exception:
+        item["features"] = {}
+    item["trade_allowed"] = bool(item.get("trade_allowed"))
+    return item
 
 
 def is_symbol_trade_allowed(storage: Storage, symbol: str) -> tuple[bool, str, dict[str, Any] | None]:

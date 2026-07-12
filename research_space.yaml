@@ -9,6 +9,7 @@
 axes:
   ACTIVE_STRATEGY: [momentum, volume_spike, mean_reversion, funding_rate]
   ALLOW_LONG: [true, false]
+  CATEGORY_STRATEGY_MODE: ["off", "matched"]
 
   # setup on/off toggles. Defaults now reflect the last backtest weakness:
   # start with fewer, cleaner hypotheses; re-enable noisy branches only if they
@@ -35,6 +36,10 @@ axes:
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:
+  - name: "category_strategy_momentum"
+    match: { CATEGORY_STRATEGY_MODE: "matched", ACTIVE_STRATEGY: momentum }
+  - name: "category_strategy_mean_reversion"
+    match: { CATEGORY_STRATEGY_MODE: "matched", ACTIVE_STRATEGY: mean_reversion }
   - name: "strategy_momentum"
     match: { ACTIVE_STRATEGY: momentum }
   - name: "strategy_volume_spike"
