@@ -50,6 +50,13 @@ DEFAULT_SYMBOLS = [
 CHUNK = 2000
 
 
+def _timestamp_seconds(value: str | int | float) -> int:
+    ts = int(float(value))
+    while ts > 20_000_000_000:
+        ts //= 1000
+    return ts
+
+
 def _spot_code(symbol: str) -> str:
     return symbol.replace("/", "")
 
@@ -99,7 +106,7 @@ def _parse_klines(symbol: str, payload: bytes) -> list[dict[str, Any]]:
                 for line in reader:
                     if not line or not line[0].isdigit():
                         continue
-                    ts = int(int(line[0]) / 1000)
+                    ts = _timestamp_seconds(line[0])
                     rows.append(
                         {
                             "symbol": symbol,
@@ -125,7 +132,7 @@ def _parse_funding(symbol: str, payload: bytes) -> list[dict[str, Any]]:
                 for line in reader:
                     if not line or not line[0].isdigit():
                         continue
-                    ts = int(int(line[0]) / 1000)
+                    ts = _timestamp_seconds(line[0])
                     rate = float(line[2] if len(line) > 2 else line[1])
                     rows.append(
                         {"symbol": symbol, "timestamp": ts, "funding_rate": rate}

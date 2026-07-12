@@ -34,14 +34,19 @@ def _strategy_category_allowed(
     symbol: str,
     timestamp: int,
     strategy_name: str,
-) -> tuple[bool, str | None]:
+) -> tuple[bool, str | None, bool, bool]:
     if config.CATEGORY_STRATEGY_MODE != "matched":
-        return True, None
+        return True, None, False, False
     category = category_at(storage, symbol, timestamp)
     category_name = str((category or {}).get("category") or "")
     if not category_name:
-        return True, None
-    return category_name in STRATEGY_CATEGORY_MAP.get(strategy_name, set()), category_name
+        return True, None, True, False
+    return (
+        category_name in STRATEGY_CATEGORY_MAP.get(strategy_name, set()),
+        category_name,
+        True,
+        True,
+    )
 
 
 @dataclass
@@ -436,6 +441,8 @@ class BacktestEngine:
         signal_count = 0
         confidence_pass_count = 0
         opened_count = 0
+        category_checks = 0
+        category_present = 0
         equity_curve: list[dict[str, float | int]] = []
         symbol_curves: dict[str, list[float]] = {symbol: [] for symbol in self.symbols}
 
@@ -463,9 +470,11 @@ class BacktestEngine:
                 price_row = data.get("latest_price")
                 if not price_row:
                     continue
-                category_allowed, category_name = _strategy_category_allowed(
+                category_allowed, category_name, category_checked, category_found = _strategy_category_allowed(
                     self.storage, symbol, ts, self.strategy_name
                 )
+                category_checks += 1 if category_checked else 0
+                category_present += 1 if category_found else 0
                 if not category_allowed:
                     continue
 
@@ -533,6 +542,11 @@ class BacktestEngine:
                 "confidence_passed": confidence_pass_count,
                 "trades_opened": opened_count,
                 "closed_trades": len(portfolio.closed_trades),
+                "category_checks": category_checks,
+                "category_present": category_present,
+                "category_coverage_pct": round(
+                    category_present / category_checks * 100.0, 2
+                ) if category_checks else None,
             },
             "symbols": self._symbol_results(portfolio.closed_trades, symbol_curves),
             # Per-trade detail for the research stack (expectancy / PF / walk-forward

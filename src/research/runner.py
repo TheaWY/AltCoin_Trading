@@ -20,6 +20,7 @@ record into fresh_evals — the feed for promotion gate 2.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 import subprocess
@@ -51,6 +52,7 @@ WINDOW_COUNT = int(os.getenv("RESEARCH_WINDOW_COUNT", "18"))
 WINDOW_STEP_DAYS = int(os.getenv("RESEARCH_WINDOW_STEP_DAYS", str(WINDOW_TEST_DAYS)))
 SYMBOLS = os.getenv("RESEARCH_SYMBOLS", "BTC/USDT,ETH/USDT")
 TIMEOUT_S = int(os.getenv("RESEARCH_RUN_TIMEOUT_S", "600"))
+PARALLEL_EXPERIMENTS = max(1, int(os.getenv("RESEARCH_PARALLEL_EXPERIMENTS", "1")))
 
 
 def _row_value(row: Any, key: str, index: int = 0) -> Any:
@@ -105,6 +107,8 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
     total = sum(w["total_pnl"] for w in windows)
     fees = sum(w["total_fees"] for w in windows)
     gross = sum(w["gross_pnl"] for w in windows)
+    category_checks = sum(int(w.get("category_checks") or 0) for w in windows)
+    category_present = sum(int(w.get("category_present") or 0) for w in windows)
     wins = sum(w["total_pnl"] for w in windows if w["total_pnl"] > 0)
     losses = sum(w["total_pnl"] for w in windows if w["total_pnl"] <= 0)
     return {
@@ -116,7 +120,28 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
         "profit_factor": round(wins / abs(losses), 4) if losses else (999.0 if wins else 0.0),
         "positive_windows": sum(1 for w in windows if w["total_pnl"] > 0),
         "window_count": len(windows),
+        "category_checks": category_checks,
+        "category_present": category_present,
+        "category_coverage_pct": round(
+            category_present / category_checks * 100.0, 2
+        ) if category_checks else None,
     }
+
+
+def _run_experiment_windows(
+    exp: dict[str, Any],
+    windows: list[tuple[str, str]],
+) -> tuple[dict[str, Any], bool, list[dict[str, Any]]]:
+    overrides = json.loads(exp["config_json"])
+    window_results = []
+    ok = True
+    for start, end in windows:
+        result = _run_subprocess(overrides, start, end)
+        if result is None:
+            ok = False
+            break
+        window_results.append({"start": start, "end": end, **result})
+    return exp, ok, window_results
 
 
 def run_experiments(max_runs: int) -> dict[str, Any]:
@@ -158,21 +183,23 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
     windows = _windows()
     done = failed = 0
     for exp in queue:
-        overrides = json.loads(exp["config_json"])
         with storage._connect() as conn:  # noqa: SLF001
             conn.execute(
                 "UPDATE experiments SET status = 'running' WHERE id = ?", (exp["id"],)
             )
         decisions.log("runner", "experiment_started", exp["config_hash"],
                       {"priority": exp["priority"]})
-        window_results = []
-        ok = True
-        for start, end in windows:
-            result = _run_subprocess(overrides, start, end)
-            if result is None:
-                ok = False
-                break
-            window_results.append({"start": start, "end": end, **result})
+
+    if PARALLEL_EXPERIMENTS > 1 and len(queue) > 1:
+        completed = []
+        with ThreadPoolExecutor(max_workers=min(PARALLEL_EXPERIMENTS, len(queue))) as pool:
+            futures = [pool.submit(_run_experiment_windows, exp, windows) for exp in queue]
+            for future in as_completed(futures):
+                completed.append(future.result())
+    else:
+        completed = [_run_experiment_windows(exp, windows) for exp in queue]
+
+    for exp, ok, window_results in completed:
         with storage._connect() as conn:  # noqa: SLF001
             if ok:
                 metrics = {"windows": window_results, "aggregate": _aggregate(window_results)}
