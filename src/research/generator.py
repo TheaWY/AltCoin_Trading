@@ -26,6 +26,7 @@ import yaml
 
 from src import config
 from src.data.storage import get_storage
+from src.research.decisions import log as log_decision
 from src.research.promotion import _ensure_schema, config_hash
 from src.research.report import build_report, trial_budget_status
 
@@ -144,6 +145,29 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
     for values in axes.values():
         total_space *= len(values)
     budget = trial_budget_status()
+    queued_count = int(budget.get("counts", {}).get("queued", 0))
+    remaining_budget = int(budget.get("remaining", 0))
+    if queued_count > remaining_budget:
+        detail = {
+            "queued": queued_count,
+            "remaining_trial_budget": remaining_budget,
+            "budget": budget.get("budget"),
+            "tried": budget.get("tried"),
+            "total_space": total_space,
+        }
+        if not dry_run:
+            log_decision("generator", "generator_capped", "trial_budget", detail)
+        report = build_report(limit=8)
+        return {
+            "total_space": total_space,
+            "already_run_or_queued": budget["counts"]["done"] + queued_count,
+            "newly_queued": 0,
+            "champion_hash": "",
+            "budget_exhausted": bool(budget.get("exhausted")),
+            "queue_capped": True,
+            "trial_budget": budget,
+            "next_candidates": len(report["recommended_narrowed_space"]["next_candidates"]),
+        }
     if budget.get("exhausted"):
         report = build_report(limit=8)
         return {
