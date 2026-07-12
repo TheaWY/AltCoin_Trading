@@ -517,6 +517,12 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         inv = holdings.get(entry["symbol"], {})
         entry["has_position"] = inv.get("status") == "open"
         entry["investment"] = inv if entry["has_position"] else {}
+    open_positions = [
+        {"symbol": symbol, "base": symbol.split("/")[0], **inv}
+        for symbol, inv in holdings.items()
+        if inv.get("status") == "open"
+    ]
+    open_positions.sort(key=lambda inv: int(inv.get("opened_at") or 0))
 
     for alt in alts:
         inv = holdings.get(alt["symbol"], {})
@@ -575,7 +581,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
             "min_confidence": config.ENTRY_MIN_CONFIDENCE,
         },
         "portfolio": portfolio,
-        "open_positions": storage.get_open_trades(),
+        "open_positions": open_positions,
         "recent_trades": storage.get_recent_trades(20),
         "closed_trades": storage.get_recent_closed_trades(20),
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
