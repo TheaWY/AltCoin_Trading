@@ -56,24 +56,37 @@ def _new_entry_funnel(symbols: list[str]) -> dict[str, Any]:
         "blocked_category": 0,
         "in_cooldown": 0,
         "entered": 0,
+        "slots_full": 0,
+        "open_rejected": 0,
         "symbols": len(symbols),
+        "candidates": [],
     }
 
 
-def _record_funnel(funnel: dict[str, Any], storage: Storage) -> None:
-    terminal_total = sum(
-        int(funnel.get(key) or 0)
-        for key in (
-            "killed_direction_policy",
-            "below_min_confidence",
-            "blocked_regime",
-            "blocked_category",
-            "in_cooldown",
-            "entered",
-        )
+def _record_candidate_stop(
+    funnel: dict[str, Any],
+    symbol: str,
+    gate: str,
+    detail: str,
+    confidence: float | None = None,
+) -> None:
+    row = {
+        "symbol": symbol,
+        "confidence": None if confidence is None else round(float(confidence), 4),
+        "gate_stopped_at": gate,
+        "detail": detail,
+    }
+    funnel.setdefault("candidates", []).append(row)
+    logger.info(
+        "ENTRY_CANDIDATE symbol=%s confidence=%s gate=%s detail=%s",
+        symbol,
+        "—" if confidence is None else f"{float(confidence):.4f}",
+        gate,
+        detail,
     )
-    if int(funnel.get("setups_fired") or 0) != terminal_total:
-        funnel["setups_fired"] = terminal_total
+
+
+def _record_funnel(funnel: dict[str, Any], storage: Storage) -> None:
     storage.set_system_status("entry_funnel", json.dumps(funnel, sort_keys=True))
     logger.info("ENTRY_FUNNEL %s", json.dumps(funnel, sort_keys=True))
 
@@ -405,8 +418,24 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             "Skipping new entries this cycle — %s",
             data_health.get("action", "data unhealthy"),
         )
+        stale = ", ".join(
+            f"{item.get('symbol')} {item.get('source')} age_s={item.get('age_s')}"
+            for item in data_health.get("stale_sources", [])[:6]
+        )
+        detail = data_health.get("action", "data unhealthy")
+        if stale:
+            detail = f"{detail}; stale={stale}"
+        for symbol in symbols:
+            _record_candidate_stop(entry_funnel, symbol, "data_health_halt", detail)
     elif not ledger_ok:
         logger.warning("Skipping new entries this cycle — ledger accounting invariant failed")
+        for symbol in symbols:
+            _record_candidate_stop(
+                entry_funnel,
+                symbol,
+                "ledger_anomaly",
+                json.dumps(ledger_values, sort_keys=True),
+            )
     elif config.ENTRY_DECISION_ENGINE == "signal":
         for analysis in _entry_candidates_from_legacy_analyzer(storage, symbols):
             symbol = analysis["symbol"]
@@ -436,18 +465,40 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         calibration = build_calibration_map(storage)
         candidates: list[dict[str, Any]] = []
         available_slots = max(0, config.MAX_OPEN_POSITIONS - storage.count_open_trades())
+        entry_funnel["available_slots"] = available_slots
+        entry_funnel["open_positions"] = storage.count_open_trades()
         for symbol in symbols:
             if available_slots <= 0:
-                break
+                entry_funnel["slots_full"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "slots_full",
+                    f"open_positions={entry_funnel['open_positions']} max={config.MAX_OPEN_POSITIONS}",
+                )
+                continue
             if storage.get_open_trade_for_symbol(symbol):
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "already_open",
+                    "symbol already has an open paper trade",
+                )
                 continue
             price_row = storage.get_latest_price(symbol)
             if not price_row:
                 entry_funnel["blocked_freshness"] += 1
+                _record_candidate_stop(entry_funnel, symbol, "blocked_freshness", "no latest price")
                 continue
             price_age = int(time.time()) - int(price_row["timestamp"])
             if price_age > 2 * 3600:
                 entry_funnel["blocked_freshness"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "blocked_freshness",
+                    f"latest price age {price_age}s > 7200s",
+                )
                 continue
 
             entry_funnel["symbols_evaluated"] += 1
@@ -464,6 +515,13 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 logger.info("Entry blocked for %s — %s", symbol, entry_blocks[symbol])
                 continue
             if not verdict:
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "no_setup",
+                    "; ".join(candidate.get("why_not") or ["no setup fired"])[:240],
+                    float(candidate.get("confidence") or 0.0),
+                )
                 continue
             entry_funnel["setups_fired"] += 1
             confidence = float(candidate.get("confidence") or 0.0)
@@ -473,13 +531,34 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             )
             direction = verdict.get("direction")
             if direction not in ("LONG", "SHORT"):
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "invalid_direction",
+                    f"direction={direction}",
+                    confidence,
+                )
                 continue
             if not config.direction_allowed(direction):
                 entry_funnel["killed_direction_policy"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "killed_direction_policy",
+                    f"direction={direction} allow_long={config.ALLOW_LONG} allow_short={config.ALLOW_SHORT}",
+                    confidence,
+                )
                 continue
             if direction_blocked(regime, direction):
                 logger.info("Entry blocked by BTC regime: %s %s", symbol, direction)
                 entry_funnel["blocked_regime"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "blocked_regime",
+                    regime.get("reason", "BTC regime blocked direction"),
+                    confidence,
+                )
                 continue
             allowed, category, reason = _category_allowed(storage, symbol)
             candidate["category"] = category
@@ -487,9 +566,23 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             if not allowed:
                 logger.info("Entry blocked by market category: %s — %s", symbol, reason)
                 entry_funnel["blocked_category"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "blocked_category",
+                    reason or "market category blocked",
+                    confidence,
+                )
                 continue
             if trader._symbol_in_cooldown(symbol):  # noqa: SLF001
                 entry_funnel["in_cooldown"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "in_cooldown",
+                    f"cooldown {config.COOLDOWN_HOURS_PER_SYMBOL}h per symbol",
+                    confidence,
+                )
                 continue
             if confidence < config.ENTRY_MIN_CONFIDENCE:
                 entry_funnel["below_min_confidence"] += 1
@@ -499,6 +592,13 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     verdict,
                     confidence,
                     float(price_row["close"]),
+                )
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "below_min_confidence",
+                    f"confidence {confidence:.2f} < entry_min {config.ENTRY_MIN_CONFIDENCE:.2f}",
+                    confidence,
                 )
                 continue
             candidates.append(candidate)
@@ -510,17 +610,28 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 -float((item.get("metrics") or {}).get("dollar_volume_24h") or 0.0),
             )
         )
-        for candidate in candidates[:available_slots]:
+        for candidate in candidates:
             verdict = candidate.get("verdict") or {}
             symbol = candidate["symbol"]
+            if available_slots <= 0:
+                entry_funnel["slots_full"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "slots_full",
+                    f"candidate passed gates but no slots remained after ranking; max={config.MAX_OPEN_POSITIONS}",
+                    float(candidate.get("confidence") or 0.0),
+                )
+                continue
             price_row = storage.get_latest_price(symbol)
             if not price_row:
+                _record_candidate_stop(entry_funnel, symbol, "blocked_freshness", "no latest price at open")
                 continue
             signal_result = {
                 "signal_id": None,
                 "symbol": symbol,
                 "strategy": verdict.get("strategy"),
-                "direction": direction,
+                "direction": verdict.get("direction"),
                 "reason": verdict.get("reason"),
                 "entry_price": float(price_row["close"]),
                 "style": config.normalize_holding_style(STYLE_MAP.get(verdict.get("style"))),
@@ -537,6 +648,22 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 trades_opened += 1
                 entry_funnel["entered"] += 1
                 available_slots -= 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "entered",
+                    f"trade_id={opened.get('trade_id')}",
+                    float(candidate.get("confidence") or 0.0),
+                )
+            else:
+                entry_funnel["open_rejected"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "open_rejected",
+                    json.dumps(opened, sort_keys=True, ensure_ascii=False)[:240],
+                    float(candidate.get("confidence") or 0.0),
+                )
 
     _record_funnel(entry_funnel, storage)
 
