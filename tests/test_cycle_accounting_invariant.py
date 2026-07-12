@@ -2,10 +2,29 @@ from __future__ import annotations
 
 import unittest
 
-from src.engine.cycle import _portfolio_accounting_invariant
+from unittest.mock import patch
+
+from src.engine.cycle import _cycle_symbols, _portfolio_accounting_invariant
+
+
+class _StorageWithOpenTrades:
+    def __init__(self, symbols: list[str]) -> None:
+        self._symbols = symbols
+
+    def get_open_trades(self) -> list[dict[str, str]]:
+        return [{"symbol": symbol} for symbol in self._symbols]
 
 
 class CycleAccountingInvariantTests(unittest.TestCase):
+    def test_cycle_symbols_keep_open_position_outside_top_n(self) -> None:
+        universe = ["BTC/USDT", "ETH/USDT", "SKL/USDT", "VELVET/USDT"]
+        storage = _StorageWithOpenTrades(["VELVET/USDT"])
+
+        with patch("src.config.ACTIVE_TRADING_SYMBOLS_LIMIT", 2):
+            selected = _cycle_symbols(universe, storage)  # type: ignore[arg-type]
+
+        self.assertEqual(selected, ["BTC/USDT", "ETH/USDT", "VELVET/USDT"])
+
     def test_rejects_negative_cash(self) -> None:
         ok, values = _portfolio_accounting_invariant(
             {

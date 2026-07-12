@@ -139,6 +139,22 @@ def _active_cycle_symbols(symbols: list[str]) -> list[str]:
     return symbols[:limit]
 
 
+def _cycle_symbols(symbols: list[str], storage: Storage) -> list[str]:
+    """Top-N active universe plus any currently open position symbols.
+
+    A held position must keep receiving fresh candles for stops, trailing stops,
+    and dashboard valuation even after it rotates out of the top-N universe.
+    """
+    selected = list(_active_cycle_symbols(symbols))
+    seen = set(selected)
+    for trade in storage.get_open_trades():
+        symbol = trade.get("symbol")
+        if symbol and symbol not in seen:
+            selected.append(symbol)
+            seen.add(symbol)
+    return selected
+
+
 def _category_allowed(storage: Storage, symbol: str) -> tuple[bool, dict[str, Any] | None, str]:
     try:
         from src.research.market_categories import is_symbol_trade_allowed
@@ -272,7 +288,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             "trades_opened": 0,
         }
     universe_symbols = trading_symbols()
-    symbols = _active_cycle_symbols(universe_symbols)
+    symbols = _cycle_symbols(universe_symbols, storage)
     entry_funnel = _new_entry_funnel(symbols)
     if len(symbols) != len(universe_symbols):
         logger.info(
