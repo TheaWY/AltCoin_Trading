@@ -144,12 +144,16 @@ def ntp_offset() -> dict[str, Any]:
         proc = subprocess.run(
             ["sntp", "time.apple.com"], capture_output=True, text=True, timeout=10
         )
-        for token in proc.stdout.split():
+        for line in reversed(proc.stdout.splitlines()):
+            parts = line.split()
+            if len(parts) < 2:
+                continue
             try:
-                offset = float(token)
+                offset = float(parts[0])
             except ValueError:
                 continue
-            return {"offset_s": offset, "ok": abs(offset) < 5.0}
+            if parts[1] == "+/-":
+                return {"offset_s": offset, "ok": abs(offset) < 5.0}
     except Exception:
         pass
     return {"offset_s": None, "ok": None, "note": "sntp unavailable"}

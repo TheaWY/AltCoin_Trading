@@ -571,15 +571,16 @@ def evaluate_symbol(
         if best
         else _proximity_confidence(metrics, funding_rate, blocked=bool(blockers))
     )
-    tradable = best is not None and confidence >= config.MIN_CONFIDENCE
+    min_confidence = config.ENTRY_MIN_CONFIDENCE
+    tradable = best is not None and confidence >= min_confidence
 
     why_not: list[str] = []
     if not tradable:
         if blockers:
             why_not = blockers
-        elif best is not None and confidence < config.MIN_CONFIDENCE:
+        elif best is not None and confidence < min_confidence:
             why_not = [
-                f"확신 {confidence:.0%} < 최소 {config.MIN_CONFIDENCE:.0%} — 진입 기준 미달"
+                f"확신 {confidence:.0%} < 최소 {min_confidence:.0%} — 진입 기준 미달"
             ]
         else:
             seen: set[str] = set()

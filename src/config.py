@@ -298,8 +298,11 @@ SETUP_FUNDING_ENABLED = _env_bool("SETUP_FUNDING_ENABLED", default=True)
 # Volume spike is noisy as a standalone entry; default to confirmation modifier only.
 SETUP_VOLUME_ENABLED = _env_bool("SETUP_VOLUME_ENABLED", default=False)
 
-# Minimum confidence to treat a setup as tradable / open paper trades.
-MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", os.getenv("PAPER_MIN_CONFIDENCE", "0.70")))
+# Minimum confidence to treat a setup as tradable.
+# Live/future stages keep MIN_CONFIDENCE. Paper can run a lower gate to collect
+# out-of-sample calibration data without changing live risk policy.
+MIN_CONFIDENCE = float(os.getenv("MIN_CONFIDENCE", "0.70"))
+ENTRY_MIN_CONFIDENCE = PAPER_MIN_CONFIDENCE if not LIVE_TRADING else MIN_CONFIDENCE
 
 # Per-symbol re-entry cooldown after any prior entry (0 = disabled).
 COOLDOWN_HOURS_PER_SYMBOL = float(os.getenv("COOLDOWN_HOURS_PER_SYMBOL", "48"))

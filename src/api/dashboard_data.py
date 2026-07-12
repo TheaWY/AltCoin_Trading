@@ -63,6 +63,19 @@ def build_data_health(
     }
 
 
+def build_entry_funnel(storage: Storage | None = None) -> dict[str, Any]:
+    storage = storage or get_storage()
+    row = storage.get_system_status("entry_funnel")
+    if not row or not row.get("value"):
+        return {}
+    try:
+        data = json.loads(row["value"])
+    except json.JSONDecodeError:
+        return {}
+    data["updated_at"] = row.get("updated_at")
+    return data
+
+
 def _config_diff(
     challenger: dict[str, Any], champion: dict[str, Any]
 ) -> dict[str, dict[str, Any]]:
@@ -559,7 +572,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
             "aligned_bonus": config.CONFLUENCE_ALIGNED_BONUS,
             "conflict_penalty": config.CONFLUENCE_CONFLICT_PENALTY,
             "round_trip_cost_pct": config.round_trip_cost_pct() * 100,
-            "min_confidence": config.MIN_CONFIDENCE,
+            "min_confidence": config.ENTRY_MIN_CONFIDENCE,
         },
         "portfolio": portfolio,
         "open_positions": storage.get_open_trades(),
@@ -567,6 +580,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "closed_trades": storage.get_recent_closed_trades(20),
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": build_data_health(storage),
+        "entry_funnel": build_entry_funnel(storage),
         "research": build_research_payload(storage),
         "history": build_history_payload(storage),
     }
