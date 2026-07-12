@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from src.data.storage import get_storage
 from src.research import decisions
 from src.research.promotion import _ensure_schema
+from src.research.report import build_report
 from src.research.robust_stats import correlation_matrix, effective_breadth, pbo_lite
 
 router = APIRouter(prefix="/research", tags=["research"])
@@ -116,6 +117,11 @@ def summary() -> dict[str, Any]:
     except Exception:
         out["active_overrides"], out["last_promotion"] = {}, None
     return out
+
+
+@router.get("/report")
+def report() -> dict[str, Any]:
+    return build_report()
 
 
 @router.get("/decisions")

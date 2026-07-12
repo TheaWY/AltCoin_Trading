@@ -114,7 +114,7 @@ def main() -> int:
     assert not direction_blocked(regime, "SHORT")
     print(f"7. Regime: {regime['state']} — {regime['reason']}")
 
-    # 8. Evaluation: confidence present for all; LONG setups filtered
+    # 8. Evaluation: confidence present for all; BTC risk-off still blocks upside entries
     entry = evaluate_symbol(storage, "AAA/USDT", None, regime=regime, calibration={})
     assert "confidence" in entry and entry["confidence"] is not None
     for setup in [entry["verdict"], *entry["other_setups"]]:

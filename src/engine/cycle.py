@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -25,6 +26,97 @@ STYLE_MAP = {"단타": "scalp", "스윙": "swing"}
 LEASE_NAME = "trading_cycle"
 LEASE_TTL_SECONDS = 10 * 60
 STALE_1H_SECONDS = 75 * 60
+
+
+def _portfolio_accounting_invariant(portfolio: dict[str, Any]) -> tuple[bool, dict[str, float]]:
+    cash = float(portfolio.get("cash") or 0.0)
+    equity = float(portfolio.get("equity", portfolio.get("paper_value") or 0.0))
+    positions_value = float(
+        portfolio.get("open_position_value", portfolio.get("total_open_value") or 0.0)
+    )
+    expected_equity = cash + positions_value
+    ok = cash >= 0 and abs(equity - expected_equity) < 0.01
+    return ok, {
+        "cash": cash,
+        "equity": equity,
+        "positions_value": positions_value,
+    }
+
+
+def _new_entry_funnel(symbols: list[str]) -> dict[str, Any]:
+    return {
+        "ts": int(time.time()),
+        "symbols_evaluated": 0,
+        "blocked_freshness": 0,
+        "setups_fired": 0,
+        "killed_direction_policy": 0,
+        "below_min_confidence": 0,
+        "max_confidence_seen": 0.0,
+        "blocked_regime": 0,
+        "blocked_category": 0,
+        "in_cooldown": 0,
+        "entered": 0,
+        "symbols": len(symbols),
+    }
+
+
+def _record_funnel(funnel: dict[str, Any], storage: Storage) -> None:
+    terminal_total = sum(
+        int(funnel.get(key) or 0)
+        for key in (
+            "killed_direction_policy",
+            "below_min_confidence",
+            "blocked_regime",
+            "blocked_category",
+            "in_cooldown",
+            "entered",
+        )
+    )
+    if int(funnel.get("setups_fired") or 0) != terminal_total:
+        funnel["setups_fired"] = terminal_total
+    storage.set_system_status("entry_funnel", json.dumps(funnel, sort_keys=True))
+    logger.info("ENTRY_FUNNEL %s", json.dumps(funnel, sort_keys=True))
+
+
+def _ensure_shadow_entries(storage: Storage) -> None:
+    with storage._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS shadow_entries (
+                symbol TEXT NOT NULL,
+                direction TEXT NOT NULL,
+                confidence DOUBLE PRECISION NOT NULL,
+                setup TEXT,
+                ts BIGINT NOT NULL,
+                price DOUBLE PRECISION NOT NULL
+            )
+            """
+        )
+
+
+def _insert_shadow_entry(
+    storage: Storage,
+    symbol: str,
+    verdict: dict[str, Any],
+    confidence: float,
+    price: float,
+) -> None:
+    _ensure_shadow_entries(storage)
+    with storage._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            """
+            INSERT INTO shadow_entries (symbol, direction, confidence, setup, ts, price)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                symbol,
+                verdict.get("direction"),
+                confidence,
+                verdict.get("strategy") or verdict.get("reason") or "",
+                int(time.time()),
+                price,
+            ),
+        )
 
 
 def _active_cycle_symbols(symbols: list[str]) -> list[str]:
@@ -168,6 +260,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         }
     universe_symbols = trading_symbols()
     symbols = _active_cycle_symbols(universe_symbols)
+    entry_funnel = _new_entry_funnel(symbols)
     if len(symbols) != len(universe_symbols):
         logger.info(
             "Trading cycle limited to %d/%d ranked symbols",
@@ -233,6 +326,28 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         if row:
             trader.check_open_trades_for_symbol(sym, float(row["close"]))
 
+    ledger_ok = True
+    ledger_values: dict[str, float] = {}
+    try:
+        portfolio = trader.summary(float(btc["close"]) if btc else None)
+        ledger_ok, ledger_values = _portfolio_accounting_invariant(portfolio)
+        if not ledger_ok:
+            from src.research.decisions import log as log_research_decision
+
+            log_research_decision(
+                actor="worker",
+                action="ledger_anomaly",
+                subject="paper_portfolio",
+                detail=ledger_values,
+            )
+            logger.warning(
+                "Skipping new entries this cycle due to ledger anomaly: %s",
+                ledger_values,
+            )
+    except Exception:
+        ledger_ok = False
+        logger.exception("Portfolio accounting invariant check failed")
+
     data_health: dict[str, Any] = {"healthy": True, "action": "ok to trade"}
     try:
         from src.research.data_quality import verdict as data_health_verdict
@@ -290,6 +405,8 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             "Skipping new entries this cycle — %s",
             data_health.get("action", "data unhealthy"),
         )
+    elif not ledger_ok:
+        logger.warning("Skipping new entries this cycle — ledger accounting invariant failed")
     elif config.ENTRY_DECISION_ENGINE == "signal":
         for analysis in _entry_candidates_from_legacy_analyzer(storage, symbols):
             symbol = analysis["symbol"]
@@ -308,26 +425,94 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             if not price_row:
                 continue
             result = result | {
-                "style": "scalp" if analysis.get("recommended_style") == "short_term" else "swing",
+                "style": config.normalize_holding_style(analysis.get("recommended_style")) or "swing",
             }
             opened = trader.process_signal(result, float(price_row["close"]), require_worth=True)
             if opened.get("opened"):
                 trades_opened += 1
+                entry_funnel["entered"] += 1
     else:
-        for candidate in _entry_candidates_from_evaluation(storage, symbols, regime):
+        btc_rows = storage.get_prices(config.SYMBOL, limit=720, timeframe="1h")
+        calibration = build_calibration_map(storage)
+        candidates: list[dict[str, Any]] = []
+        available_slots = max(0, config.MAX_OPEN_POSITIONS - storage.count_open_trades())
+        for symbol in symbols:
+            if available_slots <= 0:
+                break
+            if storage.get_open_trade_for_symbol(symbol):
+                continue
+            price_row = storage.get_latest_price(symbol)
+            if not price_row:
+                entry_funnel["blocked_freshness"] += 1
+                continue
+            price_age = int(time.time()) - int(price_row["timestamp"])
+            if price_age > 2 * 3600:
+                entry_funnel["blocked_freshness"] += 1
+                continue
+
+            entry_funnel["symbols_evaluated"] += 1
+            candidate = evaluate_symbol(
+                storage,
+                symbol,
+                btc_rows if symbol != config.SYMBOL else None,
+                regime=regime,
+                calibration=calibration,
+            )
             verdict = candidate.get("verdict") or {}
             symbol = candidate["symbol"]
             if symbol in entry_blocks:
                 logger.info("Entry blocked for %s — %s", symbol, entry_blocks[symbol])
                 continue
+            if not verdict:
+                continue
+            entry_funnel["setups_fired"] += 1
+            confidence = float(candidate.get("confidence") or 0.0)
+            entry_funnel["max_confidence_seen"] = max(
+                float(entry_funnel["max_confidence_seen"]),
+                confidence,
+            )
             direction = verdict.get("direction")
             if direction not in ("LONG", "SHORT"):
                 continue
             if not config.direction_allowed(direction):
+                entry_funnel["killed_direction_policy"] += 1
                 continue
             if direction_blocked(regime, direction):
                 logger.info("Entry blocked by BTC regime: %s %s", symbol, direction)
+                entry_funnel["blocked_regime"] += 1
                 continue
+            allowed, category, reason = _category_allowed(storage, symbol)
+            candidate["category"] = category
+            candidate["category_filter_reason"] = reason
+            if not allowed:
+                logger.info("Entry blocked by market category: %s — %s", symbol, reason)
+                entry_funnel["blocked_category"] += 1
+                continue
+            if trader._symbol_in_cooldown(symbol):  # noqa: SLF001
+                entry_funnel["in_cooldown"] += 1
+                continue
+            if confidence < config.ENTRY_MIN_CONFIDENCE:
+                entry_funnel["below_min_confidence"] += 1
+                _insert_shadow_entry(
+                    storage,
+                    symbol,
+                    verdict,
+                    confidence,
+                    float(price_row["close"]),
+                )
+                continue
+            candidates.append(candidate)
+
+        candidates.sort(
+            key=lambda item: (
+                -float(item.get("confidence") or 0.0),
+                -float((item.get("verdict") or {}).get("score") or 0.0),
+                -float((item.get("metrics") or {}).get("dollar_volume_24h") or 0.0),
+            )
+        )
+        for candidate in candidates[:available_slots]:
+            verdict = candidate.get("verdict") or {}
+            symbol = candidate["symbol"]
             price_row = storage.get_latest_price(symbol)
             if not price_row:
                 continue
@@ -338,7 +523,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 "direction": direction,
                 "reason": verdict.get("reason"),
                 "entry_price": float(price_row["close"]),
-                "style": STYLE_MAP.get(verdict.get("style"), "swing"),
+                "style": config.normalize_holding_style(STYLE_MAP.get(verdict.get("style"))),
                 "metadata": {
                     "decision_engine": "evaluation",
                     "confidence": candidate.get("confidence"),
@@ -350,6 +535,10 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             opened = trader.process_signal(signal_result, float(price_row["close"]), require_worth=False)
             if opened.get("opened"):
                 trades_opened += 1
+                entry_funnel["entered"] += 1
+                available_slots -= 1
+
+    _record_funnel(entry_funnel, storage)
 
     market.backfill_missing_stubs()
     market.update_pending()
@@ -373,6 +562,9 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         "entry_blocks": entry_blocks,
         "reconciliation_ok": reconciliation.ok if reconciliation is not None else True,
         "entry_decision_engine": config.ENTRY_DECISION_ENGINE,
+        "ledger_ok": ledger_ok,
+        "ledger": ledger_values,
+        "entry_funnel": entry_funnel,
     }
     storage.release_cycle_lease(LEASE_NAME, lease_owner)
     return result

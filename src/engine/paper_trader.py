@@ -112,6 +112,31 @@ class PaperTrader:
             total += self._position_value(trade, price)
         return total
 
+    def _open_position_value(self, trade: dict[str, Any], price: float) -> float:
+        return self._position_value(trade, price)
+
+    def open_position_values(self, prices: dict[str, float] | None = None) -> dict[str, float]:
+        prices = prices or {}
+        reserved = 0.0
+        value = 0.0
+        unrealized = 0.0
+        for trade in self.storage.get_open_trades():
+            sym = trade["symbol"]
+            price = prices.get(sym)
+            if price is None:
+                row = self.storage.get_latest_price(sym)
+                price = float(row["close"]) if row else float(trade["entry_price"])
+            notional = float(trade["quantity"]) * float(trade["entry_price"])
+            position_value = self._open_position_value(trade, price)
+            reserved += notional
+            value += position_value
+            unrealized += self._realized_pnl(trade, price)
+        return {
+            "reserved_margin": reserved,
+            "open_position_value": value,
+            "total_unrealized_pnl": unrealized,
+        }
+
     def portfolio_value_legacy(self, current_price: float) -> float:
         """Legacy single-symbol estimate (BTC price proxy)."""
         return self.portfolio_value({config.SYMBOL: current_price})
@@ -137,6 +162,9 @@ class PaperTrader:
 
         if not config.direction_allowed(direction):
             return {"opened": False, "reason": f"{direction} entries disabled by policy"}
+
+        if not config.holding_style_allowed(signal_result.get("style")):
+            return {"opened": False, "reason": "holding style disabled or unbounded"}
 
         if self.storage.get_open_trade_for_symbol(symbol):
             return {"opened": False, "reason": f"position already open for {symbol}"}
@@ -263,6 +291,7 @@ class PaperTrader:
         state = self.ensure_portfolio(current_price)
         portfolio = self.portfolio_value()
         direction = signal_result["direction"]
+        style = config.normalize_holding_style(signal_result.get("style"))
 
         atr = self._atr_pct(symbol)
         stop_loss, take_profit = self._exit_levels(direction, current_price, atr)
@@ -289,7 +318,7 @@ class PaperTrader:
                 "opened_at": now_ts,
                 "closed_at": None,
                 "strategy": signal_result.get("strategy"),
-                "style": signal_result.get("style"),
+                "style": style,
                 "atr_pct": atr,
                 "trail_price": current_price,
                 "exit_reason": None,
@@ -384,11 +413,7 @@ class PaperTrader:
             if price <= target:
                 return "take_profit"
 
-        max_hours = (
-            config.SCALP_MAX_HOLD_HOURS
-            if (trade.get("style") or "") == "scalp"
-            else config.SWING_MAX_HOLD_HOURS
-        )
+        max_hours = config.max_hold_hours_for_style(trade.get("style"))
         opened_at = trade.get("opened_at")
         if opened_at and max_hours > 0:
             age_hours = (self._now_ts() - float(opened_at)) / 3600.0
@@ -423,11 +448,17 @@ class PaperTrader:
                 if row:
                     prices[sym] = float(row["close"])
 
-        paper_value = self.portfolio_value(prices)
+        position_values = self.open_position_values(prices)
+        cash = float(state["cash"])
+        paper_value = cash + position_values["open_position_value"]
         btc_price = prices.get(config.SYMBOL) or current_price
         buy_hold = self.buy_and_hold_value(btc_price) if btc_price else None
         return {
-            "cash": float(state["cash"]),
+            "cash": cash,
+            "available_cash": cash,
+            "reserved_margin": position_values["reserved_margin"],
+            "open_position_value": position_values["open_position_value"],
+            "equity": paper_value,
             "paper_value": paper_value,
             "starting_capital": config.PAPER_STARTING_CAPITAL,
             "buy_and_hold_value": buy_hold,
@@ -435,8 +466,9 @@ class PaperTrader:
             "max_open_positions": config.MAX_OPEN_POSITIONS,
             "pnl_vs_start": paper_value - config.PAPER_STARTING_CAPITAL,
             "pnl_vs_buy_hold": (paper_value - buy_hold) if buy_hold is not None else None,
-            "total_invested_open": self._total_invested_open(),
-            "total_unrealized_pnl": self._total_unrealized_pnl(prices),
+            "total_invested_open": position_values["reserved_margin"],
+            "total_open_value": position_values["open_position_value"],
+            "total_unrealized_pnl": position_values["total_unrealized_pnl"],
             "total_realized_pnl": self._total_realized_pnl(),
         }
 
