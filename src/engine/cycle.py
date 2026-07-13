@@ -11,7 +11,13 @@ from src import config
 from src.data.storage import Storage, get_storage
 from src.engine.analyzer import AltAnalyzer
 from src.engine.calibration import build_calibration_map
-from src.engine.evaluation import STYLE_REL_STRENGTH_NEUTRAL, evaluate_symbol
+from src.engine.evaluation import (
+    STYLE_CAPITULATION_BOUNCE,
+    STYLE_PUMP24_EXTREME,
+    STYLE_REL_STRENGTH_NEUTRAL,
+    STYLE_VOLUME_ZSCORE,
+    evaluate_symbol,
+)
 from src.engine.market_compare import MarketCompare
 from src.engine.paper_trader import PaperTrader
 from src.engine.regime import btc_regime, direction_blocked
@@ -24,6 +30,9 @@ STYLE_MAP = {
     "단타": "scalp",
     "스윙": "swing",
     STYLE_REL_STRENGTH_NEUTRAL: "rel_strength_neutral",
+    STYLE_CAPITULATION_BOUNCE: "capitulation_bounce",
+    STYLE_VOLUME_ZSCORE: "volume_zscore_breakout",
+    STYLE_PUMP24_EXTREME: "pump24_continuation",
 }
 
 

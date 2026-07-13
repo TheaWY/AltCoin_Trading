@@ -78,8 +78,9 @@ def _ensure_schema(conn: Any) -> None:
 # Data access (point-in-time by construction: only past rows used per event)
 # ---------------------------------------------------------------------------
 
-def _load_prices(symbol: str, since: int) -> list[dict[str, Any]]:
-    return get_storage().get_prices(symbol, limit=1_000_000, since=since, timeframe="1h")
+def _load_prices(symbol: str, since: int, storage: Any = None) -> list[dict[str, Any]]:
+    storage = storage or get_storage()
+    return storage.get_prices(symbol, limit=1_000_000, since=since, timeframe="1h")
 
 
 def _load_funding(symbol: str, since: int) -> list[dict[str, Any]]:
@@ -160,14 +161,17 @@ def sig_rsi_overbought_bb(symbol: str, since: int) -> list[int]:
     return events
 
 
-def sig_volume_spike(symbol: str, since: int) -> list[int]:
-    prices = _load_prices(symbol, since)
+VOLUME_ZSCORE_BASELINE_HOURS = 168  # one week of hourly baseline
+
+
+def sig_volume_spike(symbol: str, since: int, storage: Any = None) -> list[int]:
+    prices = _load_prices(symbol, since, storage)
     events = []
     vols: list[float] = []
     for p in prices:
         v = float(p.get("volume") or 0.0)
-        if len(vols) >= 168:  # one week of hourly baseline
-            recent = vols[-168:]
+        if len(vols) >= VOLUME_ZSCORE_BASELINE_HOURS:
+            recent = vols[-VOLUME_ZSCORE_BASELINE_HOURS:]
             avg = sum(recent) / len(recent)
             std = (sum((x - avg) ** 2 for x in recent) / len(recent)) ** 0.5
             if std > 0 and (v - avg) / std >= 3.0:

@@ -20,6 +20,12 @@ from src.engine import hedge as hedge_engine
 from src.engine import indicators
 from src.engine.calibration import build_calibration_map, calibrate_score
 from src.engine.regime import btc_regime, direction_blocked
+from src.research.candle_signals import MIN_HISTORY as _CANDLE_MIN_HISTORY
+from src.research.candle_signals import PUMP24_PCTL
+from src.research.candle_signals import ROLLING_WINDOW as _CANDLE_ROLLING_WINDOW
+from src.research.candle_signals import capitulation_bar as _capitulation_bar_events
+from src.research.event_study import VOLUME_ZSCORE_BASELINE_HOURS
+from src.research.event_study import sig_volume_spike as _volume_zscore_events
 from src.research.rel_strength import LOOKBACK_BARS as REL_STRENGTH_LOOKBACK_BARS
 from src.research.rel_strength import MIN_HISTORY as REL_STRENGTH_MIN_HISTORY
 from src.research.rel_strength import PCTL as REL_STRENGTH_PCTL
@@ -34,8 +40,9 @@ STRATEGY_CATEGORY_MAP = {
     "funding_carry": {"crowded_funding"},
     "positioning_short": {"crowded_funding"},
     "failed_pump_short": {"liquid_trend", "volume_surge"},
-    # rel_strength_rotation deliberately absent: the event study that backs it
-    # was not run per-category, so in CATEGORY_STRATEGY_MODE="matched" it is
+    # rel_strength_rotation, capitulation_bar, volume_zscore_3plus,
+    # pump24_extreme deliberately absent: none of their event studies were
+    # run per-category, so in CATEGORY_STRATEGY_MODE="matched" each is
     # blocked (empty allowed set) rather than guessed at.
 }
 
@@ -45,6 +52,12 @@ STYLE_SWING = "스윙"
 # config.normalize_holding_style's "rel_strength_neutral" (72h hold cap) --
 # not the 720h swing cap _rel_strength_setup's evidence doesn't cover.
 STYLE_REL_STRENGTH_NEUTRAL = "시장중립72h"
+# Same pattern, one per candle_signals_round2 setup (research_decisions,
+# subject='candle_signals_round2') -- hold hours match exactly the horizon
+# that survived multiple-comparisons correction, not a generic bucket.
+STYLE_CAPITULATION_BOUNCE = "반등72h"
+STYLE_VOLUME_ZSCORE = "거래량72h"
+STYLE_PUMP24_EXTREME = "펌프24h"
 
 
 def _direction_label(direction: str | None) -> str:
@@ -413,6 +426,153 @@ def _rel_strength_setup(
     }
 
 
+def _latest_bar_ts(storage: Storage, symbol: str) -> int | None:
+    """Point-in-time latest 1h bar timestamp -- works identically against the
+    live Storage and a backtest SnapshotStorage (both honor the same
+    get_prices(before=...) cutoff), so callers never need to know which one
+    they were handed."""
+    rows = storage.get_prices(symbol, limit=1, timeframe="1h")
+    return int(rows[-1]["timestamp"]) if rows else None
+
+
+def _capitulation_bar_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """72h LONG: capitulation_bar (src.research.candle_signals) -- a single
+    1h bar with range/open AND volume both >=3 std devs above the trailing
+    168h mean, closing in the bottom 20% of its own range (liquidation-
+    cascade proxy). Fires on the EXACT candle_signals.capitulation_bar
+    definition, not a re-derivation.
+
+    Event study (research_decisions, subject='candle_signals_round2'):
+    +1.107% effect at 72h (n=2123, CI [+0.61%,+1.60%], p~0), PASS, survives
+    Bonferroni across the full signal x horizon grid. The name reads
+    bearish, but the measured forward return is POSITIVE -- this is a
+    bounce/reversal signal, not continuation, so direction is LONG,
+    matching the data. 24h/4h horizons do NOT survive (24h flips negative
+    in flat BTC regime -- research_decisions,
+    subject='capitulation_bar_regime_gate'), so this only ever fires the
+    72h version.
+    """
+    if not config.SETUP_CAPITULATION_BAR_ENABLED:
+        return None
+    latest_ts = _latest_bar_ts(storage, symbol)
+    if latest_ts is None:
+        return None
+    since = latest_ts - (_CANDLE_ROLLING_WINDOW + 24) * 3600
+    events = _capitulation_bar_events(symbol, since, storage=storage)
+    if latest_ts not in events:
+        return None
+    return {
+        "style": STYLE_CAPITULATION_BOUNCE,
+        "strategy": "capitulation_bar",
+        "direction": "LONG",
+        "score": 0.58,
+        "reason": "캡추레이션 바 (3σ 레인지+거래량, 저점 마감) — 72h 반등 롱",
+    }
+
+
+def _volume_zscore_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """72h LONG: volume_zscore_3plus (src.research.event_study.sig_volume_spike)
+    -- 1h volume >=3 std devs above the trailing 168h mean. Fires on the
+    EXACT sig_volume_spike definition, not a re-derivation.
+
+    Event study (research_decisions, subject='candle_signals_round2'):
+    +0.374% effect at 72h (n=9363, CI [+0.17%,+0.59%], p~0), PASS, survives
+    Bonferroni. Positive across all three BTC regimes (down/flat/up), though
+    the flat-regime CI alone crosses zero. 24h/4h horizons do NOT survive
+    (fail verdict at the aggregate level), so this only ever fires the 72h
+    version.
+    """
+    if not config.SETUP_VOLUME_ZSCORE_ENABLED:
+        return None
+    latest_ts = _latest_bar_ts(storage, symbol)
+    if latest_ts is None:
+        return None
+    since = latest_ts - (VOLUME_ZSCORE_BASELINE_HOURS + 24) * 3600
+    events = _volume_zscore_events(symbol, since, storage=storage)
+    if latest_ts not in events:
+        return None
+    return {
+        "style": STYLE_VOLUME_ZSCORE,
+        "strategy": "volume_zscore_3plus",
+        "direction": "LONG",
+        "score": 0.58,
+        "reason": "거래량 3σ 스파이크 (168h 대비) — 72h 지속 롱",
+    }
+
+
+def _pump24_extreme_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """24h LONG: pump24_extreme (src.research.candle_signals) -- 24h return
+    at/above the 99th percentile (PUMP24_PCTL) of its own expanding
+    history. Same threshold, same window, same 24h-return definition as
+    candle_signals.pump24_extreme() -- NOT a re-derivation -- but computed
+    only for the current bar via percentile_rank directly (mirroring
+    _rel_strength_setup's own pattern above), rather than calling
+    pump24_extreme()'s batch _expanding_pctl_events. That batch helper
+    recomputes percentile_rank for every point in the series every call --
+    O(history^2) -- fine once for an offline event study, ruinous when
+    called fresh on every backtest timestep (measured: >15 minutes for a
+    single 60-day window before this fix).
+
+    Event study (research_decisions, subject='candle_signals_round2'):
+    +0.882% effect at 24h (n=1055, CI [+0.14%,+1.60%], p=0.014), PASS,
+    survives Benjamini-Hochberg but NOT Bonferroni -- the weakest of the
+    three candle_signals_round2 setups, tested LAST for exactly that
+    reason. The function's own name/comment ("chase fade") suggests a
+    reversal SHORT; the measured effect is POSITIVE continuation, so
+    direction is LONG, following the data, not the name. 72h fails
+    (inconsistent regime signs: down -0.7%, up +3.2%), so this only ever
+    fires the 24h version.
+    """
+    if not config.SETUP_PUMP24_EXTREME_ENABLED:
+        return None
+    latest_ts = _latest_bar_ts(storage, symbol)
+    if latest_ts is None:
+        return None
+    since = latest_ts - REL_STRENGTH_LOOKBACK_BARS * 3600
+    rows = storage.get_prices(
+        symbol, limit=REL_STRENGTH_LOOKBACK_BARS + 48, since=since, timeframe="1h"
+    )
+    if not rows:
+        return None
+    closes = [float(r["close"]) for r in rows]
+    ts_list = [int(r["timestamp"]) for r in rows]
+    if ts_list[-1] != latest_ts:
+        return None
+
+    history: list[float] = []
+    current: float | None = None
+    for i in range(24, len(closes)):
+        prev = closes[i - 24]
+        if prev <= 0:
+            continue
+        value = (closes[i] - prev) / prev
+        if ts_list[i] == latest_ts:
+            current = value
+            break
+        history.append(value)
+
+    if current is None or len(history) < _CANDLE_MIN_HISTORY:
+        return None
+
+    rank = percentile_rank(current, history)
+    if rank < PUMP24_PCTL:
+        return None
+
+    return {
+        "style": STYLE_PUMP24_EXTREME,
+        "strategy": "pump24_extreme",
+        "direction": "LONG",
+        "score": 0.58,
+        "reason": f"24h 수익률 {current:+.1%} (상위 {(1 - rank) * 100:.2f}%) — 24h 지속 롱 (BH 통과, Bonferroni 미통과)",
+    }
+
+
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
     if not config.SETUP_SWING_ENABLED:
@@ -663,6 +823,9 @@ def evaluate_symbol(
             _breakout_setup(metrics, funding_rate),
             _tsmom28_setup(metrics),
             _rel_strength_setup(storage, symbol, metrics),
+            _capitulation_bar_setup(storage, symbol, metrics),
+            _volume_zscore_setup(storage, symbol, metrics),
+            _pump24_extreme_setup(storage, symbol, metrics),
         ):
             if setup is None:
                 continue

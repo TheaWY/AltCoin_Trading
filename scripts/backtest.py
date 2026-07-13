@@ -550,22 +550,36 @@ class SnapshotStorage:
 # Strategies validated through the ACTUAL live decision function
 # (evaluate_symbol) instead of BaseStrategy.generate_signal(). Narrow,
 # deliberate exception -- see BacktestEngine._evaluation_engine_signal.
-# The other five strategies still test via generate_signal(); this does not
+# The other strategies still test via generate_signal(); this does not
 # change how they're validated or re-open the backtest<->evaluate_symbol
 # path-divergence question in general (see research_decisions:
 # backtest_evaluate_symbol_realignment_parked).
-EVALUATION_ENGINE_STRATEGIES = frozenset({"rel_strength_rotation"})
+#
+# Maps each member to the config flag that gates its OWN setup inside
+# evaluate_symbol() -- excluded from the force-off list below when THAT
+# strategy is the one under test, so isolation is correct no matter which
+# of these is being validated (not just whichever came first).
+_EVALUATION_ENGINE_STRATEGY_OWN_FLAG = {
+    "rel_strength_rotation": "SETUP_REL_STRENGTH_ENABLED",
+    "capitulation_bar": "SETUP_CAPITULATION_BAR_ENABLED",
+    "volume_zscore_3plus": "SETUP_VOLUME_ZSCORE_ENABLED",
+    "pump24_extreme": "SETUP_PUMP24_EXTREME_ENABLED",
+}
+EVALUATION_ENGINE_STRATEGIES = frozenset(_EVALUATION_ENGINE_STRATEGY_OWN_FLAG)
 
-# Setup toggles forced off so evaluate_symbol's only possible verdict is the
-# one EVALUATION_ENGINE_STRATEGIES member being tested -- otherwise a
-# walk-forward run would be measuring the whole confluence ensemble, not the
-# one setup under test. Two groups: most setups gate on a real config.py
-# module attribute; SETUP_FAILED_PUMP_ENABLED has none -- _failed_pump_short_
-# setup reads os.getenv directly every call (see evaluation.py's
-# _env_bool_dynamic), so it only needs the env var forced, not a config attr.
-_OTHER_LIVE_SETUP_FLAGS = (
+# All config-attr-gated setup toggles inside evaluate_symbol() that CAN be
+# isolated this way. Forcing every one of these off except the strategy
+# under test's own flag is what makes evaluate_symbol's only possible
+# verdict the one setup being tested -- otherwise a walk-forward run would
+# be measuring the whole confluence ensemble, not the setup alone. Every
+# entry here gates on a real config.py module attribute; SETUP_FAILED_PUMP_
+# ENABLED has none -- _failed_pump_short_setup reads os.getenv directly
+# every call (see evaluation.py's _env_bool_dynamic), so it only needs the
+# env var forced, not a config attr (kept in the separate env-only tuple).
+_ALL_ISOLATABLE_SETUP_FLAGS = (
     "SETUP_MEANREV_ENABLED", "SETUP_BREAKOUT_ENABLED", "SETUP_TSMOM_ENABLED",
     "SETUP_VOLUME_ENABLED", "SETUP_FUNDING_ENABLED", "SETUP_SWING_ENABLED",
+    *_EVALUATION_ENGINE_STRATEGY_OWN_FLAG.values(),
 )
 _OTHER_LIVE_SETUP_ENV_ONLY_FLAGS = ("SETUP_FAILED_PUMP_ENABLED",)
 
@@ -618,11 +632,13 @@ class BacktestEngine:
         regime = btc_regime(snapshot)
         btc_rows = snapshot.get_prices(config.SYMBOL, limit=720, timeframe="1h")
 
-        all_flags = _OTHER_LIVE_SETUP_FLAGS + _OTHER_LIVE_SETUP_ENV_ONLY_FLAGS
-        saved_attr = {name: getattr(config, name) for name in _OTHER_LIVE_SETUP_FLAGS}
+        own_flag = _EVALUATION_ENGINE_STRATEGY_OWN_FLAG[self.strategy_name]
+        other_flags = tuple(f for f in _ALL_ISOLATABLE_SETUP_FLAGS if f != own_flag)
+        all_flags = other_flags + _OTHER_LIVE_SETUP_ENV_ONLY_FLAGS
+        saved_attr = {name: getattr(config, name) for name in other_flags}
         saved_env = {name: os.environ.get(name) for name in all_flags}
         try:
-            for name in _OTHER_LIVE_SETUP_FLAGS:
+            for name in other_flags:
                 setattr(config, name, False)
             for name in all_flags:
                 os.environ[name] = "false"
@@ -630,7 +646,7 @@ class BacktestEngine:
                 snapshot, symbol, btc_rows, regime=regime, calibration={}, category=category
             )
         finally:
-            for name in _OTHER_LIVE_SETUP_FLAGS:
+            for name in other_flags:
                 setattr(config, name, saved_attr[name])
             for name in all_flags:
                 if saved_env[name] is None:

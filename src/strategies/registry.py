@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from src.strategies.base import BaseStrategy
+from src.strategies.candle_signals_round2 import (
+    CapitulationBarStrategy,
+    Pump24ExtremeStrategy,
+    VolumeZscoreStrategy,
+)
 from src.strategies.funding_carry import FundingCarryStrategy
 from src.strategies.funding_rate import FundingRateStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
@@ -19,6 +24,9 @@ _REGISTRY: dict[str, type[BaseStrategy]] = {
     PositioningShortStrategy.name: PositioningShortStrategy,
     RelStrengthRotationStrategy.name: RelStrengthRotationStrategy,
     VolumeSpikeStrategy.name: VolumeSpikeStrategy,
+    CapitulationBarStrategy.name: CapitulationBarStrategy,
+    VolumeZscoreStrategy.name: VolumeZscoreStrategy,
+    Pump24ExtremeStrategy.name: Pump24ExtremeStrategy,
 }
 
 

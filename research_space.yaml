@@ -7,7 +7,7 @@
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
 
 axes:
-  ACTIVE_STRATEGY: [rel_strength_rotation, momentum, volume_spike, mean_reversion, funding_rate]
+  ACTIVE_STRATEGY: [rel_strength_rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme, momentum, volume_spike, mean_reversion, funding_rate]
   ALLOW_LONG: [true, false]
   CATEGORY_STRATEGY_MODE: ["off", "matched"]
 
@@ -31,6 +31,12 @@ axes:
   # flags are only read by evaluate_symbol(), never by the generic
   # generate_signal()+AltAnalyzer path the other 4 strategies use).
   SETUP_REL_STRENGTH_ENABLED: [true]
+  # candle_signals_round2 (research_decisions, subject='candle_signals_round2'):
+  # same "missing axis -> silent zero-info run" fix, same single-value/no-op-
+  # for-other-strategies reasoning as SETUP_REL_STRENGTH_ENABLED above.
+  SETUP_CAPITULATION_BAR_ENABLED: [true]
+  SETUP_VOLUME_ZSCORE_ENABLED: [true]
+  SETUP_PUMP24_EXTREME_ENABLED: [true]
 
   # Axes below are proven live in scripts/run_backtest_once.py A/B probes.
   # Setup/confluence knobs are intentionally absent until a strategy path
@@ -56,6 +62,17 @@ priority_families:
     match: { ACTIVE_STRATEGY: rel_strength_rotation, ALLOW_LONG: true }
   - name: "rel_strength_rotation_any"
     match: { ACTIVE_STRATEGY: rel_strength_rotation }
+  # candle_signals_round2, strongest-evidence-first order per user decision
+  # 2026-07-13: capitulation_bar@72h and volume_zscore_3plus@72h both
+  # survived Bonferroni; pump24_extreme@24h survived Benjamini-Hochberg
+  # only (weakest, tested last). All three are LONG-only by construction
+  # (event-study effect is positive; ALLOW_LONG:false gives zero trades).
+  - name: "capitulation_bar_long"
+    match: { ACTIVE_STRATEGY: capitulation_bar, ALLOW_LONG: true }
+  - name: "volume_zscore_3plus_long"
+    match: { ACTIVE_STRATEGY: volume_zscore_3plus, ALLOW_LONG: true }
+  - name: "pump24_extreme_long"
+    match: { ACTIVE_STRATEGY: pump24_extreme, ALLOW_LONG: true }
   - name: "category_strategy_momentum"
     match: { CATEGORY_STRATEGY_MODE: "matched", ACTIVE_STRATEGY: momentum }
   - name: "category_strategy_mean_reversion"

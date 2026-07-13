@@ -7,6 +7,13 @@ current bar excluded from its own baseline) — no lookahead.
 
 Kept separate from event_study.py so future signal rounds never touch the
 core module; event_study.py merges EXTRA_SIGNALS into SIGNALS at import time.
+
+`storage` is optional and defaults to the live get_storage() (unchanged
+behavior for the offline event-study caller). src/engine/evaluation.py's
+setups pass their own point-in-time storage (a SnapshotStorage in backtest,
+so these EXACT functions can be reused for live entry decisions and
+backtest validation without re-deriving the signal logic in a second place
+-- the whole point of "shared eval path."
 """
 
 from __future__ import annotations
@@ -21,8 +28,9 @@ ROLLING_WINDOW = 168  # 1 week of 1h bars
 MIN_HISTORY = 720     # 30 days of 1h bars
 
 
-def _load_prices(symbol: str, since: int) -> list[dict[str, Any]]:
-    return get_storage().get_prices(symbol, limit=1_000_000, since=since, timeframe="1h")
+def _load_prices(symbol: str, since: int, storage: Any = None) -> list[dict[str, Any]]:
+    storage = storage or get_storage()
+    return storage.get_prices(symbol, limit=1_000_000, since=since, timeframe="1h")
 
 
 def _std_floor(sd: float, mean: float) -> float:
@@ -48,8 +56,8 @@ def _expanding_pctl_events(
 # 1. capitulation_bar — liquidation-cascade proxy
 # --------------------------------------------------------------------------
 
-def capitulation_bar(symbol: str, since: int) -> list[int]:
-    prices = _load_prices(symbol, since)
+def capitulation_bar(symbol: str, since: int, storage: Any = None) -> list[int]:
+    prices = _load_prices(symbol, since, storage)
     events: list[int] = []
     ro_hist: list[float] = []
     vol_hist: list[float] = []
@@ -86,8 +94,13 @@ def capitulation_bar(symbol: str, since: int) -> list[int]:
 # 2. pump24_extreme — chase fade
 # --------------------------------------------------------------------------
 
-def pump24_extreme(symbol: str, since: int) -> list[int]:
-    prices = _load_prices(symbol, since)
+PUMP24_PCTL = 0.99  # named so callers needing just the latest-bar check
+                     # (src.engine.evaluation._pump24_extreme_setup) reuse
+                     # the exact threshold instead of re-deriving it.
+
+
+def pump24_extreme(symbol: str, since: int, storage: Any = None) -> list[int]:
+    prices = _load_prices(symbol, since, storage)
     closes = [float(p["close"]) for p in prices]
     ts_list = [int(p["timestamp"]) for p in prices]
     series: list[tuple[int, float]] = []
@@ -95,7 +108,7 @@ def pump24_extreme(symbol: str, since: int) -> list[int]:
         prev = closes[i - 24]
         if prev > 0:
             series.append((ts_list[i], (closes[i] - prev) / prev))
-    return _expanding_pctl_events(series, 0.99, MIN_HISTORY)
+    return _expanding_pctl_events(series, PUMP24_PCTL, MIN_HISTORY)
 
 
 # --------------------------------------------------------------------------

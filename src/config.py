@@ -237,6 +237,18 @@ def normalize_holding_style(style: str | None) -> str | None:
     # it failed on first real backtest run (2026-07-13).
     if raw in ("rel_strength_neutral", "시장중립72h"):
         return "rel_strength_neutral"
+    # Same "raw Korean label must be recognized here, not just the English
+    # key" lesson as rel_strength_neutral above -- these three are the setup
+    # labels evaluation.py's _capitulation_bar_setup/_volume_zscore_setup/
+    # _pump24_extreme_setup return directly (research_decisions,
+    # subject='candle_signals_round2'; event-study horizons that survived
+    # multiple-comparisons correction).
+    if raw in ("capitulation_bounce", "반등72h"):
+        return "capitulation_bounce"
+    if raw in ("volume_zscore_breakout", "거래량72h"):
+        return "volume_zscore_breakout"
+    if raw in ("pump24_continuation", "펌프24h"):
+        return "pump24_continuation"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
         return "long_term_hold"
     return None
@@ -244,7 +256,10 @@ def normalize_holding_style(style: str | None) -> str | None:
 
 def holding_style_allowed(style: str | None) -> bool:
     normalized = normalize_holding_style(style)
-    if normalized in ("scalp", "swing", "rel_strength_neutral"):
+    if normalized in (
+        "scalp", "swing", "rel_strength_neutral",
+        "capitulation_bounce", "volume_zscore_breakout", "pump24_continuation",
+    ):
         return True
     if normalized == "long_term_hold":
         return LONG_TERM_HOLD_ENABLED
@@ -259,6 +274,12 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return SWING_MAX_HOLD_HOURS
     if normalized == "rel_strength_neutral":
         return REL_STRENGTH_NEUTRAL_HOLD_HOURS
+    if normalized == "capitulation_bounce":
+        return CAPITULATION_BOUNCE_HOLD_HOURS
+    if normalized == "volume_zscore_breakout":
+        return VOLUME_ZSCORE_HOLD_HOURS
+    if normalized == "pump24_continuation":
+        return PUMP24_EXTREME_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
         return SWING_MAX_HOLD_HOURS
     return 0.0
@@ -290,6 +311,13 @@ SWING_MAX_HOLD_HOURS = float(os.getenv("SWING_MAX_HOLD_HOURS", "720"))
 # effect does not survive market-neutral re-testing, so this style must exit
 # well before SWING_MAX_HOLD_HOURS would let it drift into untested territory.
 REL_STRENGTH_NEUTRAL_HOLD_HOURS = float(os.getenv("REL_STRENGTH_NEUTRAL_HOLD_HOURS", "72"))
+# candle_signals_round2 setups: exit hold hours match exactly the horizon
+# that survived multiple-comparisons correction in the event study, not a
+# default swing/scalp bucket -- only 72h (capitulation_bar, volume_zscore)
+# and 24h (pump24_extreme) have evidence behind them.
+CAPITULATION_BOUNCE_HOLD_HOURS = float(os.getenv("CAPITULATION_BOUNCE_HOLD_HOURS", "72"))
+VOLUME_ZSCORE_HOLD_HOURS = float(os.getenv("VOLUME_ZSCORE_HOLD_HOURS", "72"))
+PUMP24_EXTREME_HOLD_HOURS = float(os.getenv("PUMP24_EXTREME_HOLD_HOURS", "24"))
 # Trailing stop for swing trades: once price moves 1 ATR in favor, trail the
 # stop TRAIL_ATR_MULT x ATR behind the best price seen.
 TRAILING_STOP_ENABLED = _env_bool("TRAILING_STOP_ENABLED", default=True)
@@ -333,6 +361,16 @@ SETUP_VOLUME_ENABLED = _env_bool("SETUP_VOLUME_ENABLED", default=False)
 # effect at 24h/72h, CI excludes zero, consistent across regimes). Off until a
 # walk-forward backtest of this exact setup beats the champion.
 SETUP_REL_STRENGTH_ENABLED = _env_bool("SETUP_REL_STRENGTH_ENABLED", default=False)
+# candle_signals_round2 (research_decisions, subject='candle_signals_round2'):
+# each fires ONLY on its exact src.research.candle_signals/event_study
+# function definition -- no re-derivation. Direction and hold horizon come
+# from the event study, not assumption (pump24_extreme's own code comment
+# calls it a "chase fade" but the measured 24h effect is POSITIVE --
+# continuation, not reversal; this setup is LONG, matching the data).
+# All off by default until each clears its own walk-forward gates.
+SETUP_CAPITULATION_BAR_ENABLED = _env_bool("SETUP_CAPITULATION_BAR_ENABLED", default=False)
+SETUP_VOLUME_ZSCORE_ENABLED = _env_bool("SETUP_VOLUME_ZSCORE_ENABLED", default=False)
+SETUP_PUMP24_EXTREME_ENABLED = _env_bool("SETUP_PUMP24_EXTREME_ENABLED", default=False)
 # 2026-07-13: funding_carry's execution_mode="delta_neutral" P&L math computes
 # returns for a spot-long hedge leg that has never been implemented in either
 # path -- it has simply never fired (funding never crossed CARRY_ENTRY_RATE),

@@ -63,13 +63,18 @@ OVERRIDE_KEY_PREFIXES = (
 OVERRIDE_KEY_EXACT = frozenset(
     {
         "MIN_CONFIDENCE", "MAX_OPEN_POSITIONS", "CATEGORY_STRATEGY_MODE",
-        # Exception to the SETUP_ ban above: this one setup's exact entry
-        # logic (src/research/rel_strength.py) is exercised by both
-        # _rel_strength_setup() (evaluation.py, live) and
-        # RelStrengthRotationStrategy (strategies/, the ACTIVE_STRATEGY
-        # backtest path) -- unlike its siblings, a backtest expectancy for
-        # this key IS evidence about this key.
+        # Exceptions to the SETUP_ ban above: scripts/backtest.py's
+        # EVALUATION_ENGINE_STRATEGIES routes these ACTIVE_STRATEGY values
+        # through evaluate_symbol() directly (the same function live's
+        # ENTRY_DECISION_ENGINE=evaluation runs), bypassing
+        # strategy.generate_signal() entirely -- unlike their siblings, a
+        # backtest expectancy for these keys IS evidence about them, since
+        # the exact same code path produced it. See
+        # scripts/backtest.py:_EVALUATION_ENGINE_STRATEGY_OWN_FLAG.
         "SETUP_REL_STRENGTH_ENABLED",
+        "SETUP_CAPITULATION_BAR_ENABLED",
+        "SETUP_VOLUME_ZSCORE_ENABLED",
+        "SETUP_PUMP24_EXTREME_ENABLED",
     }
 )
 
