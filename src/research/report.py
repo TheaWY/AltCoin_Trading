@@ -135,6 +135,11 @@ def _experiment_item(row: dict[str, Any]) -> dict[str, Any]:
         "positive_windows": positive_windows,
         "window_count": window_count,
         "positive_window_fraction": positive_windows / window_count if window_count else 0.0,
+        # Percentile vs the random-entry ensemble over the same windows
+        # (None until ops/generate_random_ensemble.py has run for this
+        # window config). A strategy that can't beat random entries with
+        # identical risk management isn't a strategy.
+        "benchmark_percentile": agg.get("benchmark_percentile"),
     }
 
 

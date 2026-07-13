@@ -556,6 +556,15 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
 
     btc = storage.get_latest_price(config.SYMBOL)
     btc_price = float(btc["close"]) if btc else None
+
+    # Permanent benchmark comparison (strategy vs btc_hold vs alt_hold vs the
+    # random-entry band) -- the dashboard must make this impossible to avoid.
+    try:
+        from src.engine.benchmarks import benchmark_summary
+
+        benchmarks = benchmark_summary(storage)
+    except Exception:
+        benchmarks = None
     # Always return a portfolio object. The cash/start capital part does not
     # depend on BTC; BTC only affects the benchmark buy-and-hold comparison.
     portfolio = trader.summary(btc_price)
@@ -594,6 +603,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
             "round_trip_cost_pct": config.round_trip_cost_pct() * 100,
             "min_confidence": config.ENTRY_MIN_CONFIDENCE,
         },
+        "benchmarks": benchmarks,
         "portfolio": portfolio,
         "open_positions": open_positions,
         "recent_trades": storage.get_recent_trades(20),

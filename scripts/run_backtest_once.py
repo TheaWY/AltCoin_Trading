@@ -53,6 +53,8 @@ def main() -> int:
             import datetime as _dt
             day = _dt.datetime.fromtimestamp(int(closed), tz=_dt.timezone.utc).strftime("%Y-%m-%d")
             daily[day] = round(daily.get(day, 0.0) + t["pnl"], 4)
+    total_fees = sum(t["fees"] for t in trades)
+    total_slippage_cost = sum(t.get("slippage_cost", 0.0) for t in trades)
     compact = {
         "trade_count": len(pnls),
         "total_pnl": round(sum(pnls), 4),
@@ -60,8 +62,12 @@ def main() -> int:
         "profit_factor": round(sum(wins) / abs(sum(losses)), 4)
         if losses and sum(losses) != 0 else (999.0 if wins else 0.0),
         "win_rate": round(len(wins) / len(pnls), 4) if pnls else 0.0,
-        "total_fees": round(sum(t["fees"] for t in trades), 4),
-        "gross_pnl": round(sum(pnls) + sum(t["fees"] for t in trades), 4),
+        "total_fees": round(total_fees, 4),
+        "total_slippage_cost": round(total_slippage_cost, 4),
+        # Pre-cost PnL: adds back BOTH fees and simulated execution slippage,
+        # so gross_pnl - total_pnl == total_fees + total_slippage_cost exactly
+        # -- the "how much of the edge did realistic costs consume" figure.
+        "gross_pnl": round(sum(pnls) + total_fees + total_slippage_cost, 4),
         "max_drawdown_pct": result["summary"].get("max_drawdown_pct"),
         "portfolio_return_pct": result["summary"].get("portfolio_return_pct"),
         "category_checks": result["summary"].get("category_checks", 0),
@@ -70,6 +76,20 @@ def main() -> int:
         # for DSR (per-trade return series) and correlation gates — capped
         "trade_pnls": [round(p, 4) for p in pnls[:5000]],
         "daily_pnl": daily,
+        # Per-trade symbol/exit-reason/cost detail (additive, capped like
+        # trade_pnls) -- lets the sweep report slippage-as-%-of-edge broken
+        # out by liquidity tier and by exit reason, without a second run.
+        "trade_detail": [
+            {
+                "symbol": t["symbol"],
+                "exit_reason": t.get("exit_reason"),
+                "atr_pct": t.get("atr_pct"),
+                "pnl": round(float(t["pnl"]), 6),
+                "fees": round(float(t["fees"]), 6),
+                "slippage_cost": round(float(t.get("slippage_cost", 0.0) or 0.0), 6),
+            }
+            for t in trades[:5000]
+        ],
         # Market-neutral trades only (research_decisions,
         # subject='rel_strength_market_neutral'): raw per-trade hedge detail
         # so the walk-forward aggregator can compute an exact (not

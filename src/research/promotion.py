@@ -98,6 +98,15 @@ def _row_value(row: Any, key: str, index: int = 0) -> Any:
 S1_MIN_WINDOW_WIN_FRACTION = float(os.getenv("PROMO_S1_WINDOW_FRACTION", "0.66"))
 S1_MIN_TRADES = int(os.getenv("PROMO_S1_MIN_TRADES", "30"))
 S1_MIN_PROFIT_FACTOR = float(os.getenv("PROMO_S1_MIN_PF", "1.2"))
+# research_decisions, subject='stage1_activity_floor' (logged BEFORE this
+# code was written): the denominator changed from ALL windows to windows
+# WITH TRADES, so a strategy that is correctly selective (e.g. regime-gated)
+# isn't scored identically to one that traded and lost. MIN_TRADED_WINDOW_PCT
+# is the tightening that goes with it -- closes the loophole of trading in
+# only a handful of windows and getting lucky (a lottery ticket, not a
+# validated edge); it has no predecessor value because no such floor existed
+# before this change.
+S1_MIN_TRADED_WINDOW_PCT = float(os.getenv("PROMO_S1_MIN_TRADED_WINDOW_PCT", "0.50"))
 
 # DSR gate (between stage 1 and 2): deflated Sharpe corrected for the number
 # of trials the queue has consumed and for non-normal trade returns.
@@ -208,19 +217,41 @@ def _is_allowed_key(key: str) -> bool:
 # ---------------------------------------------------------------------------
 
 def stage1_pass(exp: dict[str, Any], champion: dict[str, Any] | None) -> tuple[bool, str]:
-    """Walk-forward consistency + absolute floors + beats champion baseline."""
+    """Walk-forward consistency + absolute floors + beats champion baseline.
+
+    research_decisions, subject='stage1_activity_floor': window consistency
+    is scored against windows WITH TRADES, not all windows -- a window a
+    strategy correctly chose not to trade in (e.g. regime-gated) must not
+    count against it identically to a window it traded and lost. The
+    ACTIVITY FLOOR (S1_MIN_TRADED_WINDOW_PCT) is the tightening that goes
+    with loosening the denominator: a strategy trading in only a handful of
+    windows and getting lucky is a lottery ticket, not a validated edge, and
+    gets its own distinct failure reason below.
+    """
     metrics = json.loads(exp["metrics_json"] or "{}")
     windows = metrics.get("windows", [])
     agg = metrics.get("aggregate", {})
 
     if not windows:
         return False, "no walk-forward windows in metrics"
-    positive = sum(1 for w in windows if w.get("total_pnl", 0) > 0)
-    fraction = positive / len(windows)
-    if fraction < S1_MIN_WINDOW_WIN_FRACTION:
-        return False, f"window consistency {positive}/{len(windows)} < {S1_MIN_WINDOW_WIN_FRACTION:.0%}"
+
+    traded_windows = [w for w in windows if w.get("trade_count", 0) > 0]
+    traded_fraction = len(traded_windows) / len(windows)
+    if traded_fraction < S1_MIN_TRADED_WINDOW_PCT:
+        return False, (
+            f"activity floor: traded in {len(traded_windows)}/{len(windows)} windows "
+            f"< {S1_MIN_TRADED_WINDOW_PCT:.0%}"
+        )
     if agg.get("trade_count", 0) < S1_MIN_TRADES:
         return False, f"trades {agg.get('trade_count', 0)} < {S1_MIN_TRADES}"
+
+    positive = sum(1 for w in traded_windows if w.get("total_pnl", 0) > 0)
+    fraction = positive / len(traded_windows)
+    if fraction < S1_MIN_WINDOW_WIN_FRACTION:
+        return False, (
+            f"window consistency {positive}/{len(traded_windows)} traded "
+            f"({len(traded_windows)}/{len(windows)} total) < {S1_MIN_WINDOW_WIN_FRACTION:.0%}"
+        )
     if agg.get("expectancy", 0) <= 0:
         return False, "aggregate expectancy <= 0"
     if agg.get("profit_factor", 0) < S1_MIN_PROFIT_FACTOR:
@@ -234,7 +265,10 @@ def stage1_pass(exp: dict[str, Any], champion: dict[str, Any] | None) -> tuple[b
                 f"expectancy {agg.get('expectancy', 0):.3f} does not beat champion "
                 f"{champ_agg.get('expectancy', 0):.3f} on the same windows"
             )
-    return True, f"windows {positive}/{len(windows)} positive, beats champion"
+    return True, (
+        f"windows {positive}/{len(traded_windows)} traded positive "
+        f"({len(traded_windows)}/{len(windows)} total traded), beats champion"
+    )
 
 
 def dsr_pass(exp: dict[str, Any]) -> tuple[bool, str]:

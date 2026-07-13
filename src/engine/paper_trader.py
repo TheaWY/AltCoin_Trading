@@ -9,13 +9,22 @@ from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.engine import execution_cost
+from src.engine import exits
 from src.engine import hedge as hedge_engine
 from src.engine import indicators
 from src.strategies.base import SignalDirection
 
 logger = logging.getLogger(__name__)
 
-ROUND_TRIP_COST_PCT = config.round_trip_cost_pct()
+# NOTE: round_trip_cost_pct() is now dynamic-in-spirit (fee-only, but the
+# function itself could change with FEE_MODE) and slippage is no longer
+# folded into it at all -- it must be called fresh at each fee computation
+# site, never cached into a module constant (that was the exact silent-
+# divergence trap: a stale constant captured at import time would never see
+# a runtime FEE_MODE change, and would have been actively wrong once
+# slippage moved to the price instead of the fee). Every call site below
+# calls config.round_trip_cost_pct() directly.
 
 
 class FakeDeltaNeutralError(RuntimeError):
@@ -195,40 +204,21 @@ class PaperTrader:
     def _update_trailing_stop(self, trade: dict[str, Any], price: float) -> None:
         """Ratchet the stop behind the best price seen (swing trades).
 
-        Once price has moved 1 ATR in favor, the stop trails TRAIL_ATR_MULT
-        ATRs behind the high-water mark so a winner can't round-trip to a loss.
+        The ratchet math lives in src/engine/exits.py -- the SAME function
+        BacktestPortfolio.check_exits calls -- so live and backtest can never
+        trail differently (rule #2; this was divergence territory until
+        2026-07-14: backtest had no trailing at all).
         """
         if not config.TRAILING_STOP_ENABLED:
             return
-        atr = trade.get("atr_pct")
-        if not atr:
-            return
-        atr_frac = float(atr) / 100.0
-        entry = float(trade["entry_price"])
-        best = float(trade.get("trail_price") or entry)
-        stop = float(trade["stop_loss"])
-        is_long = trade["direction"] == SignalDirection.LONG.value
-
-        updates: dict[str, Any] = {}
-        if is_long:
-            if price > best:
-                best = price
-                updates["trail_price"] = best
-            if best >= entry * (1 + atr_frac):
-                new_stop = best * (1 - config.TRAIL_ATR_MULT * atr_frac)
-                if new_stop > stop:
-                    updates["stop_loss"] = new_stop
-                    trade["stop_loss"] = new_stop
-        else:
-            if price < best:
-                best = price
-                updates["trail_price"] = best
-            if best <= entry * (1 - atr_frac):
-                new_stop = best * (1 + config.TRAIL_ATR_MULT * atr_frac)
-                if new_stop < stop:
-                    updates["stop_loss"] = new_stop
-                    trade["stop_loss"] = new_stop
-
+        updates = exits.trailing_stop_update(
+            trade["direction"], float(trade["entry_price"]), price,
+            float(trade.get("trail_price") or trade["entry_price"]),
+            float(trade["stop_loss"]), trade.get("atr_pct"),
+            trail_atr_mult=config.TRAIL_ATR_MULT,
+        )
+        if "stop_loss" in updates:
+            trade["stop_loss"] = updates["stop_loss"]
         if updates:
             self.storage.update_paper_trade(int(trade["id"]), updates)
 
@@ -243,35 +233,89 @@ class PaperTrader:
             return None
         return indicators.atr_pct(rows, period=14)
 
+    def _bar_range_pct(self, symbol: str, ts: int) -> float | None:
+        """(high-low)/close of the 1h bar containing `ts` -- used only for
+        the stress-bar-range check (execution_cost.is_stress_bar), not for
+        sizing. Floors to the hour bucket the same way the rest of this
+        codebase does when matching a fill to its bar."""
+        bucket = (ts // 3600) * 3600
+        rows = self.storage.get_prices(symbol, limit=1, since=bucket, before=bucket + 1, timeframe="1h")
+        if not rows:
+            return None
+        row = rows[-1]
+        close = float(row["close"])
+        if close <= 0:
+            return None
+        return (float(row["high"]) - float(row["low"])) / close * 100.0
+
+    def _adjusted_fill_price(
+        self,
+        symbol: str,
+        direction: str,
+        is_entry: bool,
+        raw_price: float,
+        notional: float,
+        ts: int,
+        reason: str | None = None,
+        atr_pct: float | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """The ONE place PaperTrader turns a raw observed price into an
+        actual fill price -- slippage moves the PRICE here, never the fee
+        (config.round_trip_cost_pct() stays fee-only; see its docstring).
+        Mirrors scripts/backtest.py's BacktestPortfolio._adjusted_fill_price
+        exactly (same execution_cost calls, same stress condition) so live
+        and backtest can never silently diverge on cost.
+        """
+        side = execution_cost.side_for(direction, is_entry)
+        ob_rows = self.storage.get_orderbook_snapshots(symbol, limit=1, before=ts)
+        ob_snapshot = ob_rows[-1] if ob_rows else None
+        fallback = execution_cost.symbol_fallback_stats(self.storage, symbol)
+        spread_bps, depth_usd, used_fallback = execution_cost.resolve_spread_and_depth(
+            side, ob_snapshot, fallback["spread_bps"], fallback["depth_usd"]
+        )
+
+        is_stress = False
+        if not is_entry:
+            bar_range_pct = self._bar_range_pct(symbol, ts)
+            is_stress = reason == "stop_loss" or execution_cost.is_stress_bar(
+                bar_range_pct, atr_pct, config.STRESS_BAR_RANGE_ATR_MULT
+            )
+
+        slip_pct = execution_cost.slippage_pct(
+            notional, spread_bps, depth_usd, is_stress, config.STOP_SLIPPAGE_MULT
+        )
+        fill_price = execution_cost.adjusted_fill_price(raw_price, side, slip_pct)
+        meta = {
+            "used_fallback": used_fallback,
+            "slippage_pct": slip_pct,
+            "is_stress": is_stress,
+            "spread_bps": spread_bps,
+            "depth_usd": depth_usd,
+        }
+        return fill_price, meta
+
     def _exit_levels(
         self, direction: str, price: float, atr_pct: float | None
     ) -> tuple[float, float]:
-        """ATR-scaled stop/target; falls back to fixed percents without ATR."""
-        if atr_pct:
-            stop_frac = config.ATR_STOP_MULT * atr_pct / 100.0
-            tp_frac = config.ATR_TP_MULT * atr_pct / 100.0
-        else:
-            stop_frac = config.STOP_LOSS_PCT
-            tp_frac = config.TAKE_PROFIT_PCT
-
-        if direction == SignalDirection.LONG.value:
-            return price * (1 - stop_frac), price * (1 + tp_frac)
-        return price * (1 + stop_frac), price * (1 - tp_frac)
+        """ATR-scaled stop/target via the shared exits module (same function
+        BacktestPortfolio.open_trade calls -- rule #2)."""
+        return exits.exit_levels(
+            direction, price, atr_pct,
+            atr_stop_mult=config.ATR_STOP_MULT, atr_tp_mult=config.ATR_TP_MULT,
+            fallback_stop_pct=config.STOP_LOSS_PCT, fallback_tp_pct=config.TAKE_PROFIT_PCT,
+        )
 
     def _position_notional(
         self, portfolio: float, cash: float, price: float, stop_loss: float
     ) -> float:
-        """Volatility-inverse sizing: risk a fixed fraction of the portfolio.
-
-        notional = risk_budget / stop_distance, so a coin with a 4% stop gets
-        half the size of a coin with a 2% stop. Capped by MAX_POSITION_PCT and
-        available cash.
-        """
-        stop_frac = abs(price - stop_loss) / price if price else 0.0
-        if stop_frac <= 0:
-            return 0.0
-        notional = (portfolio * config.RISK_PER_TRADE_PCT) / stop_frac
-        return max(0.0, min(notional, portfolio * config.MAX_POSITION_PCT, cash))
+        """Volatility-inverse sizing via the shared exits module (same
+        function BacktestPortfolio.open_trade calls -- rule #2; backtest
+        used a flat MAX_POSITION_PCT until 2026-07-14, divergence #4)."""
+        return exits.position_notional(
+            portfolio, cash, price, stop_loss,
+            risk_per_trade_pct=config.RISK_PER_TRADE_PCT,
+            max_position_pct=config.MAX_POSITION_PCT,
+        )
 
     def _symbol_in_cooldown(self, symbol: str) -> bool:
         hours = config.COOLDOWN_HOURS_PER_SYMBOL
@@ -350,14 +394,27 @@ class PaperTrader:
             notional = self._position_notional(portfolio, cash, current_price, stop_loss)
         if notional <= 0:
             return {"opened": False, "reason": "no cash / zero position size"}
-        quantity = notional / current_price
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
+
+        # Slippage moves the FILL price away from the raw signal price;
+        # stop/take-profit keep the SAME percentage distance, just re-anchored
+        # to the actual fill (the trader's true cost basis) instead of the
+        # raw price they were originally computed from.
+        fill_price, cost_meta = self._adjusted_fill_price(
+            symbol, direction, is_entry=True, raw_price=current_price,
+            notional=notional, ts=now_ts,
+        )
+        price_shift = fill_price / current_price if current_price else 1.0
+        stop_loss *= price_shift
+        take_profit *= price_shift
+        quantity = notional / fill_price
+
         trade_row = {
             "signal_id": signal_result.get("signal_id"),
             "symbol": symbol,
             "direction": direction,
-            "entry_price": current_price,
+            "entry_price": fill_price,
             "exit_price": None,
             "quantity": quantity,
             "stop_loss": stop_loss,
@@ -369,7 +426,7 @@ class PaperTrader:
             "strategy": signal_result.get("strategy"),
             "style": style,
             "atr_pct": atr,
-            "trail_price": current_price,
+            "trail_price": fill_price,
             "exit_reason": None,
             "fees": None,
         }
@@ -392,12 +449,15 @@ class PaperTrader:
         self.storage.update_portfolio_cash(new_cash)
 
         logger.info(
-            "Paper trade opened id=%s %s %s qty=%.6f @ %.2f%s",
+            "Paper trade opened id=%s %s %s qty=%.6f @ %.6f (raw %.6f, slip %.4f%%%s)%s",
             trade_id,
             symbol,
             direction,
             quantity,
+            fill_price,
             current_price,
+            cost_meta["slippage_pct"] * 100,
+            " fallback" if cost_meta["used_fallback"] else "",
             f" hedge={hedge_leg['hedge_symbol']} {hedge_leg['hedge_direction']} "
             f"qty={hedge_leg['hedge_quantity']:.6f} beta={hedge_leg['hedge_beta']:.3f}"
             if hedge_leg is not None
@@ -408,7 +468,7 @@ class PaperTrader:
             "trade_id": trade_id,
             "direction": direction,
             "quantity": quantity,
-            "entry_price": current_price,
+            "entry_price": fill_price,
         }
 
     def _close_hedge_leg(
@@ -445,7 +505,7 @@ class PaperTrader:
             )
 
         hedge_pnl = hedge_engine.leg_pnl(direction, entry, exit_price, qty)
-        hedge_fees = hedge_engine.leg_fees(notional, ROUND_TRIP_COST_PCT)
+        hedge_fees = hedge_engine.leg_fees(notional, config.round_trip_cost_pct())
 
         funding_rows = self.storage.get_funding_rates(hedge_symbol, since=opened_at, before=closed_at)
         funding_pnl = hedge_engine.funding_pnl_for_leg(direction, funding_rows, notional, opened_at, closed_at)
@@ -473,10 +533,20 @@ class PaperTrader:
         execution_mode = _execution_mode_from_trade(self.storage, trade)
         if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
             raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
-        fees = notional * ROUND_TRIP_COST_PCT
-        primary_pnl = self._realized_pnl(trade, current_price)
+        fees = notional * config.round_trip_cost_pct()
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
+        # A stop must fill at the actual (possibly gapped) market price, not
+        # the nominal stop level -- current_price already IS the observed
+        # market price (see check_open_trades_for_symbol), so this only adds
+        # simulated execution slippage on top of an already-real price; it
+        # does not synthesize a "gap" that wasn't already in current_price.
+        fill_price, cost_meta = self._adjusted_fill_price(
+            trade["symbol"], trade["direction"], is_entry=False, raw_price=current_price,
+            notional=notional, ts=now_ts, reason=reason, atr_pct=trade.get("atr_pct"),
+        )
+        primary_pnl = self._realized_pnl(trade, fill_price)
+
         opened_at = int(trade["opened_at"])
         hedge_notional, hedge_fields = self._close_hedge_leg(trade, opened_at, now_ts)
         pnl = hedge_engine.combined_trade_pnl(
@@ -494,7 +564,7 @@ class PaperTrader:
         self.storage.update_portfolio_cash(cash + notional + hedge_notional + pnl)
 
         update_fields = {
-            "exit_price": current_price,
+            "exit_price": fill_price,
             "status": "closed",
             "pnl": pnl,
             "closed_at": now_ts,
@@ -504,10 +574,15 @@ class PaperTrader:
         }
         self.storage.update_paper_trade(int(trade["id"]), update_fields)
         logger.info(
-            "Paper trade closed id=%s pnl=%.2f reason=%s%s",
+            "Paper trade closed id=%s pnl=%.2f reason=%s fill=%.6f (raw %.6f, slip %.4f%%%s%s)%s",
             trade["id"],
             pnl,
             reason,
+            fill_price,
+            current_price,
+            cost_meta["slippage_pct"] * 100,
+            " stress" if cost_meta["is_stress"] else "",
+            " fallback" if cost_meta["used_fallback"] else "",
             f" hedge_pnl={hedge_fields['hedge_pnl']:.4f} funding_pnl={hedge_fields['funding_pnl']:.4f} "
             f"realized_beta={hedge_fields['realized_beta']}"
             if hedge_fields

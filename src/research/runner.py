@@ -153,6 +153,7 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
     trades = sum(w["trade_count"] for w in windows)
     total = sum(w["total_pnl"] for w in windows)
     fees = sum(w["total_fees"] for w in windows)
+    slippage_cost = sum(w.get("total_slippage_cost", 0.0) for w in windows)
     gross = sum(w["gross_pnl"] for w in windows)
     category_checks = sum(int(w.get("category_checks") or 0) for w in windows)
     category_present = sum(int(w.get("category_present") or 0) for w in windows)
@@ -163,6 +164,7 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
         "total_pnl": round(total, 4),
         "gross_pnl": round(gross, 4),
         "total_fees": round(fees, 4),
+        "total_slippage_cost": round(slippage_cost, 4),
         "expectancy": round(total / trades, 6) if trades else 0.0,
         "profit_factor": round(wins / abs(losses), 4) if losses else (999.0 if wins else 0.0),
         "positive_windows": sum(1 for w in windows if w["total_pnl"] > 0),
@@ -258,6 +260,25 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
         with storage._connect() as conn:  # noqa: SLF001
             if ok:
                 metrics = {"windows": window_results, "aggregate": _aggregate(window_results)}
+                # BENCHMARK_PERCENTILE: where this result falls in the
+                # random-entry distribution over the SAME windows. None (and
+                # therefore absent) until ops/generate_random_ensemble.py has
+                # produced an ensemble for this window config. A strategy
+                # that can't beat random entries with identical risk
+                # management isn't a strategy.
+                try:
+                    from src.research.benchmark_percentile import (
+                        benchmark_percentile, windows_config_hash,
+                    )
+
+                    pct = benchmark_percentile(
+                        storage, metrics["aggregate"]["total_pnl"],
+                        windows_config_hash(windows, SYMBOLS),
+                    )
+                    if pct:
+                        metrics["aggregate"].update(pct)
+                except Exception:  # noqa: BLE001 -- percentile is enrichment, never blocks
+                    pass
                 conn.execute(
                     "UPDATE experiments SET status = 'done', finished_at = ?, "
                     "metrics_json = ?, period_start = ?, period_end = ?, symbols = ? "

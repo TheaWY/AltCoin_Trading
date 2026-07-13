@@ -322,13 +322,30 @@ PUMP24_EXTREME_HOLD_HOURS = float(os.getenv("PUMP24_EXTREME_HOLD_HOURS", "24"))
 # stop TRAIL_ATR_MULT x ATR behind the best price seen.
 TRAILING_STOP_ENABLED = _env_bool("TRAILING_STOP_ENABLED", default=True)
 TRAIL_ATR_MULT = float(os.getenv("TRAIL_ATR_MULT", "2.0"))
-# Paper-trade cost model: taker fee + slippage per side (Binance futures taker
-# is 0.05%; slippage assumed 0.03% on liquid perps).
+# Paper-trade cost model: taker fee per side (Binance futures taker is 0.05%).
 FEE_PCT_PER_SIDE = float(os.getenv("FEE_PCT_PER_SIDE", "0.0005"))
-SLIPPAGE_PCT_PER_SIDE = float(os.getenv("SLIPPAGE_PCT_PER_SIDE", "0.0003"))
+# 2026-07-xx: SLIPPAGE_PCT_PER_SIDE (a flat per-side assumption folded into
+# round_trip_cost_pct()) is REMOVED, not kept, deprecated, or backward-compat
+# shimmed -- slippage no longer moves the fee, it moves the FILL PRICE itself
+# via src.engine.execution_cost (orderbook-depth-aware where a snapshot
+# exists, symbol-median-fallback otherwise, DEFAULT_FALLBACK_SPREAD_BPS/
+# DEFAULT_FALLBACK_DEPTH_USD as the absolute last resort). execution_cost.py
+# is intentionally config-free (mirrors src/engine/hedge.py's shape), so
+# there is no equivalent knob here to keep in sync -- re-adding a
+# SLIPPAGE_PCT_PER_SIDE constant here would just be dead weight nothing reads.
 # FEE_MODE=taker (default) uses FEE_PCT_PER_SIDE. Use maker only with a maker-fill simulator.
 FEE_MODE = os.getenv("FEE_MODE", "taker").strip().lower()
 FEE_MAKER_PCT_PER_SIDE = float(os.getenv("FEE_MAKER_PCT_PER_SIDE", "0.0002"))
+
+# Execution-cost model (src.engine.execution_cost): stress multiplier applied
+# to slippage on stop_loss exits and on any exit during an unusually violent
+# bar. Research axis: [1.0, 2.0, 3.0]. 1.0 = no stress amplification (same as
+# every other exit), matching current/default live behavior.
+STOP_SLIPPAGE_MULT = float(os.getenv("STOP_SLIPPAGE_MULT", "1.0"))
+# "N" in "bar range > N x ATR" -- the non-stop_loss half of the stress
+# condition (A3). 2.0 is a documented, round starting point: a bar has to be
+# twice the symbol's own recent average range to count as unusually violent.
+STRESS_BAR_RANGE_ATR_MULT = float(os.getenv("STRESS_BAR_RANGE_ATR_MULT", "2.0"))
 
 
 def fee_pct_per_side() -> float:
@@ -338,7 +355,11 @@ def fee_pct_per_side() -> float:
 
 
 def round_trip_cost_pct() -> float:
-    return 2 * (fee_pct_per_side() + SLIPPAGE_PCT_PER_SIDE)
+    """FEE ONLY. Slippage no longer lives here -- see FEE_PCT_PER_SIDE's
+    comment above and src.engine.execution_cost, which moves the fill PRICE
+    instead. Do not re-add a slippage term here; that would double-count it
+    on top of the price adjustment."""
+    return 2 * fee_pct_per_side()
 
 
 # --- Setup toggles (research_space.yaml) ---

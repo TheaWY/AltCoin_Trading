@@ -21,7 +21,10 @@ from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
 from src.engine.evaluation import STRATEGY_CATEGORY_MAP, evaluate_symbol  # noqa: E402
+from src.engine import execution_cost  # noqa: E402
+from src.engine import exits  # noqa: E402
 from src.engine import hedge as hedge_engine  # noqa: E402
+from src.engine import indicators  # noqa: E402
 from src.engine.paper_trader import FakeDeltaNeutralError  # noqa: E402
 from src.engine.regime import btc_regime  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
@@ -81,6 +84,20 @@ class BacktestTrade:
     funding_pnl: float | None = None
     realized_beta: float | None = None
     realized_correlation: float | None = None
+    # 1h ATR% at open, for the exit-time stress-bar-range check
+    # (execution_cost.is_stress_bar) -- backtest previously computed
+    # stop/take-profit from a FIXED pct, never ATR, so this field didn't
+    # exist; it is populated in open_trade() specifically for this check,
+    # not for stop sizing (that stays unchanged, out of scope here).
+    atr_pct: float | None = None
+    # Dollar cost of simulated execution slippage (entry + exit), separate
+    # from fees -- lets the research report answer "how much of gross edge
+    # did realistic costs consume" without a second no-slippage run.
+    slippage_cost: float = 0.0
+    # High-water mark for the trailing-stop ratchet (mirrors live's
+    # paper_trades.trail_price; backtest had NO trailing logic until
+    # 2026-07-13 -- another exit-mechanism divergence from live).
+    trail_price: float | None = None
 
     @property
     def notional(self) -> float:
@@ -134,6 +151,82 @@ class BacktestPortfolio:
             "hedge_notional": hedge_notional,
         }
 
+    def _atr_pct(self, symbol: str, timestamp: int) -> float | None:
+        """Mirrors PaperTrader._atr_pct exactly, point-in-time (before=timestamp
+        so no lookahead). Backtest stop/take-profit stay a FIXED pct below
+        (unchanged, out of scope for this change) -- this is only for the
+        exit-time stress-bar-range check."""
+        if self.storage is None:
+            return None
+        rows = self.storage.get_prices(symbol, limit=48, before=timestamp, timeframe="1h")
+        if len(rows) < 15:
+            return None
+        return indicators.atr_pct(rows, period=14)
+
+    def _bar_range_pct(self, symbol: str, ts: int) -> float | None:
+        """Mirrors PaperTrader._bar_range_pct exactly."""
+        if self.storage is None:
+            return None
+        bucket = (ts // 3600) * 3600
+        rows = self.storage.get_prices(symbol, limit=1, since=bucket, before=bucket + 1, timeframe="1h")
+        if not rows:
+            return None
+        row = rows[-1]
+        close = float(row["close"])
+        if close <= 0:
+            return None
+        return (float(row["high"]) - float(row["low"])) / close * 100.0
+
+    def _adjusted_fill_price(
+        self,
+        symbol: str,
+        direction: str,
+        is_entry: bool,
+        raw_price: float,
+        notional: float,
+        ts: int,
+        reason: str | None = None,
+        atr_pct: float | None = None,
+    ) -> tuple[float, dict[str, Any]]:
+        """Mirrors src.engine.paper_trader.PaperTrader._adjusted_fill_price
+        exactly -- same execution_cost calls, same stress condition -- so
+        live and backtest can never silently diverge on cost. No storage
+        (e.g. a hand-built BacktestPortfolio in a test) means no slippage:
+        conservative, matches the pre-change behavior for callers that
+        don't wire a storage in."""
+        no_cost_meta = {"used_fallback": False, "slippage_pct": 0.0, "is_stress": False,
+                         "spread_bps": 0.0, "depth_usd": 0.0}
+        if self.storage is None:
+            return raw_price, no_cost_meta
+
+        side = execution_cost.side_for(direction, is_entry)
+        ob_rows = self.storage.get_orderbook_snapshots(symbol, limit=1, before=ts)
+        ob_snapshot = ob_rows[-1] if ob_rows else None
+        fallback = execution_cost.symbol_fallback_stats(self.storage, symbol)
+        spread_bps, depth_usd, used_fallback = execution_cost.resolve_spread_and_depth(
+            side, ob_snapshot, fallback["spread_bps"], fallback["depth_usd"]
+        )
+
+        is_stress = False
+        if not is_entry:
+            bar_range_pct = self._bar_range_pct(symbol, ts)
+            is_stress = reason == "stop_loss" or execution_cost.is_stress_bar(
+                bar_range_pct, atr_pct, config.STRESS_BAR_RANGE_ATR_MULT
+            )
+
+        slip_pct = execution_cost.slippage_pct(
+            notional, spread_bps, depth_usd, is_stress, config.STOP_SLIPPAGE_MULT
+        )
+        fill_price = execution_cost.adjusted_fill_price(raw_price, side, slip_pct)
+        meta = {
+            "used_fallback": used_fallback,
+            "slippage_pct": slip_pct,
+            "is_stress": is_stress,
+            "spread_bps": spread_bps,
+            "depth_usd": depth_usd,
+        }
+        return fill_price, meta
+
     def open_trade(
         self,
         symbol: str,
@@ -158,28 +251,48 @@ class BacktestPortfolio:
             return None
 
         prices = prices or {}
+        # Same order as PaperTrader._open_trade: ATR -> exit levels -> sizing,
+        # because risk-based sizing derives from the stop distance. All three
+        # go through src/engine/exits.py, the shared path.
+        atr_pct = self._atr_pct(symbol, timestamp)
+        stop_loss, take_profit = exits.exit_levels(
+            direction, price, atr_pct,
+            atr_stop_mult=config.ATR_STOP_MULT, atr_tp_mult=config.ATR_TP_MULT,
+            fallback_stop_pct=config.STOP_LOSS_PCT, fallback_tp_pct=config.TAKE_PROFIT_PCT,
+        )
+
         hedge_leg = self._hedge_leg_for_open(direction, metadata, prices, timestamp)
         if hedge_leg is not None:
             notional = hedge_leg["primary_notional"]
         else:
             portfolio_value = self.value({}, timestamp)
-            notional = portfolio_value * config.MAX_POSITION_PCT
+            # Risk-based sizing (divergence #4): flat MAX_POSITION_PCT until
+            # 2026-07-13, which oversized backtest ~50% exactly on wide-stop
+            # (high-ATR) names relative to what live would have done.
+            notional = exits.position_notional(
+                portfolio_value, self.cash, price, stop_loss,
+                risk_per_trade_pct=config.RISK_PER_TRADE_PCT,
+                max_position_pct=config.MAX_POSITION_PCT,
+            )
         combined_notional = notional + (hedge_leg["hedge_notional"] if hedge_leg else 0.0)
         if notional <= 0 or self.cash < combined_notional:
             return None
 
-        quantity = notional / price
-        if direction == SignalDirection.LONG.value:
-            stop_loss = price * (1 - config.STOP_LOSS_PCT)
-            take_profit = price * (1 + config.TAKE_PROFIT_PCT)
-        else:
-            stop_loss = price * (1 + config.STOP_LOSS_PCT)
-            take_profit = price * (1 - config.TAKE_PROFIT_PCT)
+        # Slippage moves the FILL price; stop/take-profit keep the same
+        # percentage distance, re-anchored to the actual fill (mirrors
+        # PaperTrader._open_trade exactly).
+        fill_price, entry_cost_meta = self._adjusted_fill_price(
+            symbol, direction, is_entry=True, raw_price=price, notional=notional, ts=timestamp,
+        )
+        price_shift = fill_price / price if price else 1.0
+        stop_loss *= price_shift
+        take_profit *= price_shift
+        quantity = notional / fill_price
 
         trade = BacktestTrade(
             symbol=symbol,
             direction=direction,
-            entry_price=price,
+            entry_price=fill_price,
             quantity=quantity,
             stop_loss=stop_loss,
             take_profit=take_profit,
@@ -191,6 +304,9 @@ class BacktestPortfolio:
             hedge_entry_price=hedge_leg["hedge_entry_price"] if hedge_leg else None,
             hedge_quantity=hedge_leg["hedge_quantity"] if hedge_leg else None,
             hedge_beta=hedge_leg["hedge_beta"] if hedge_leg else None,
+            atr_pct=atr_pct,
+            slippage_cost=notional * entry_cost_meta["slippage_pct"],
+            trail_price=fill_price,
         )
         self.cash -= combined_notional
         self.open_trades.append(trade)
@@ -200,6 +316,19 @@ class BacktestPortfolio:
         still_open = []
         for trade in self.open_trades:
             price = prices.get(trade.symbol)
+            # Trailing ratchet BEFORE the exit check, same order as live's
+            # check_open_trades_for_symbol (_update_trailing_stop then
+            # _check_exit), through the same shared function.
+            if price is not None and config.TRAILING_STOP_ENABLED:
+                updates = exits.trailing_stop_update(
+                    trade.direction, trade.entry_price, price,
+                    trade.trail_price or trade.entry_price, trade.stop_loss,
+                    trade.atr_pct, trail_atr_mult=config.TRAIL_ATR_MULT,
+                )
+                if "trail_price" in updates:
+                    trade.trail_price = updates["trail_price"]
+                if "stop_loss" in updates:
+                    trade.stop_loss = updates["stop_loss"]
             reason = self._exit_reason(trade, price, timestamp)
             if reason:
                 close_price = price if price is not None else trade.entry_price
@@ -277,8 +406,17 @@ class BacktestPortfolio:
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
         ):
             raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
-        primary_pnl = self._realized_pnl(trade, price, timestamp)
         fees = trade.notional * config.round_trip_cost_pct()
+        # `price` here is already the observed market price at this timestamp
+        # (the hourly close BacktestEngine passed in) -- this only adds
+        # simulated execution slippage on top of it, mirroring
+        # PaperTrader._close_trade exactly.
+        fill_price, exit_cost_meta = self._adjusted_fill_price(
+            trade.symbol, trade.direction, is_entry=False, raw_price=price,
+            notional=trade.notional, ts=timestamp, reason=reason, atr_pct=trade.atr_pct,
+        )
+        primary_pnl = self._realized_pnl(trade, fill_price, timestamp)
+        trade.slippage_cost += trade.notional * exit_cost_meta["slippage_pct"]
 
         hedge_notional, hedge_fields = self._close_hedge_leg(trade, timestamp, prices or {})
         pnl = hedge_engine.combined_trade_pnl(
@@ -290,7 +428,7 @@ class BacktestPortfolio:
         )
 
         trade.fees = fees
-        trade.exit_price = price
+        trade.exit_price = fill_price
         trade.closed_at = timestamp
         trade.pnl = pnl
         trade.exit_reason = reason
@@ -843,8 +981,11 @@ class BacktestEngine:
                 {
                     "symbol": t.symbol,
                     "strategy": getattr(t, "strategy", None),
+                    "exit_reason": getattr(t, "exit_reason", None),
+                    "atr_pct": getattr(t, "atr_pct", None),
                     "pnl": round(float(t.pnl or 0.0), 6),
                     "fees": round(float(getattr(t, "fees", 0.0) or 0.0), 6),
+                    "slippage_cost": round(float(getattr(t, "slippage_cost", 0.0) or 0.0), 6),
                     "opened_at": getattr(t, "opened_at", None),
                     "closed_at": getattr(t, "closed_at", None),
                     # Hedge fields (None for non-hedge trades) -- carried through

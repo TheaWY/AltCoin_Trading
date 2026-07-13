@@ -1,0 +1,125 @@
+"""Shared exit-level math -- stop-loss / take-profit placement and the
+trailing-stop ratchet -- so PaperTrader (live) and BacktestPortfolio
+(backtest) compute exits through ONE code path. Mirrors src/engine/hedge.py
+and src/engine/execution_cost.py's shape: pure functions, no config reads,
+no storage access -- callers pass the config values in, which is what makes
+live/backtest parity trivially assertable in tests.
+
+Why this module exists (2026-07-13): live sized stops ATR-scaled
+(ATR_STOP_MULT/ATR_TP_MULT x the symbol's own 1h ATR%) while backtest used a
+FLAT STOP_LOSS_PCT/TAKE_PROFIT_PCT for every symbol, and live trailed stops
+behind the high-water mark while backtest had no trailing logic at all. A
+flat 3% stop is ~6 ATR wide on a 0.5%-ATR symbol (nearly never hit) and
+~0.6 ATR on a 5%-ATR symbol (hit constantly) -- so every walk-forward
+window-consistency number recorded before this fix was measured on an exit
+mechanism nobody actually trades. Rule #2 (one code path for backtest and
+live), enforced here the same way hedge.py enforced it for hedge sizing.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+
+def exit_levels(
+    direction: str,
+    price: float,
+    atr_pct: float | None,
+    *,
+    atr_stop_mult: float,
+    atr_tp_mult: float,
+    fallback_stop_pct: float,
+    fallback_tp_pct: float,
+) -> tuple[float, float]:
+    """(stop_loss, take_profit) anchored at `price`. ATR-scaled when the
+    symbol's 1h ATR% is available -- stop = atr_stop_mult x ATR%, target =
+    atr_tp_mult x ATR%, so the gross R:R is always atr_tp_mult/atr_stop_mult
+    regardless of the symbol's volatility -- with the fixed-percent fallback
+    only when ATR can't be computed (matches PaperTrader's long-standing
+    behavior; the fallback is the exception, not a separate regime).
+    """
+    if atr_pct:
+        stop_frac = atr_stop_mult * atr_pct / 100.0
+        tp_frac = atr_tp_mult * atr_pct / 100.0
+    else:
+        stop_frac = fallback_stop_pct
+        tp_frac = fallback_tp_pct
+
+    if direction == "LONG":
+        return price * (1 - stop_frac), price * (1 + tp_frac)
+    return price * (1 + stop_frac), price * (1 - tp_frac)
+
+
+def position_notional(
+    portfolio_value: float,
+    cash: float,
+    price: float,
+    stop_loss: float,
+    *,
+    risk_per_trade_pct: float,
+    max_position_pct: float,
+) -> float:
+    """Volatility-inverse position sizing, shared by both engines
+    (divergence #4, found by tests/test_engine_parity.py 2026-07-13: live
+    sized risk-based while backtest took a flat max_position_pct of equity
+    -- invisible at low ATR where the risk-based number caps out at the same
+    max, ~50% oversized in backtest exactly on wide-stop/high-ATR names).
+
+    notional = risk budget / stop distance, so a coin with a 4% stop gets
+    half the size of a coin with a 2% stop. Capped by max_position_pct and
+    available cash. Zero when the stop distance is degenerate -- a trade
+    whose risk can't be computed doesn't get a default size, it gets none.
+    """
+    stop_frac = abs(price - stop_loss) / price if price else 0.0
+    if stop_frac <= 0:
+        return 0.0
+    notional = (portfolio_value * risk_per_trade_pct) / stop_frac
+    return max(0.0, min(notional, portfolio_value * max_position_pct, cash))
+
+
+def trailing_stop_update(
+    direction: str,
+    entry_price: float,
+    price: float,
+    best_price: float,
+    stop_loss: float,
+    atr_pct: float | None,
+    *,
+    trail_atr_mult: float,
+) -> dict[str, Any]:
+    """The trailing-stop ratchet, direction-aware, as a pure function.
+
+    Once price has moved 1 ATR in favor of the trade, the stop trails
+    trail_atr_mult x ATR behind the best price seen, and only ever moves in
+    the risk-REDUCING direction (up for LONG, down for SHORT) -- never
+    widens (system rule #6).
+
+    Returns a dict with any of {"trail_price", "stop_loss"} that changed;
+    empty dict means nothing to update. Callers persist however they store
+    trades (DB row for live, dataclass fields for backtest).
+    """
+    if not atr_pct:
+        return {}
+    atr_frac = float(atr_pct) / 100.0
+    best = float(best_price or entry_price)
+    stop = float(stop_loss)
+    updates: dict[str, Any] = {}
+
+    if direction == "LONG":
+        if price > best:
+            best = price
+            updates["trail_price"] = best
+        if best >= entry_price * (1 + atr_frac):
+            new_stop = best * (1 - trail_atr_mult * atr_frac)
+            if new_stop > stop:
+                updates["stop_loss"] = new_stop
+    else:
+        if price < best:
+            best = price
+            updates["trail_price"] = best
+        if best <= entry_price * (1 - atr_frac):
+            new_stop = best * (1 + trail_atr_mult * atr_frac)
+            if new_stop < stop:
+                updates["stop_loss"] = new_stop
+
+    return updates

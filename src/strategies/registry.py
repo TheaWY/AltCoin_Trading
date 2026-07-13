@@ -13,6 +13,7 @@ from src.strategies.funding_rate import FundingRateStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.positioning_short import PositioningShortStrategy
+from src.strategies.random_entry import RandomEntryStrategy
 from src.strategies.rel_strength_rotation import RelStrengthRotationStrategy
 from src.strategies.volume_spike import VolumeSpikeStrategy
 
@@ -27,6 +28,10 @@ _REGISTRY: dict[str, type[BaseStrategy]] = {
     CapitulationBarStrategy.name: CapitulationBarStrategy,
     VolumeZscoreStrategy.name: VolumeZscoreStrategy,
     Pump24ExtremeStrategy.name: Pump24ExtremeStrategy,
+    # Benchmark null (BENCHMARK_PERCENTILE ensemble) -- registered so the
+    # walk-forward harness can run it; deliberately NOT in
+    # research_space.yaml and never promotable.
+    RandomEntryStrategy.name: RandomEntryStrategy,
 }
 
 

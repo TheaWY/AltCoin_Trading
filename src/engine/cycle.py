@@ -641,6 +641,26 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
 
     _record_funnel(entry_funnel, storage)
 
+    # Permanent benchmark books (btc_hold / alt_hold / 20 random-entry seeds
+    # through the real PaperTrader) -- run FOREVER, in parallel, including
+    # after real money goes live. Never disable: the random band is the
+    # standing control for whether the signals have content at all, and the
+    # BTC line is the standing "should we have just held" check. Failures
+    # are contained inside run_benchmark_cycle and never break the cycle.
+    benchmark_result: dict[str, Any] = {}
+    try:
+        from src.engine.benchmarks import run_benchmark_cycle
+
+        strategy_equity = None
+        try:
+            summary = trader.summary(float(btc["close"]) if btc else None)
+            strategy_equity = float(summary.get("equity") or 0.0) or None
+        except Exception:
+            logger.exception("Strategy equity snapshot for benchmarks failed")
+        benchmark_result = run_benchmark_cycle(storage, symbols, strategy_equity)
+    except Exception:
+        logger.exception("Benchmark cycle failed")
+
     market.backfill_missing_stubs()
     market.update_pending()
 
@@ -663,4 +683,5 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         "ledger_ok": ledger_ok,
         "ledger": ledger_values,
         "entry_funnel": entry_funnel,
+        "benchmarks": benchmark_result,
     }
