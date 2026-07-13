@@ -26,6 +26,7 @@ from __future__ import annotations
 import math
 import random
 from statistics import NormalDist
+from typing import Any
 
 _ND = NormalDist()
 _EULER_GAMMA = 0.5772156649015329
@@ -190,4 +191,50 @@ def effective_breadth(corr: dict[str, dict[str, float]]) -> dict[str, float]:
         "n": float(n),
         "avg_corr": round(rho, 3),
         "effective_breadth": round(n / (1 + (n - 1) * rho), 2),
+    }
+
+
+def benjamini_hochberg(p_values: dict[str, float], alpha: float = 0.05) -> dict[str, dict[str, Any]]:
+    """Benjamini-Hochberg FDR correction across a named set of p-values from
+    the same test grid (e.g. every (signal, horizon) cell read as a
+    candidate finding in one event-study run). Controls the expected
+    proportion of false discoveries among what's called significant, not
+    the per-test false-positive rate -- the right correction when several
+    tests are being read together and the worst that happens to a wrongly-
+    rejected null is "we built on a fluke," not "we missed a real effect."
+
+    Returns {name: {p_value, rank, threshold, significant}}.
+    """
+    items = sorted(p_values.items(), key=lambda kv: kv[1])
+    m = len(items)
+    out: dict[str, dict[str, Any]] = {}
+    # BH: find the largest rank k where p_(k) <= (k/m) * alpha; everything
+    # at or below that rank is significant. Scan from the largest p-value
+    # down so one pass finds the cutoff.
+    cutoff_rank = 0
+    for rank, (_, p) in enumerate(items, start=1):
+        threshold = (rank / m) * alpha
+        if p <= threshold:
+            cutoff_rank = rank
+    for rank, (name, p) in enumerate(items, start=1):
+        out[name] = {
+            "p_value": p,
+            "rank": rank,
+            "threshold": round((rank / m) * alpha, 6),
+            "significant": rank <= cutoff_rank,
+        }
+    return out
+
+
+def bonferroni(p_values: dict[str, float], alpha: float = 0.05) -> dict[str, dict[str, Any]]:
+    """Bonferroni correction: reject only p <= alpha/m. Controls the
+    family-wise error rate (probability of ANY false positive), much more
+    conservative than Benjamini-Hochberg. Included for comparison -- when
+    the two disagree on a borderline signal, that disagreement is itself
+    the honest answer, not something to arbitrate away."""
+    m = len(p_values)
+    threshold = alpha / m if m else 0.0
+    return {
+        name: {"p_value": p, "threshold": round(threshold, 6), "significant": p <= threshold}
+        for name, p in p_values.items()
     }

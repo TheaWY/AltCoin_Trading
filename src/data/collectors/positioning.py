@@ -25,14 +25,20 @@ logger = logging.getLogger(__name__)
 _FAPI = "https://fapi.binance.com"
 _PERIOD = "1h"
 _LIMIT = 500  # max rows per request; 500 x 1h ≈ 20 days, fine for incremental
-_SYMBOL_LIMIT = 20
 _MIN_COLLECTION_INTERVAL_SECONDS = 3600
 _last_collection_started_at: float | None = None
 
 
 def positioning_collection_symbols(symbols: list[str]) -> list[str]:
-    """Return the ranked active subset used for hourly positioning enrichment."""
-    return symbols[:_SYMBOL_LIMIT]
+    """No re-slicing here, deliberately (fixed 2026-07-13): this used to be
+    symbols[:20], which silently dropped an open position that only made
+    the caller's list via the union-with-open-positions branch in
+    src.symbols.cycle_symbols() (appended past the slice point) -- the same
+    class of failure as the price-feed gap that froze entries for 10 hours.
+    The caller already scopes correctly; trust it. Widen/narrow by changing
+    what cycle.py passes in (see src.symbols.cycle_symbols's limit param),
+    not by re-capping here."""
+    return symbols
 
 
 def _current_hour_start() -> int:

@@ -259,15 +259,17 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     # Enrichment only: failures are logged inside and never break the cycle.
     try:
         from src.data.collectors.orderbook import (
+            ORDERBOOK_SYMBOL_LIMIT,
             orderbook_collection_symbols,
             run_orderbook_collection,
         )
 
-        orderbook_symbols = orderbook_collection_symbols(symbols)
+        orderbook_universe = cycle_symbols(universe_symbols, storage, limit=ORDERBOOK_SYMBOL_LIMIT)
+        orderbook_symbols = orderbook_collection_symbols(orderbook_universe)
         logger.info(
-            "Orderbook collection limited to %d/%d ranked symbols",
+            "Orderbook collection covering %d/%d universe symbols",
             len(orderbook_symbols),
-            len(symbols),
+            len(universe_symbols),
         )
         run_orderbook_collection(orderbook_symbols, storage)
         storage.cleanup_old_orderbook_snapshots()

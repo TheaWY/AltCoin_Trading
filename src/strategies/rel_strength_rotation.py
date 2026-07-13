@@ -10,9 +10,28 @@ The live-reachable path is the evaluation setup, gated by
 SETUP_REL_STRENGTH_ENABLED; this strategy is not meant to become
 ACTIVE_STRATEGY in production (see src/research/promotion.py comments).
 
-Evidence: src/research/event_study.py round 2, n=529/530, +1.46%/+2.88%
-effect at 24h/72h, CI excludes zero, consistent across BTC up/down/flat
-regimes. Fails at 4h -- swing hold (metadata style="swing"), not a scalp.
+Evidence, and why this LONG-ONLY implementation should not get real trial
+budget yet (2026-07-13 update): the original 6-symbol event study showed
++1.46%/+2.88% at 24h/72h. Widened to 50 symbols, that shrank to +0.45%/
++0.84%, and effective breadth on raw daily returns came out to 1.89 (avg
+pairwise correlation 0.519) -- a long-only alt basket at that correlation
+is ~1 leveraged BTC-beta bet, not 50 independent trades. Market-neutral
+re-test (scripts/event_study_market_neutral.py, symbol return minus
+point-in-time beta*BTC return): the 24h effect DOES NOT SURVIVE (p=0.058,
+CI includes zero) -- it was mostly beta. The 72h effect DOES survive and
+gets MORE regime-consistent once neutralized (positive in all three BTC
+regimes; the raw 72h result had failed on a down-regime sign flip).
+Survives Benjamini-Hochberg and Bonferroni correction across the full
+signal x horizon test grid. Full detail: research_decisions,
+subject='rel_strength_market_neutral'.
+
+Conclusion: this class as written (naive long) is not the strategy the
+evidence supports. What's worth building is a market-neutral 72h version
+(long the signal, short beta-matched BTC) -- deliberately NOT built yet;
+it needs real hedge-leg position management in both this backtest path and
+_rel_strength_setup's live path, not a small patch. Do not enable
+SETUP_REL_STRENGTH_ENABLED or spend trial budget on ACTIVE_STRATEGY=
+rel_strength_rotation until that redesign happens.
 """
 
 from __future__ import annotations

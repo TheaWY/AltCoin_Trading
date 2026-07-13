@@ -54,6 +54,26 @@ CREATE TABLE IF NOT EXISTS event_study_results (
 """
 
 
+def _ensure_schema(conn: Any) -> None:
+    for stmt in _SCHEMA.split(";"):
+        if stmt.strip():
+            conn.execute(stmt)
+    # p_value added 2026-07-13 for multiple-comparisons correction across
+    # the full (signal, horizon) grid -- Postgres supports IF NOT EXISTS
+    # natively; SQLite's ALTER TABLE ADD COLUMN does not (verified, not
+    # assumed), hence the PRAGMA existence check on that path.
+    if conn.is_postgres:
+        conn.raw.execute(
+            "ALTER TABLE event_study_results ADD COLUMN IF NOT EXISTS p_value DOUBLE PRECISION"
+        )
+    else:
+        columns = {
+            row["name"] for row in conn.raw.execute("PRAGMA table_info(event_study_results)").fetchall()
+        }
+        if "p_value" not in columns:
+            conn.raw.execute("ALTER TABLE event_study_results ADD COLUMN p_value REAL")
+
+
 # ---------------------------------------------------------------------------
 # Data access (point-in-time by construction: only past rows used per event)
 # ---------------------------------------------------------------------------
@@ -208,6 +228,15 @@ def _btc_regime(btc_idx: dict[int, float], ts: int) -> str:
 
 
 def _bootstrap_ci(diffs: list[float]) -> tuple[float, float]:
+    ci_low, ci_high, _ = _bootstrap_ci_and_pvalue(diffs)
+    return ci_low, ci_high
+
+
+def _bootstrap_ci_and_pvalue(diffs: list[float]) -> tuple[float, float, float]:
+    """95% CI on the mean difference, plus a two-tailed bootstrap p-value
+    (2 x the smaller tail fraction crossing zero, capped at 1.0) -- used for
+    multiple-comparisons correction across the full (signal, horizon) grid,
+    not just eyeballing whether one cell's CI happens to exclude zero."""
     rng = random.Random(42)  # deterministic
     means = []
     n = len(diffs)
@@ -215,7 +244,10 @@ def _bootstrap_ci(diffs: list[float]) -> tuple[float, float]:
         sample = [diffs[rng.randrange(n)] for _ in range(n)]
         means.append(sum(sample) / n)
     means.sort()
-    return means[int(0.025 * BOOTSTRAP_N)], means[int(0.975 * BOOTSTRAP_N)]
+    frac_le_zero = sum(1 for m in means if m <= 0) / len(means)
+    frac_ge_zero = sum(1 for m in means if m >= 0) / len(means)
+    p_value = min(1.0, 2 * min(frac_le_zero, frac_ge_zero))
+    return means[int(0.025 * BOOTSTRAP_N)], means[int(0.975 * BOOTSTRAP_N)], p_value
 
 
 # ---------------------------------------------------------------------------
@@ -226,9 +258,7 @@ def run(symbols: list[str], days: int) -> list[dict[str, Any]]:
     since = int(time.time()) - days * 86400
     storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001
-        for stmt in _SCHEMA.split(";"):
-            if stmt.strip():
-                conn.execute(stmt)
+        _ensure_schema(conn)
 
     price_idx = {s: _price_index(_load_prices(s, since - 8 * 86400)) for s in symbols}
     btc_idx = price_idx.get("BTC/USDT") or next(iter(price_idx.values()))
@@ -275,7 +305,10 @@ def run(symbols: list[str], days: int) -> list[dict[str, Any]]:
                 mean = sum(rets) / len(rets) if rets else 0.0
                 effect = mean - base_mean
                 diffs = [r - base_mean for r in rets]
-                ci_low, ci_high = _bootstrap_ci(diffs) if len(diffs) >= 30 else (None, None)
+                if len(diffs) >= 30:
+                    ci_low, ci_high, p_value = _bootstrap_ci_and_pvalue(diffs)
+                else:
+                    ci_low, ci_high, p_value = None, None, None
 
                 verdict = "insufficient_n"
                 if regime == "all" and len(all_rets) >= MIN_EVENTS:
@@ -301,6 +334,7 @@ def run(symbols: list[str], days: int) -> list[dict[str, Any]]:
                     "effect": round(effect, 6),
                     "ci_low": round(ci_low, 6) if ci_low is not None else None,
                     "ci_high": round(ci_high, 6) if ci_high is not None else None,
+                    "p_value": round(p_value, 6) if p_value is not None else None,
                     "verdict": verdict,
                 }
                 results.append(row)
@@ -308,7 +342,7 @@ def run(symbols: list[str], days: int) -> list[dict[str, Any]]:
                     conn.execute(
                         "INSERT INTO event_study_results (run_at, signal, horizon_h, "
                         "regime, n_events, mean_fwd_return, baseline_fwd_return, "
-                        "effect, ci_low, ci_high, verdict) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        "effect, ci_low, ci_high, p_value, verdict) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                         tuple(row.values()),
                     )
     return results

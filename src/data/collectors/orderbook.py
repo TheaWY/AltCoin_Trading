@@ -27,17 +27,26 @@ logger = logging.getLogger(__name__)
 _DEPTH_PCT = 0.01  # within 1% of mid price
 _ORDER_BOOK_LIMIT = 100
 
+# 2026-07-13: measured 6.08s/21 symbols (0.29s/symbol) against the real
+# exchange with zero rate-limit errors -- widened from 21 to 50 (est. ~15s,
+# still comfortably inside the 5-min cycle budget) so the orderbook study
+# has real breadth from day one. Do not widen further without measuring
+# rate-limit headroom over a full day at this size first.
+ORDERBOOK_SYMBOL_LIMIT = 50
+
 
 def orderbook_collection_symbols(symbols: list[str]) -> list[str]:
-    """No additional cap here, deliberately: the caller (cycle.py) already
-    passes src.symbols.cycle_symbols()'s result -- active-N union open
-    positions. positioning.py's equivalent re-slices to a fixed N and can
-    silently drop an open position that only made the list via the
-    union-with-open-positions branch (it's appended past the slice point).
-    Orderbook data can never be backfilled, so that gap matters more here:
-    don't reproduce it. This function exists for API-shape parity with
-    positioning.py and as the one place to widen scope later, deliberately,
-    after measuring per-cycle API cost -- not to silently narrow it now."""
+    """No additional cap here, deliberately: the caller (cycle.py) passes
+    src.symbols.cycle_symbols(universe, storage, limit=ORDERBOOK_SYMBOL_LIMIT)'s
+    result -- top-50 union open positions. positioning.py's old pattern
+    re-sliced the already-scoped list to a fixed N and could silently drop
+    an open position that only made the list via the union-with-open-
+    positions branch (appended past the slice point). Orderbook data can
+    never be backfilled, so that gap matters more here: don't reproduce it.
+    This function exists for API-shape parity with positioning.py and as
+    the one place to widen scope later, deliberately, after measuring
+    rate-limit headroom -- not to silently narrow what the caller already
+    scoped correctly."""
     return symbols
 
 

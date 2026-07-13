@@ -338,11 +338,15 @@ def _rel_strength_setup(
 ) -> dict[str, Any] | None:
     """스윙: 7d relative-strength-vs-BTC rotation continuation.
 
-    event_study.py round 2 (src/research/candle_signals.py:rel_strength_95_vs_btc):
-    n=529/530, +1.46%/+2.88% effect at 24h/72h, CI excludes zero, consistent
-    across BTC up/down/flat regimes. Fails at 4h -- multi-hour-to-day effect,
-    not a scalp, hence STYLE_SWING. Off until SETUP_REL_STRENGTH_ENABLED and a
-    walk-forward backtest of this exact entry beats the champion.
+    2026-07-13 status -- this fires a naive LONG, but the evidence now says
+    that's the wrong shape: on 50 symbols the raw effect shrank and the
+    24h version fails market-neutral re-testing entirely (was mostly BTC
+    beta, not idiosyncratic rotation). Only 72h survives neutralization.
+    Full detail: src/strategies/rel_strength_rotation.py's module docstring
+    and research_decisions subject='rel_strength_market_neutral'. Stays off
+    (SETUP_REL_STRENGTH_ENABLED default False) until this becomes an actual
+    market-neutral (long signal, short beta-matched BTC) setup -- not built
+    yet, real hedge-leg position management, not a small patch.
     """
     if not config.SETUP_REL_STRENGTH_ENABLED:
         return None

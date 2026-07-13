@@ -154,23 +154,32 @@ def core_symbols() -> list[str]:
     return list(config.TRADING_SYMBOLS) if config.TRADING_SYMBOLS else list(DEFAULT_SYMBOLS)
 
 
-def active_trading_symbols(universe: list[str] | None = None) -> list[str]:
-    """Top-N ranked symbols (config.ACTIVE_TRADING_SYMBOLS_LIMIT) eligible for
-    new-entry consideration this cycle. Pass `universe` to avoid a redundant
-    trading_symbols() call when the caller already has one (it's TTL-cached,
-    so calling it again is cheap, but tests want an explicit list anyway)."""
+def active_trading_symbols(universe: list[str] | None = None, limit: int | None = None) -> list[str]:
+    """Top-N ranked symbols eligible for new-entry consideration this cycle.
+    N defaults to config.ACTIVE_TRADING_SYMBOLS_LIMIT; pass `limit` to widen
+    for a specific caller (e.g. orderbook collection) without changing the
+    entry-eligible universe everyone else uses. Pass `universe` to avoid a
+    redundant trading_symbols() call when the caller already has one (it's
+    TTL-cached, so calling it again is cheap, but tests want an explicit
+    list anyway)."""
     symbols = universe if universe is not None else trading_symbols()
-    limit = config.ACTIVE_TRADING_SYMBOLS_LIMIT
-    return symbols if limit <= 0 else symbols[:limit]
+    n = config.ACTIVE_TRADING_SYMBOLS_LIMIT if limit is None else limit
+    return symbols if n <= 0 else symbols[:n]
 
 
-def cycle_symbols(universe: list[str], storage: Any) -> list[str]:
-    """active_trading_symbols(universe) plus any symbol with a currently open
-    position -- the scope collected every cycle, and the scope the data-health
-    gate checks (see health_gate_scope). A held position must keep receiving
-    fresh candles for stops/trailing-stops even after it rotates out of the
-    active-N universe."""
-    selected = list(active_trading_symbols(universe))
+def cycle_symbols(universe: list[str], storage: Any, limit: int | None = None) -> list[str]:
+    """active_trading_symbols(universe, limit) plus any symbol with a
+    currently open position -- the scope collected every cycle, and the
+    scope the data-health gate checks (see health_gate_scope). A held
+    position must keep receiving fresh candles for stops/trailing-stops
+    even after it rotates out of the active-N universe.
+
+    This union-with-open-positions step is exactly what
+    positioning_collection_symbols() used to drop by re-slicing the result
+    to a fixed N (an open position appended past that cutoff silently lost
+    its OI/LSR feed). Callers that need a differently-sized scope should
+    pass `limit` here, not re-slice the returned list themselves."""
+    selected = list(active_trading_symbols(universe, limit=limit))
     seen = set(selected)
     for trade in storage.get_open_trades():
         symbol = trade.get("symbol")
