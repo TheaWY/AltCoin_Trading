@@ -160,13 +160,31 @@ def ntp_offset() -> dict[str, Any]:
 
 
 def verdict() -> dict[str, Any]:
+    """Halt decision is scoped to the active trading universe plus open
+    positions (see src.symbols.health_gate_scope) -- a dead feed for a
+    symbol that rotated out of the universe long ago must never freeze
+    entries for symbols with perfectly fresh data. Everything outside that
+    scope is still reported (stale_out_of_scope) for dashboard/data_gaps
+    visibility, it just never halts. An open position's feed staleness
+    always halts, non-negotiable -- its stops can't be checked blind."""
+    from src.symbols import health_gate_scope
+
+    storage = get_storage()
+    scope, backfilling = health_gate_scope(storage)
+
     fresh = freshness()
     stale = [f for f in fresh if f["status"] != "ok"]
+    in_scope_stale = [f for f in stale if f["symbol"] is None or f["symbol"] in scope]
+    out_of_scope_stale = [
+        f for f in stale if f["symbol"] is not None and f["symbol"] not in scope
+    ]
     clock = ntp_offset()
-    healthy = not stale and clock.get("ok") is not False
+    healthy = not in_scope_stale and clock.get("ok") is not False
     return {
         "healthy": healthy,
-        "stale_sources": stale,
+        "stale_sources": in_scope_stale,
+        "stale_out_of_scope": out_of_scope_stale,
+        "backfilling_symbols": sorted(backfilling),
         "clock": clock,
         "checked_at": int(time.time()),
         "action": "ok to trade" if healthy else "HALT new entries (data health)",

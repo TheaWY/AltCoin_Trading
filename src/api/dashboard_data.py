@@ -63,6 +63,20 @@ def build_data_health(
     }
 
 
+def build_entry_gate_health(storage: Storage | None = None) -> dict[str, Any]:
+    """The ACTUAL entry-gating verdict (src.research.data_quality.verdict),
+    not build_data_health()'s worker-heartbeat check above -- those are two
+    different things. This is what the dashboard must show a banner for:
+    evaluate_all()'s display candidates never check this, so a candidate can
+    look "tradable" here while run_trading_cycle is halted for everyone."""
+    try:
+        from src.research.data_quality import verdict
+
+        return verdict()
+    except Exception:
+        return {"healthy": True, "action": "unknown (health check failed)"}
+
+
 def build_entry_funnel(storage: Storage | None = None) -> dict[str, Any]:
     storage = storage or get_storage()
     row = storage.get_system_status("entry_funnel")
@@ -586,6 +600,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "closed_trades": storage.get_recent_closed_trades(20),
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": build_data_health(storage),
+        "data_health": build_entry_gate_health(storage),
         "entry_funnel": build_entry_funnel(storage),
         "research": build_research_payload(storage),
         "history": build_history_payload(storage),

@@ -16,7 +16,7 @@ from src.engine.market_compare import MarketCompare
 from src.engine.paper_trader import PaperTrader
 from src.engine.regime import btc_regime, direction_blocked
 from src.engine.signal import SignalEngine
-from src.symbols import trading_symbols
+from src.symbols import cycle_symbols, health_gate_scope, trading_symbols
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,7 @@ def _new_entry_funnel(symbols: list[str]) -> dict[str, Any]:
         "ts": int(time.time()),
         "symbols_evaluated": 0,
         "blocked_freshness": 0,
+        "blocked_backfill": 0,
         "setups_fired": 0,
         "killed_direction_policy": 0,
         "below_min_confidence": 0,
@@ -126,29 +127,6 @@ def _insert_shadow_entry(
                 price,
             ),
         )
-
-
-def _active_cycle_symbols(symbols: list[str]) -> list[str]:
-    limit = config.ACTIVE_TRADING_SYMBOLS_LIMIT
-    if limit <= 0:
-        return symbols
-    return symbols[:limit]
-
-
-def _cycle_symbols(symbols: list[str], storage: Storage) -> list[str]:
-    """Top-N active universe plus any currently open position symbols.
-
-    A held position must keep receiving fresh candles for stops, trailing stops,
-    and dashboard valuation even after it rotates out of the top-N universe.
-    """
-    selected = list(_active_cycle_symbols(symbols))
-    seen = set(selected)
-    for trade in storage.get_open_trades():
-        symbol = trade.get("symbol")
-        if symbol and symbol not in seen:
-            selected.append(symbol)
-            seen.add(symbol)
-    return selected
 
 
 def _category_allowed(storage: Storage, symbol: str) -> tuple[bool, dict[str, Any] | None, str]:
@@ -237,7 +215,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     """Full cycle: collect → signal → evaluate → paper trade → outcomes."""
     storage = storage or get_storage()
     universe_symbols = trading_symbols()
-    symbols = _cycle_symbols(universe_symbols, storage)
+    symbols = cycle_symbols(universe_symbols, storage)
     entry_funnel = _new_entry_funnel(symbols)
     if len(symbols) != len(universe_symbols):
         logger.info(
@@ -275,6 +253,26 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         run_positioning_collection(positioning_symbols, storage)
     except Exception:
         logger.exception("Positioning collection failed")
+
+    # Orderbook snapshots (derived depth/imbalance/spread) -- cannot be
+    # backfilled, so this must run every cycle regardless of research status.
+    # Enrichment only: failures are logged inside and never break the cycle.
+    try:
+        from src.data.collectors.orderbook import (
+            orderbook_collection_symbols,
+            run_orderbook_collection,
+        )
+
+        orderbook_symbols = orderbook_collection_symbols(symbols)
+        logger.info(
+            "Orderbook collection limited to %d/%d ranked symbols",
+            len(orderbook_symbols),
+            len(symbols),
+        )
+        run_orderbook_collection(orderbook_symbols, storage)
+        storage.cleanup_old_orderbook_snapshots()
+    except Exception:
+        logger.exception("Orderbook collection failed")
 
     if config.LIVE_TRADING:
         from src.engine.live_trader import LiveTrader
@@ -398,6 +396,7 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         available_slots = max(0, config.MAX_OPEN_POSITIONS - storage.count_open_trades())
         entry_funnel["available_slots"] = available_slots
         entry_funnel["open_positions"] = storage.count_open_trades()
+        _, backfilling = health_gate_scope(storage, universe_symbols)
         for symbol in symbols:
             if available_slots <= 0:
                 entry_funnel["slots_full"] += 1
@@ -429,6 +428,15 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     symbol,
                     "blocked_freshness",
                     f"latest price age {price_age}s > 7200s",
+                )
+                continue
+            if symbol in backfilling:
+                entry_funnel["blocked_backfill"] += 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "blocked_backfill",
+                    "symbol rotated into the universe < 48h ago, history still backfilling",
                 )
                 continue
 

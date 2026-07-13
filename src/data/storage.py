@@ -62,6 +62,21 @@ CREATE TABLE IF NOT EXISTS open_interest (
     UNIQUE(symbol, timestamp)
 );
 
+CREATE TABLE IF NOT EXISTS orderbook_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    symbol TEXT NOT NULL,
+    timestamp INTEGER NOT NULL,
+    bid_depth_1pct REAL NOT NULL,
+    ask_depth_1pct REAL NOT NULL,
+    imbalance_ratio REAL NOT NULL,
+    spread_bps REAL NOT NULL,
+    top_bid REAL NOT NULL,
+    top_ask REAL NOT NULL,
+    mid_price REAL NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(symbol, timestamp)
+);
+
 CREATE TABLE IF NOT EXISTS signals (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     strategy TEXT NOT NULL,
@@ -177,6 +192,21 @@ CREATE TABLE IF NOT EXISTS open_interest (
     symbol TEXT NOT NULL,
     timestamp BIGINT NOT NULL,
     open_interest DOUBLE PRECISION NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(symbol, timestamp)
+);
+
+CREATE TABLE IF NOT EXISTS orderbook_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    bid_depth_1pct DOUBLE PRECISION NOT NULL,
+    ask_depth_1pct DOUBLE PRECISION NOT NULL,
+    imbalance_ratio DOUBLE PRECISION NOT NULL,
+    spread_bps DOUBLE PRECISION NOT NULL,
+    top_bid DOUBLE PRECISION NOT NULL,
+    top_ask DOUBLE PRECISION NOT NULL,
+    mid_price DOUBLE PRECISION NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE(symbol, timestamp)
 );
@@ -544,6 +574,27 @@ class Storage:
                 result.reverse()
             return result
 
+    def get_symbols_first_seen(
+        self, symbols: list[str], timeframe: str = "1h"
+    ) -> dict[str, int | None]:
+        """MIN(timestamp) per symbol -- when continuous collection began.
+        None for a symbol with no rows at all yet."""
+        result: dict[str, int | None] = {s: None for s in symbols}
+        if not symbols:
+            return result
+        placeholders = ", ".join("?" for _ in symbols)
+        sql = (
+            f"SELECT symbol, MIN(timestamp) AS mn FROM prices "
+            f"WHERE symbol IN ({placeholders}) AND timeframe = ? GROUP BY symbol"
+        )
+        with self._connect() as conn:
+            rows = conn.execute(sql, (*symbols, timeframe)).fetchall()
+        for row in rows:
+            row = dict(row)
+            mn = row.get("mn")
+            result[row["symbol"]] = int(mn) if mn is not None else None
+        return result
+
     def cleanup_old_prices(self) -> dict[str, int]:
         now_ts = int(datetime.now(timezone.utc).timestamp())
         policies = {
@@ -763,6 +814,61 @@ class Storage:
             result = [dict(r) for r in rows]
             result.reverse()
             return result
+
+    # --- orderbook snapshots (derived features only, not raw books) ---
+
+    def insert_orderbook_snapshots(self, rows: Iterable[dict[str, Any]]) -> int:
+        rows = list(rows)
+        if not rows:
+            return 0
+        sql = """
+            INSERT OR IGNORE INTO orderbook_snapshots
+                (symbol, timestamp, bid_depth_1pct, ask_depth_1pct,
+                 imbalance_ratio, spread_bps, top_bid, top_ask, mid_price)
+            VALUES
+                (:symbol, :timestamp, :bid_depth_1pct, :ask_depth_1pct,
+                 :imbalance_ratio, :spread_bps, :top_bid, :top_ask, :mid_price)
+        """
+        with self._connect() as conn:
+            cursor = conn.executemany(sql, rows)
+            return cursor.rowcount
+
+    def get_orderbook_snapshots(
+        self,
+        symbol: str,
+        limit: int = 720,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        clauses = ["symbol = ?"]
+        params: list[Any] = [symbol]
+        if since is not None:
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        sql = f"""
+            SELECT * FROM orderbook_snapshots
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        with self._connect() as conn:
+            rows = conn.execute(sql, params).fetchall()
+            result = [dict(r) for r in rows]
+            result.reverse()
+            return result
+
+    def cleanup_old_orderbook_snapshots(self, max_age_seconds: int = 2 * 365 * 24 * 60 * 60) -> int:
+        cutoff = int(datetime.now(timezone.utc).timestamp()) - max_age_seconds
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM orderbook_snapshots WHERE timestamp < ?", (cutoff,)
+            )
+            return cursor.rowcount
 
     # --- signals ---
 

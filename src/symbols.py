@@ -154,6 +154,78 @@ def core_symbols() -> list[str]:
     return list(config.TRADING_SYMBOLS) if config.TRADING_SYMBOLS else list(DEFAULT_SYMBOLS)
 
 
+def active_trading_symbols(universe: list[str] | None = None) -> list[str]:
+    """Top-N ranked symbols (config.ACTIVE_TRADING_SYMBOLS_LIMIT) eligible for
+    new-entry consideration this cycle. Pass `universe` to avoid a redundant
+    trading_symbols() call when the caller already has one (it's TTL-cached,
+    so calling it again is cheap, but tests want an explicit list anyway)."""
+    symbols = universe if universe is not None else trading_symbols()
+    limit = config.ACTIVE_TRADING_SYMBOLS_LIMIT
+    return symbols if limit <= 0 else symbols[:limit]
+
+
+def cycle_symbols(universe: list[str], storage: Any) -> list[str]:
+    """active_trading_symbols(universe) plus any symbol with a currently open
+    position -- the scope collected every cycle, and the scope the data-health
+    gate checks (see health_gate_scope). A held position must keep receiving
+    fresh candles for stops/trailing-stops even after it rotates out of the
+    active-N universe."""
+    selected = list(active_trading_symbols(universe))
+    seen = set(selected)
+    for trade in storage.get_open_trades():
+        symbol = trade.get("symbol")
+        if symbol and symbol not in seen:
+            selected.append(symbol)
+            seen.add(symbol)
+    return selected
+
+
+BACKFILL_MIN_HOURS = 48
+
+
+def symbols_in_backfill(storage: Any, symbols: list[str]) -> set[str]:
+    """Symbols whose continuous 1h price collection began less than
+    BACKFILL_MIN_HOURS ago (or hasn't started at all yet). Too little history
+    to trust for entries, or to demand freshness from -- they may just have
+    rotated into the universe for the first time and are still catching up.
+
+    Known limitation: this uses MIN(timestamp) as a proxy for "collection
+    just started." A symbol that rotates OUT and later back IN keeps its old
+    MIN(timestamp), so it won't get a fresh grace period even if there's a
+    gap in the middle. health_gate_scope's own scoping (excluding anything
+    outside the active universe / open positions) already covers that case
+    while the symbol is out; the residual risk is narrow (a stale gap right
+    after rotating back in, before the next collection cycle catches up).
+    """
+    if not symbols:
+        return set()
+    first_seen = storage.get_symbols_first_seen(symbols)
+    now = int(time.time())
+    cutoff = BACKFILL_MIN_HOURS * 3600
+    return {s for s, ts in first_seen.items() if ts is None or (now - ts) < cutoff}
+
+
+def health_gate_scope(
+    storage: Any, universe: list[str] | None = None
+) -> tuple[set[str], set[str]]:
+    """(scope, backfilling) for the data-health halt decision and the entry
+    loop's backfill skip.
+
+    scope = (active universe - backfilling) | open positions.
+    An open position is ALWAYS in scope, regardless of backfill status --
+    a live position's price feed staleness must always be able to halt new
+    entries and must always be checkable for stops. Everything outside scope
+    is still reported (freshness/data_gaps) but never halts.
+    """
+    active = set(active_trading_symbols(universe))
+    open_positions = {
+        trade.get("symbol") for trade in storage.get_open_trades() if trade.get("symbol")
+    }
+    backfilling = symbols_in_backfill(storage, sorted(active - open_positions))
+    scope = (active - backfilling) | open_positions
+    return scope, backfilling
+
+
 def ccxt_symbol(spot_symbol: str) -> str:
     """Map spot symbol (BTC/USDT) to ccxt perpetual symbol."""
     if spot_symbol in config.SYMBOL_CCXT_MAP:

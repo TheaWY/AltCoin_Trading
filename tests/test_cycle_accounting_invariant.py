@@ -4,7 +4,8 @@ import unittest
 
 from unittest.mock import patch
 
-from src.engine.cycle import _cycle_symbols, _portfolio_accounting_invariant
+from src.engine.cycle import _portfolio_accounting_invariant
+from src.symbols import cycle_symbols
 
 
 class _StorageWithOpenTrades:
@@ -21,7 +22,7 @@ class CycleAccountingInvariantTests(unittest.TestCase):
         storage = _StorageWithOpenTrades(["VELVET/USDT"])
 
         with patch("src.config.ACTIVE_TRADING_SYMBOLS_LIMIT", 2):
-            selected = _cycle_symbols(universe, storage)  # type: ignore[arg-type]
+            selected = cycle_symbols(universe, storage)  # type: ignore[arg-type]
 
         self.assertEqual(selected, ["BTC/USDT", "ETH/USDT", "VELVET/USDT"])
 
