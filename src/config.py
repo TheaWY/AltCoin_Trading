@@ -303,6 +303,10 @@ SETUP_TSMOM_ENABLED = _env_bool("SETUP_TSMOM_ENABLED", default=False)
 SETUP_FUNDING_ENABLED = _env_bool("SETUP_FUNDING_ENABLED", default=True)
 # Volume spike is noisy as a standalone entry; default to confirmation modifier only.
 SETUP_VOLUME_ENABLED = _env_bool("SETUP_VOLUME_ENABLED", default=False)
+# 7d rel-strength-vs-BTC rotation (event_study.py round 2: n=529/530, +1.46%/+2.88%
+# effect at 24h/72h, CI excludes zero, consistent across regimes). Off until a
+# walk-forward backtest of this exact setup beats the champion.
+SETUP_REL_STRENGTH_ENABLED = _env_bool("SETUP_REL_STRENGTH_ENABLED", default=False)
 
 # Minimum confidence to treat a setup as tradable.
 # Live/future stages keep MIN_CONFIDENCE. Paper can run a lower gate to collect

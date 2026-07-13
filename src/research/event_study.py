@@ -164,6 +164,12 @@ SIGNALS: dict[str, Callable[[str, int], list[int]]] = {
     "volume_zscore_3plus": sig_volume_spike,
 }
 
+try:
+    from src.research.candle_signals import EXTRA_SIGNALS
+    SIGNALS.update(EXTRA_SIGNALS)
+except ImportError:
+    pass
+
 
 # ---------------------------------------------------------------------------
 # Forward returns, baseline, regimes, bootstrap

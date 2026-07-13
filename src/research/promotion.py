@@ -47,12 +47,30 @@ from src.research.robust_stats import deflated_sharpe, sharpe
 
 # Only these env keys can ever be changed by automated promotion. Everything
 # else (credentials, DB, direction policy, capital) is out of reach by design.
+#
+# CONFLUENCE_, LSR_, SETUP_*, BREAKOUT_, TSMOM_, and ACTIVE_STRATEGY are
+# deliberately excluded even though they're varied in research_space.yaml:
+# scripts/backtest.py (what every experiment runs through) calls
+# strategy.generate_signal() and never reads these -- only the live-only
+# evaluate_symbol() path (ENTRY_DECISION_ENGINE=evaluation) does. A backtest
+# expectancy computed without ever exercising these keys is not evidence
+# about them; promoting one would silently change live behavior on the
+# strength of a number that had nothing to do with it. Re-add only once a
+# validation path actually exercises evaluate_symbol().
 OVERRIDE_KEY_PREFIXES = (
-    "MEANREV_", "CONFLUENCE_", "LSR_", "SETUP_", "SCAN_", "COOLDOWN_",
-    "FEE_", "FUNDING_RATE_", "CARRY_", "POS_SHORT_", "BREAKOUT_", "TSMOM_",
+    "MEANREV_", "SCAN_", "COOLDOWN_", "FEE_", "FUNDING_RATE_", "CARRY_", "POS_SHORT_",
 )
 OVERRIDE_KEY_EXACT = frozenset(
-    {"ACTIVE_STRATEGY", "MIN_CONFIDENCE", "MAX_OPEN_POSITIONS", "CATEGORY_STRATEGY_MODE"}
+    {
+        "MIN_CONFIDENCE", "MAX_OPEN_POSITIONS", "CATEGORY_STRATEGY_MODE",
+        # Exception to the SETUP_ ban above: this one setup's exact entry
+        # logic (src/research/rel_strength.py) is exercised by both
+        # _rel_strength_setup() (evaluation.py, live) and
+        # RelStrengthRotationStrategy (strategies/, the ACTIVE_STRATEGY
+        # backtest path) -- unlike its siblings, a backtest expectancy for
+        # this key IS evidence about this key.
+        "SETUP_REL_STRENGTH_ENABLED",
+    }
 )
 
 OVERRIDES_PATH = config.DATA_DIR / "config_overrides.json"

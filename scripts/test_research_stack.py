@@ -77,7 +77,11 @@ with get_storage()._connect() as conn:
 results = event_study.run(["BTC/USDT"], days=200)
 check("event study produces results", len(results) > 0, f"{len(results)} rows")
 signals_seen = {r["signal"] for r in results}
-check("all 5 signals evaluated", len(signals_seen) == 5, str(sorted(signals_seen)))
+check(
+    "all signals evaluated",
+    len(signals_seen) == len(event_study.SIGNALS) and len(event_study.SIGNALS) >= 10,
+    str(sorted(signals_seen)),
+)
 with get_storage()._connect() as conn:
     n = conn.execute("SELECT COUNT(*) FROM event_study_results").fetchone()[0]
 check("results persisted to table", n == len(results), f"{n} rows")

@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -18,10 +19,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
-from src.engine.evaluation import STRATEGY_CATEGORY_MAP  # noqa: E402
+from src.engine.evaluation import STRATEGY_CATEGORY_MAP, evaluate_symbol  # noqa: E402
+from src.engine.regime import btc_regime  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
 from src.research.market_categories import category_at  # noqa: E402
-from src.strategies.base import SignalDirection  # noqa: E402
+from src.strategies.base import Signal, SignalDirection  # noqa: E402
 from src.strategies.funding_carry import settlement_rates  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
@@ -238,6 +240,16 @@ class BacktestPortfolio:
                 return "stop_loss"
             if price <= trade.take_profit:
                 return "take_profit"
+
+        # Mirrors src/engine/paper_trader.py's time_stop so a swing-style
+        # signal (e.g. rel_strength_rotation) is actually exit-simulated in
+        # backtest the same way live would apply it -- without this, no
+        # strategy's max-hold cap was ever exercised by walk-forward research.
+        max_hours = config.max_hold_hours_for_style((trade.metadata or {}).get("style"))
+        if max_hours > 0:
+            age_hours = (timestamp - trade.opened_at) / 3600.0
+            if age_hours >= max_hours:
+                return "time_stop"
         return None
 
     def _realized_pnl(
@@ -409,6 +421,29 @@ class SnapshotStorage:
         )
 
 
+# Strategies validated through the ACTUAL live decision function
+# (evaluate_symbol) instead of BaseStrategy.generate_signal(). Narrow,
+# deliberate exception -- see BacktestEngine._evaluation_engine_signal.
+# The other five strategies still test via generate_signal(); this does not
+# change how they're validated or re-open the backtest<->evaluate_symbol
+# path-divergence question in general (see research_decisions:
+# backtest_evaluate_symbol_realignment_parked).
+EVALUATION_ENGINE_STRATEGIES = frozenset({"rel_strength_rotation"})
+
+# Setup toggles forced off so evaluate_symbol's only possible verdict is the
+# one EVALUATION_ENGINE_STRATEGIES member being tested -- otherwise a
+# walk-forward run would be measuring the whole confluence ensemble, not the
+# one setup under test. Two groups: most setups gate on a real config.py
+# module attribute; SETUP_FAILED_PUMP_ENABLED has none -- _failed_pump_short_
+# setup reads os.getenv directly every call (see evaluation.py's
+# _env_bool_dynamic), so it only needs the env var forced, not a config attr.
+_OTHER_LIVE_SETUP_FLAGS = (
+    "SETUP_MEANREV_ENABLED", "SETUP_BREAKOUT_ENABLED", "SETUP_TSMOM_ENABLED",
+    "SETUP_VOLUME_ENABLED", "SETUP_FUNDING_ENABLED",
+)
+_OTHER_LIVE_SETUP_ENV_ONLY_FLAGS = ("SETUP_FAILED_PUMP_ENABLED",)
+
+
 class BacktestEngine:
     def __init__(
         self,
@@ -425,7 +460,76 @@ class BacktestEngine:
         self.end_ts = int(end.timestamp())
         self.symbols = symbols
         self.strategy_name = strategy_name
+        # For EVALUATION_ENGINE_STRATEGIES this is only used so get_strategy()
+        # validates the name; generate_signal() is bypassed in run() below in
+        # favor of _evaluation_engine_signal.
         self.strategy = get_strategy(strategy_name)
+
+    def _evaluation_engine_signal(self, ts: int, symbol: str) -> Signal | None:
+        """Route through evaluate_symbol() (what live actually runs under
+        ENTRY_DECISION_ENGINE=evaluation) instead of a BaseStrategy
+        reimplementation, so backtest validates the real decision -- entry
+        gate, confluence, direction/style -- not just an equivalent entry
+        criterion. All setups except the one under test are forced off for
+        the duration of this call so its verdict is the only possible one.
+
+        Applies the SAME tradable gate live's _entry_candidates_from_evaluation
+        uses (result["tradable"], which already folds in ENTRY_MIN_CONFIDENCE)
+        -- not the separate AltAnalyzer/MIN_CONFIDENCE gate the generate_signal()
+        path below uses, which live's evaluation engine never consults.
+
+        Deliberate simplification: calibration is skipped (empty map), not
+        computed point-in-time. build_calibration_map()'s underlying query
+        (Storage.get_strategy_stats) has no `before=` cutoff, so calling it
+        for real inside a walk-forward loop would leak future trade outcomes
+        into past entry decisions. Calibration only adjusts the confidence
+        NUMBER, not direction or entry, so skipping it is documented and
+        bounded rather than a silent lookahead gap.
+        """
+        snapshot = SnapshotStorage(self.storage, ts, None)
+        category_row = category_at(self.storage, symbol, ts)
+        category = (category_row or {}).get("category")
+        regime = btc_regime(snapshot)
+        btc_rows = snapshot.get_prices(config.SYMBOL, limit=720, timeframe="1h")
+
+        all_flags = _OTHER_LIVE_SETUP_FLAGS + _OTHER_LIVE_SETUP_ENV_ONLY_FLAGS
+        saved_attr = {name: getattr(config, name) for name in _OTHER_LIVE_SETUP_FLAGS}
+        saved_env = {name: os.environ.get(name) for name in all_flags}
+        try:
+            for name in _OTHER_LIVE_SETUP_FLAGS:
+                setattr(config, name, False)
+            for name in all_flags:
+                os.environ[name] = "false"
+            result = evaluate_symbol(
+                snapshot, symbol, btc_rows, regime=regime, calibration={}, category=category
+            )
+        finally:
+            for name in _OTHER_LIVE_SETUP_FLAGS:
+                setattr(config, name, saved_attr[name])
+            for name in all_flags:
+                if saved_env[name] is None:
+                    os.environ.pop(name, None)
+                else:
+                    os.environ[name] = saved_env[name]
+
+        if not result.get("tradable"):
+            return None
+        verdict = result.get("verdict")
+        if not verdict or verdict.get("direction") not in ("LONG", "SHORT"):
+            return None
+        last_price = (result.get("metrics") or {}).get("last_price")
+        if last_price is None:
+            return None
+        return Signal(
+            direction=SignalDirection(verdict["direction"]),
+            reason=verdict.get("reason", ""),
+            symbol=symbol,
+            entry_price=float(last_price),
+            # verdict["style"] is the raw Korean label ("스윙") --
+            # config.normalize_holding_style() accepts it directly, same as
+            # the live path, so no translation needed here.
+            metadata={"style": verdict.get("style")},
+        )
 
     def run(self) -> dict[str, Any]:
         prices_by_symbol = self._load_prices()
@@ -455,6 +559,37 @@ class BacktestEngine:
             portfolio.check_exits(current_prices, ts)
 
             for symbol in self.symbols:
+                if self.strategy_name in EVALUATION_ENGINE_STRATEGIES:
+                    # Self-contained: evaluate_symbol() already applied the
+                    # real entry gate (ENTRY_MIN_CONFIDENCE via `tradable`),
+                    # confluence, and style -- the shared AltAnalyzer
+                    # confidence path below is a DIFFERENT scoring system
+                    # live's evaluation engine never consults, so it must not
+                    # also gate here.
+                    signal = self._evaluation_engine_signal(ts, symbol)
+                    if signal is None:
+                        continue
+                    category_allowed, category_name, category_checked, category_found = (
+                        _strategy_category_allowed(self.storage, symbol, ts, self.strategy_name)
+                    )
+                    category_checks += 1 if category_checked else 0
+                    category_present += 1 if category_found else 0
+                    if not category_allowed:
+                        continue
+                    signal_count += 1
+                    confidence_pass_count += 1
+                    opened = portfolio.open_trade(
+                        symbol,
+                        signal.direction.value,
+                        float(signal.entry_price),
+                        ts,
+                        strategy=self.strategy_name,
+                        metadata=signal.metadata,
+                    )
+                    if opened:
+                        opened_count += 1
+                    continue
+
                 # Same data path as live trading: the snapshot hides rows
                 # after `ts`, and gather_strategy_data fetches exactly what
                 # the strategy declares in get_required_data().

@@ -8,6 +8,7 @@ from src.strategies.funding_rate import FundingRateStrategy
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.momentum import MomentumStrategy
 from src.strategies.positioning_short import PositioningShortStrategy
+from src.strategies.rel_strength_rotation import RelStrengthRotationStrategy
 from src.strategies.volume_spike import VolumeSpikeStrategy
 
 _REGISTRY: dict[str, type[BaseStrategy]] = {
@@ -16,6 +17,7 @@ _REGISTRY: dict[str, type[BaseStrategy]] = {
     MeanReversionStrategy.name: MeanReversionStrategy,
     MomentumStrategy.name: MomentumStrategy,
     PositioningShortStrategy.name: PositioningShortStrategy,
+    RelStrengthRotationStrategy.name: RelStrengthRotationStrategy,
     VolumeSpikeStrategy.name: VolumeSpikeStrategy,
 }
 

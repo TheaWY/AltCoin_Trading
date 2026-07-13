@@ -7,7 +7,7 @@
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
 
 axes:
-  ACTIVE_STRATEGY: [momentum, volume_spike, mean_reversion, funding_rate]
+  ACTIVE_STRATEGY: [rel_strength_rotation, momentum, volume_spike, mean_reversion, funding_rate]
   ALLOW_LONG: [true, false]
   CATEGORY_STRATEGY_MODE: ["off", "matched"]
 
@@ -36,6 +36,17 @@ axes:
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:
+  # Top priority per user decision 2026-07-13: event_study.py round 2 found
+  # the only signal with a real, regime-consistent, CI-clean effect (n=529/530,
+  # +1.46%/+2.88% at 24h/72h). LONG-only by construction (ALLOW_LONG:false
+  # produces zero possible trades for this strategy) -- listed first so those
+  # configs rank ahead of the direction-incompatible ALLOW_LONG:false ones,
+  # which still get queued (for completeness) but sink to whatever priority
+  # the second, unqualified entry below gives them.
+  - name: "rel_strength_rotation_long"
+    match: { ACTIVE_STRATEGY: rel_strength_rotation, ALLOW_LONG: true }
+  - name: "rel_strength_rotation_any"
+    match: { ACTIVE_STRATEGY: rel_strength_rotation }
   - name: "category_strategy_momentum"
     match: { CATEGORY_STRATEGY_MODE: "matched", ACTIVE_STRATEGY: momentum }
   - name: "category_strategy_mean_reversion"

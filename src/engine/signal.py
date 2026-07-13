@@ -8,6 +8,7 @@ from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage, signal_row_from_result
+from src.research import rel_strength
 from src.strategies.base import BaseStrategy, Signal
 from src.strategies.registry import get_strategy
 
@@ -27,6 +28,15 @@ _DATA_FETCHERS = {
     # positioning_short: 90d of hourly ratio rows, 30d of hourly OI rows
     "ls_ratio_history": lambda storage, symbol: storage.get_ls_ratio_history(symbol, limit=2160) or None,
     "open_interest_history": lambda storage, symbol: storage.get_open_interest_history(symbol, limit=720) or None,
+    # rel_strength_rotation: bounded ~2y lookback for both the symbol and BTC
+    # (see src/research/rel_strength.py LOOKBACK_BARS) -- symmetric with the
+    # rel_strength_own/btc naming used by _rel_strength_setup() in evaluation.py.
+    "rel_strength_own_history": lambda storage, symbol: (
+        storage.get_prices(symbol, limit=rel_strength.LOOKBACK_BARS, timeframe="1h") or None
+    ),
+    "rel_strength_btc_history": lambda storage, symbol: (
+        storage.get_prices(config.SYMBOL, limit=rel_strength.LOOKBACK_BARS, timeframe="1h") or None
+    ),
 }
 
 

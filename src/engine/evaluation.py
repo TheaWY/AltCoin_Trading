@@ -19,6 +19,11 @@ from src.data.storage import Storage, get_storage
 from src.engine import indicators
 from src.engine.calibration import build_calibration_map, calibrate_score
 from src.engine.regime import btc_regime, direction_blocked
+from src.research.rel_strength import LOOKBACK_BARS as REL_STRENGTH_LOOKBACK_BARS
+from src.research.rel_strength import MIN_HISTORY as REL_STRENGTH_MIN_HISTORY
+from src.research.rel_strength import PCTL as REL_STRENGTH_PCTL
+from src.research.rel_strength import SEVEN_DAYS_S as _SEVEN_DAYS_S
+from src.research.rel_strength import percentile_rank, spread
 
 STRATEGY_CATEGORY_MAP = {
     "momentum": {"liquid_trend", "large_beta"},
@@ -28,6 +33,9 @@ STRATEGY_CATEGORY_MAP = {
     "funding_carry": {"crowded_funding"},
     "positioning_short": {"crowded_funding"},
     "failed_pump_short": {"liquid_trend", "volume_surge"},
+    # rel_strength_rotation deliberately absent: the event study that backs it
+    # was not run per-category, so in CATEGORY_STRATEGY_MODE="matched" it is
+    # blocked (empty allowed set) rather than guessed at.
 }
 
 STYLE_SCALP = "단타"
@@ -325,6 +333,60 @@ def _tsmom28_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _rel_strength_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """스윙: 7d relative-strength-vs-BTC rotation continuation.
+
+    event_study.py round 2 (src/research/candle_signals.py:rel_strength_95_vs_btc):
+    n=529/530, +1.46%/+2.88% effect at 24h/72h, CI excludes zero, consistent
+    across BTC up/down/flat regimes. Fails at 4h -- multi-hour-to-day effect,
+    not a scalp, hence STYLE_SWING. Off until SETUP_REL_STRENGTH_ENABLED and a
+    walk-forward backtest of this exact entry beats the champion.
+    """
+    if not config.SETUP_REL_STRENGTH_ENABLED:
+        return None
+    if symbol == config.SYMBOL:
+        return None
+
+    sym_rows = storage.get_prices(symbol, limit=REL_STRENGTH_LOOKBACK_BARS, timeframe="1h")
+    btc_rows = storage.get_prices(config.SYMBOL, limit=REL_STRENGTH_LOOKBACK_BARS, timeframe="1h")
+    if not sym_rows or not btc_rows:
+        return None
+
+    sym_idx = {int(r["timestamp"]): float(r["close"]) for r in sym_rows}
+    btc_idx = {int(r["timestamp"]): float(r["close"]) for r in btc_rows}
+
+    history: list[float] = []
+    current: float | None = None
+    latest_ts = int(sym_rows[-1]["timestamp"])
+    for r in sym_rows:
+        ts = int(r["timestamp"])
+        prior_ts = ts - _SEVEN_DAYS_S
+        value = spread(sym_idx.get(ts), sym_idx.get(prior_ts), btc_idx.get(ts), btc_idx.get(prior_ts))
+        if value is None:
+            continue
+        if ts == latest_ts:
+            current = value
+            break
+        history.append(value)
+
+    if current is None or len(history) < REL_STRENGTH_MIN_HISTORY:
+        return None
+
+    rank = percentile_rank(current, history)
+    if rank < REL_STRENGTH_PCTL:
+        return None
+
+    return {
+        "style": STYLE_SWING,
+        "strategy": "rel_strength_rotation",
+        "direction": "LONG",
+        "score": 0.58,
+        "reason": f"7d 대비 BTC 상대강도 스프레드 {current:+.1%} (상위 {(1 - rank) * 100:.1f}%) — 로테이션 지속 롱",
+    }
+
+
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
     pct_7d = metrics["pct_7d"]
@@ -572,6 +634,7 @@ def evaluate_symbol(
             _swing_setup(metrics),
             _breakout_setup(metrics, funding_rate),
             _tsmom28_setup(metrics),
+            _rel_strength_setup(storage, symbol, metrics),
         ):
             if setup is None:
                 continue
