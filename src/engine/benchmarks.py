@@ -81,9 +81,17 @@ def _ensure_schema(storage: Storage) -> None:
                 timestamp INTEGER NOT NULL,
                 equity REAL NOT NULL,
                 return_pct REAL NOT NULL,
+                deployed_pct REAL,
                 UNIQUE(book, seed, timestamp)
             )
         """)
+        # deployed_pct added 2026-07-14 for exposure-adjusted comparison --
+        # a strategy holding 80% cash must not get credit for "beating" a
+        # fully-invested benchmark by losing less.
+        try:
+            conn.execute("ALTER TABLE benchmark_equity ADD COLUMN deployed_pct REAL")
+        except Exception:  # noqa: BLE001 -- column already exists
+            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS benchmark_meta (
                 book TEXT PRIMARY KEY,
@@ -189,13 +197,15 @@ def _init_alt_hold(storage: Storage) -> dict[str, Any] | None:
     return meta
 
 
-def _snapshot(storage: Storage, book: str, seed: int, ts: int, equity: float, capital: float) -> None:
+def _snapshot(storage: Storage, book: str, seed: int, ts: int, equity: float,
+              capital: float, deployed_pct: float | None = None) -> None:
     return_pct = (equity / capital - 1.0) * 100.0 if capital else 0.0
     with storage._connect() as conn:  # noqa: SLF001
         conn.execute(
-            "INSERT OR IGNORE INTO benchmark_equity (book, seed, timestamp, equity, return_pct) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (book, seed, ts, equity, return_pct),
+            "INSERT OR IGNORE INTO benchmark_equity "
+            "(book, seed, timestamp, equity, return_pct, deployed_pct) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (book, seed, ts, equity, return_pct, deployed_pct),
         )
 
 
@@ -212,31 +222,28 @@ def _hold_book_equity(storage: Storage, meta: dict[str, Any]) -> float:
     return meta["qty"] * price
 
 
-def _strategy_open_rate_per_cycle(storage: Storage, now_ts: int) -> float:
-    """Strategy opens per cycle over the trailing 14 days -- the frequency
-    the random books are matched to."""
-    since = now_ts - 14 * 86400
+def _book_epoch(storage: Storage) -> int:
+    state = storage.get_portfolio_state()
+    if not state:
+        return 0
+    return int(state.get("benchmark_started_at") or 0)
+
+
+def _new_strategy_entries(storage: Storage, since_ts: int, book_epoch: int) -> list[dict[str, Any]]:
+    """Strategy trades opened since the last benchmark cycle, CURRENT book
+    only. These are the entry events the random books mirror: same moment,
+    same direction, same style -- random SYMBOL. Deployment-matching by
+    construction (2026-07-14): the earlier Bernoulli frequency-matching let
+    random deployment drift arbitrarily from the strategy's, which made the
+    verdict measure exposure, not signal quality."""
+    floor_ts = max(since_ts, book_epoch)
     with storage._connect() as conn:  # noqa: SLF001
-        row = conn.execute(
-            "SELECT COUNT(*) AS n, MIN(opened_at) AS first FROM paper_trades WHERE opened_at >= ?",
-            (since,),
-        ).fetchone()
-    d = dict(row)
-    n = int(d["n"] or 0)
-    if n == 0 or not d["first"]:
-        return 0.0
-    span_s = max(now_ts - int(d["first"]), 3600)
-    cycles = span_s / (config.COLLECTION_INTERVAL_MINUTES * 60)
-    return n / max(cycles, 1.0)
-
-
-def _strategy_direction_mix(storage: Storage) -> float:
-    """P(LONG) from the strategy's recent trades; 0.5 default."""
-    trades = storage.get_recent_trades(50)
-    dirs = [t["direction"] for t in trades if t.get("direction") in ("LONG", "SHORT")]
-    if not dirs:
-        return 0.5
-    return dirs.count("LONG") / len(dirs)
+        rows = conn.execute(
+            "SELECT id, symbol, direction, style, opened_at FROM paper_trades "
+            "WHERE opened_at > ? ORDER BY opened_at",
+            (floor_ts,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def _seed_storage(seed: int) -> Storage:
@@ -246,10 +253,13 @@ def _seed_storage(seed: int) -> Storage:
 
 def _run_random_book(
     main: Storage, seed: int, symbols: list[str], now_ts: int,
-    open_rate: float, p_long: float, prices: dict[str, float],
-) -> float:
-    """One cycle of one random book through the REAL PaperTrader. Returns
-    the book's current equity."""
+    mirror_entries: list[dict[str, Any]], prices: dict[str, float],
+) -> tuple[float, float]:
+    """One cycle of one random book through the REAL PaperTrader. Entries
+    MIRROR the strategy's entry events (same moment, same direction, same
+    style -- random symbol), so deployment stays matched; exits run through
+    the identical machinery on the random symbol. Returns (equity,
+    deployed_pct)."""
     from src.engine.paper_trader import PaperTrader  # noqa: PLC0415 -- avoid import cycle
 
     book = _seed_storage(seed)
@@ -264,24 +274,29 @@ def _run_random_book(
         if price:
             trader.check_open_trades_for_symbol(trade["symbol"], price)
 
-    # Entry draw: deterministic per (seed, cycle bucket).
-    bucket = now_ts // (config.COLLECTION_INTERVAL_MINUTES * 60)
-    rng = _random.Random(f"benchmark:{seed}:{bucket}")
-    if open_rate > 0 and rng.random() < min(open_rate, 1.0):
+    for entry in mirror_entries:
+        # Deterministic per (seed, mirrored trade): re-running a cycle
+        # reproduces the same picks.
+        rng = _random.Random(f"benchmark:{seed}:{entry['id']}")
         candidates = [s for s in symbols if prices.get(s)]
-        if candidates:
-            symbol = rng.choice(candidates)
-            direction = "LONG" if rng.random() < p_long else "SHORT"
-            if config.direction_allowed(direction):
-                trader.process_signal(
-                    {"symbol": symbol, "strategy": "random_benchmark",
-                     "direction": direction, "reason": f"random seed={seed}",
-                     "style": "scalp"},
-                    prices[symbol],
-                )
+        if not candidates:
+            continue
+        symbol = rng.choice(candidates)
+        if not config.direction_allowed(entry["direction"]):
+            continue
+        trader.process_signal(
+            {"symbol": symbol, "strategy": "random_benchmark",
+             "direction": entry["direction"],
+             "reason": f"mirror of strategy trade id={entry['id']} seed={seed}",
+             "style": entry.get("style") or "scalp"},
+            prices[symbol],
+        )
 
     summary = trader.summary(prices.get(config.SYMBOL))
-    return float(summary.get("equity") or 0.0)
+    equity = float(summary.get("equity") or 0.0)
+    cash = float(summary.get("cash") or 0.0)
+    deployed = (1.0 - cash / equity) if equity > 0 else 0.0
+    return equity, max(0.0, min(1.0, deployed))
 
 
 def run_benchmark_cycle(
@@ -289,6 +304,7 @@ def run_benchmark_cycle(
     symbols: list[str],
     strategy_equity: float | None,
     now_ts: int | None = None,
+    strategy_deployed_pct: float | None = None,
 ) -> dict[str, Any]:
     """Called once per trading cycle, AFTER the strategy book updates.
     Snapshots all four books into benchmark_equity. Never raises -- a
@@ -300,17 +316,20 @@ def run_benchmark_cycle(
         capital = config.PAPER_STARTING_CAPITAL
 
         if strategy_equity is not None:
-            _snapshot(main, "strategy", -1, now_ts, strategy_equity, capital)
+            _snapshot(main, "strategy", -1, now_ts, strategy_equity, capital,
+                      strategy_deployed_pct)
             result["snapshots"] += 1
 
         btc_meta = _get_meta(main, "btc_hold") or _init_btc_hold(main)
         if btc_meta:
-            _snapshot(main, "btc_hold", -1, now_ts, _hold_book_equity(main, btc_meta), capital)
+            _snapshot(main, "btc_hold", -1, now_ts, _hold_book_equity(main, btc_meta),
+                      capital, 1.0)
             result["snapshots"] += 1
 
         alt_meta = _get_meta(main, "alt_hold") or _init_alt_hold(main)
         if alt_meta:
-            _snapshot(main, "alt_hold", -1, now_ts, _hold_book_equity(main, alt_meta), capital)
+            _snapshot(main, "alt_hold", -1, now_ts, _hold_book_equity(main, alt_meta),
+                      capital, 1.0)
             result["snapshots"] += 1
 
         prices: dict[str, float] = {}
@@ -319,16 +338,26 @@ def run_benchmark_cycle(
             if row:
                 prices[sym] = float(row["close"])
 
-        open_rate = _strategy_open_rate_per_cycle(main, now_ts)
-        p_long = _strategy_direction_mix(main)
+        # Entry-event mirroring: new strategy trades since the last
+        # benchmark snapshot become this cycle's mirror entries.
+        last_ts_row = None
+        with main._connect() as conn:  # noqa: SLF001
+            last_ts_row = conn.execute(
+                "SELECT MAX(timestamp) AS mx FROM benchmark_equity WHERE book = 'random'"
+            ).fetchone()
+        last_ts = int(dict(last_ts_row)["mx"] or 0) if last_ts_row else 0
+        mirror_entries = _new_strategy_entries(main, last_ts, _book_epoch(main))
+
         for seed in range(N_RANDOM_SEEDS):
             try:
-                equity = _run_random_book(main, seed, symbols, now_ts, open_rate, p_long, prices)
-                _snapshot(main, "random", seed, now_ts, equity, capital)
+                equity, deployed = _run_random_book(
+                    main, seed, symbols, now_ts, mirror_entries, prices
+                )
+                _snapshot(main, "random", seed, now_ts, equity, capital, deployed)
                 result["snapshots"] += 1
             except Exception:  # noqa: BLE001 -- one bad seed must not stop the rest
                 logger.exception("random benchmark seed %s failed", seed)
-        result["open_rate"] = round(open_rate, 4)
+        result["mirrored_entries"] = len(mirror_entries)
     except Exception:  # noqa: BLE001
         logger.exception("benchmark cycle failed")
         result["error"] = True
@@ -351,7 +380,8 @@ def benchmark_summary(main: Storage, points: int = 200) -> dict[str, Any] | None
         _ensure_schema(main)
         with main._connect() as conn:  # noqa: SLF001
             rows = conn.execute(
-                "SELECT book, seed, timestamp, return_pct FROM benchmark_equity ORDER BY timestamp ASC"
+                "SELECT book, seed, timestamp, return_pct, equity, deployed_pct "
+                "FROM benchmark_equity ORDER BY timestamp ASC"
             ).fetchall()
         if not rows:
             return None
@@ -359,11 +389,16 @@ def benchmark_summary(main: Storage, points: int = 200) -> dict[str, Any] | None
 
         by_ts_random: dict[int, list[float]] = {}
         series: dict[str, list[tuple[int, float]]] = {"strategy": [], "btc_hold": [], "alt_hold": []}
+        deployed: dict[str, list[float]] = {"strategy": [], "btc_hold": [], "alt_hold": [], "random": []}
+        equity_series: dict[str, list[float]] = {"strategy": [], "btc_hold": [], "alt_hold": []}
         for r in rows:
+            if r.get("deployed_pct") is not None and r["book"] in deployed:
+                deployed[r["book"]].append(float(r["deployed_pct"]))
             if r["book"] == "random":
                 by_ts_random.setdefault(r["timestamp"], []).append(r["return_pct"])
             elif r["book"] in series:
                 series[r["book"]].append((r["timestamp"], r["return_pct"]))
+                equity_series[r["book"]].append(float(r["equity"]))
 
         band = []
         for ts in sorted(by_ts_random):
@@ -393,11 +428,45 @@ def benchmark_summary(main: Storage, points: int = 200) -> dict[str, Any] | None
             else:
                 verdict, verdict_color = "시장 대비 우위", "green"
 
+        def _avg(vals: list[float]) -> float | None:
+            return sum(vals) / len(vals) if vals else None
+
+        def _sharpe(equities: list[float], min_n: int = 30) -> float | None:
+            """Per-snapshot Sharpe, annualized from the snapshot cadence.
+            None until enough history exists -- a 10-snapshot Sharpe is noise
+            wearing a suit."""
+            if len(equities) < min_n:
+                return None
+            rets = [(b - a) / a for a, b in zip(equities, equities[1:]) if a]
+            if not rets:
+                return None
+            mean = sum(rets) / len(rets)
+            var = sum((x - mean) ** 2 for x in rets) / len(rets)
+            if var <= 0:
+                return None
+            periods_per_year = 365 * 24 * 60 / config.COLLECTION_INTERVAL_MINUTES
+            return mean / (var ** 0.5) * (periods_per_year ** 0.5)
+
+        avg_deployed = {k: _avg(v) for k, v in deployed.items()}
+
+        def _exposure_adjusted(book: str) -> float | None:
+            ret, dep = latest.get(book), avg_deployed.get(book)
+            if ret is None or not dep or dep < 0.02:
+                return None
+            return ret / dep
+
         return {
             "series": {k: _downsample(v) for k, v in series.items()},
             "random_band": _downsample(band),
             "latest": {**latest, "random_p25": random_p25, "random_p50": random_p50,
                        "random_p75": random_p75},
+            "avg_deployed_pct": {k: (round(v * 100, 1) if v is not None else None)
+                                 for k, v in avg_deployed.items()},
+            "exposure_adjusted_return": {k: (round(v, 3) if v is not None else None)
+                                         for k in ("strategy", "btc_hold", "alt_hold")
+                                         for v in [_exposure_adjusted(k)]},
+            "sharpe": {k: (round(s, 2) if s is not None else None)
+                       for k, v in equity_series.items() for s in [_sharpe(v)]},
             "verdict": verdict,
             "verdict_color": verdict_color,
         }

@@ -63,6 +63,10 @@ OVERRIDE_KEY_PREFIXES = (
 OVERRIDE_KEY_EXACT = frozenset(
     {
         "MIN_CONFIDENCE", "MAX_OPEN_POSITIONS", "CATEGORY_STRATEGY_MODE",
+        # Capital constraints (risk_budget.py): read identically by both
+        # engines' _capital_gate at every entry, so backtest expectancy IS
+        # evidence about them.
+        "TOTAL_RISK_BUDGET_PCT", "MAX_NET_BETA_EXPOSURE",
         # Exceptions to the SETUP_ ban above: scripts/backtest.py's
         # EVALUATION_ENGINE_STRATEGIES routes these ACTIVE_STRATEGY values
         # through evaluate_symbol() directly (the same function live's

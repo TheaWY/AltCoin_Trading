@@ -453,6 +453,29 @@ class EntryGateParityTests(_ParityBase):
         self.assertEqual(live_retry, bt_retry is not None)
         self.assertFalse(live_retry)
 
+    def test_cooldown_scoped_to_current_book(self) -> None:
+        """A trade from the ARCHIVED (pre-baseline-reset) book must not arm
+        the cooldown for the current book -- backtest never sees prior books
+        by construction, so live counting them was a parity break (and froze
+        the fresh book at ~20% deployment on 2026-07-14). Cooldown must
+        still bind for current-book trades."""
+        config.COOLDOWN_HOURS_PER_SYMBOL = 24
+        now = int(time.time())
+        storage, trader, portfolio = self._engines(now)
+        # Archived-book trade opened 1h ago, book epoch stamped AFTER it.
+        storage.insert_paper_trade(_live_trade_row(
+            "AAA/USDT", "LONG", 1.0, 100.0, 0.95, 1.05, now - HOUR))
+        trader.check_open_trades_for_symbol("AAA/USDT", 0.5)  # close it
+        with storage._connect() as conn:  # noqa: SLF001
+            conn.execute(
+                "UPDATE portfolio_state SET benchmark_started_at = ? WHERE id = 1",
+                (now - 60,),
+            )
+        live_opened = self._live_open(trader)
+        bt_trade = portfolio.open_trade("AAA/USDT", "LONG", 1.0, now, strategy="parity_test")
+        self.assertEqual(live_opened, bt_trade is not None)
+        self.assertTrue(live_opened, "archived-book trade must not cooldown-lock the new book")
+
     def test_max_open_positions_refused_identically(self) -> None:
         config.MAX_OPEN_POSITIONS = 1
         now = int(time.time())

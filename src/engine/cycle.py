@@ -68,6 +68,11 @@ def _new_entry_funnel(symbols: list[str]) -> dict[str, Any]:
         "entered": 0,
         "slots_full": 0,
         "open_rejected": 0,
+        # Capital constraints (risk_budget.py) -- refusals here mean idle
+        # cash BY DESIGN, not a defect: quality gates passed but the risk
+        # budget or beta cap is full.
+        "blocked_risk_budget": 0,
+        "blocked_beta_exposure": 0,
         "symbols": len(symbols),
         "candidates": [],
     }
@@ -630,11 +635,21 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     float(candidate.get("confidence") or 0.0),
                 )
             else:
-                entry_funnel["open_rejected"] += 1
+                gate = opened.get("gate")
+                if gate == "risk_budget":
+                    entry_funnel["blocked_risk_budget"] += 1
+                elif gate == "beta_exposure":
+                    entry_funnel["blocked_beta_exposure"] += 1
+                elif gate == "position_too_small":
+                    entry_funnel["blocked_position_too_small"] = (
+                        entry_funnel.get("blocked_position_too_small", 0) + 1
+                    )
+                else:
+                    entry_funnel["open_rejected"] += 1
                 _record_candidate_stop(
                     entry_funnel,
                     symbol,
-                    "open_rejected",
+                    gate or "open_rejected",
                     json.dumps(opened, sort_keys=True, ensure_ascii=False)[:240],
                     float(candidate.get("confidence") or 0.0),
                 )
@@ -652,12 +667,19 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         from src.engine.benchmarks import run_benchmark_cycle
 
         strategy_equity = None
+        strategy_deployed = None
         try:
             summary = trader.summary(float(btc["close"]) if btc else None)
             strategy_equity = float(summary.get("equity") or 0.0) or None
+            if strategy_equity:
+                cash_now = float(summary.get("cash") or 0.0)
+                strategy_deployed = max(0.0, min(1.0, 1.0 - cash_now / strategy_equity))
         except Exception:
             logger.exception("Strategy equity snapshot for benchmarks failed")
-        benchmark_result = run_benchmark_cycle(storage, symbols, strategy_equity)
+        benchmark_result = run_benchmark_cycle(
+            storage, symbols, strategy_equity,
+            strategy_deployed_pct=strategy_deployed,
+        )
     except Exception:
         logger.exception("Benchmark cycle failed")
 

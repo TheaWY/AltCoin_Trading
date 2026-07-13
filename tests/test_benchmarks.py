@@ -106,23 +106,44 @@ class RandomBookDeterminismTests(unittest.TestCase):
             [draws2.random(), draws2.random()],
         )
 
-    def test_random_book_runs_real_paper_trader_isolated_from_live_tables(self) -> None:
+    def test_random_book_mirrors_entry_events_isolated_from_live_tables(self) -> None:
         main = _storage()
         now = int(time.time())
         _seed_market(main, now, n_alts=5)
         main.init_portfolio_state(1000.0, benchmark_btc_price=50_000.0)
 
         prices = {"BTC/USDT": 50_000.0, "ALT00/USDT": 1.0, "ALT01/USDT": 1.0}
-        # open_rate=1.0 forces an entry attempt on this cycle.
-        equity = benchmarks._run_random_book(
+        # One mirrored strategy entry -> the random book opens exactly one
+        # position (random symbol, same direction/style) via the REAL
+        # PaperTrader -- deployment-matched by construction.
+        mirror = [{"id": 42, "symbol": "ZZZ/USDT", "direction": "LONG",
+                   "style": "scalp", "opened_at": now}]
+        equity, deployed = benchmarks._run_random_book(
             main, seed=0, symbols=["ALT00/USDT", "ALT01/USDT"], now_ts=now,
-            open_rate=1.0, p_long=1.0, prices=prices,
+            mirror_entries=mirror, prices=prices,
         )
         self.assertGreater(equity, 0.0)
+        self.assertGreater(deployed, 0.0)
         # rule #7 by construction: the MAIN paper_trades table stays empty.
         self.assertEqual(main.count_open_trades(), 0)
         seed_book = benchmarks._seed_storage(0)
         self.assertEqual(seed_book.count_open_trades(), 1)
+
+    def test_no_strategy_entries_means_no_random_entries(self) -> None:
+        """Deployment matching cuts both ways: a strategy holding cash means
+        the random books hold cash too -- the control must not out-deploy
+        the thing it controls for."""
+        main = _storage()
+        now = int(time.time())
+        _seed_market(main, now, n_alts=3)
+        main.init_portfolio_state(1000.0, benchmark_btc_price=50_000.0)
+        prices = {"BTC/USDT": 50_000.0, "ALT00/USDT": 1.0}
+        equity, deployed = benchmarks._run_random_book(
+            main, seed=1, symbols=["ALT00/USDT"], now_ts=now,
+            mirror_entries=[], prices=prices,
+        )
+        self.assertEqual(deployed, 0.0)
+        self.assertEqual(benchmarks._seed_storage(1).count_open_trades(), 0)
 
 
 class VerdictChipTests(unittest.TestCase):

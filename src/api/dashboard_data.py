@@ -565,6 +565,12 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         benchmarks = benchmark_summary(storage)
     except Exception:
         benchmarks = None
+
+    state = storage.get_portfolio_state()
+    book_epoch = int(state.get("benchmark_started_at") or 0) if state else 0
+    all_closed = storage.get_recent_closed_trades(60)
+    closed_current = [t for t in all_closed if int(t.get("opened_at") or 0) >= book_epoch][:20]
+    closed_archived = [t for t in all_closed if int(t.get("opened_at") or 0) < book_epoch][:30]
     # Always return a portfolio object. The cash/start capital part does not
     # depend on BTC; BTC only affects the benchmark buy-and-hold comparison.
     portfolio = trader.summary(btc_price)
@@ -607,7 +613,14 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "portfolio": portfolio,
         "open_positions": open_positions,
         "recent_trades": storage.get_recent_trades(20),
-        "closed_trades": storage.get_recent_closed_trades(20),
+        # Closed trades are split at the book epoch (benchmark_started_at):
+        # the portfolio page shows only the CURRENT book; pre-reset trades
+        # belong to the archived book and render on the 히스토리 tab,
+        # explicitly labeled. Mixing them made the reset book look like it
+        # had history it doesn't have.
+        "closed_trades": closed_current,
+        "closed_trades_archived": closed_archived,
+        "book_epoch": book_epoch,
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": build_data_health(storage),
         "data_health": build_entry_gate_health(storage),

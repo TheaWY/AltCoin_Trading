@@ -23,6 +23,7 @@ from src.engine.analyzer import AltAnalyzer  # noqa: E402
 from src.engine.evaluation import STRATEGY_CATEGORY_MAP, evaluate_symbol  # noqa: E402
 from src.engine import execution_cost  # noqa: E402
 from src.engine import exits  # noqa: E402
+from src.engine import risk_budget  # noqa: E402
 from src.engine import hedge as hedge_engine  # noqa: E402
 from src.engine import indicators  # noqa: E402
 from src.engine.paper_trader import FakeDeltaNeutralError  # noqa: E402
@@ -110,6 +111,9 @@ class BacktestPortfolio:
     storage: Storage | None = None
     open_trades: list[BacktestTrade] = field(default_factory=list)
     closed_trades: list[BacktestTrade] = field(default_factory=list)
+    # (symbol, day-bucket) -> ex-ante beta memo for the capital gate;
+    # mirrors PaperTrader._beta_cache.
+    _beta_cache: dict = field(default_factory=dict)
 
     def _hedge_leg_for_open(
         self,
@@ -150,6 +154,74 @@ class BacktestPortfolio:
             "primary_notional": primary_notional,
             "hedge_notional": hedge_notional,
         }
+
+    def _symbol_beta(self, symbol: str, timestamp: int) -> float | None:
+        """Mirrors PaperTrader._symbol_beta -- ex-ante beta vs BTC over the
+        trailing HEDGE_BETA_LOOKBACK_H, point-in-time (before=timestamp)."""
+        if symbol == config.SYMBOL:
+            return 1.0
+        if self.storage is None:
+            return None
+        key = (symbol, timestamp // 86400)
+        if key not in self._beta_cache:
+            limit = config.HEDGE_BETA_LOOKBACK_H + 24
+            sym_rows = self.storage.get_prices(symbol, limit=limit, before=timestamp, timeframe="1h")
+            btc_rows = self.storage.get_prices(config.SYMBOL, limit=limit, before=timestamp, timeframe="1h")
+            self._beta_cache[key] = hedge_engine.ex_ante_beta(
+                sym_rows, btc_rows, config.HEDGE_BETA_LOOKBACK_H, config.HEDGE_BETA_MIN_POINTS
+            )
+        return self._beta_cache[key]
+
+    def _capital_gate(
+        self,
+        symbol: str,
+        direction: str,
+        price: float,
+        stop_loss: float,
+        notional: float,
+        equity: float,
+        hedge_leg: dict[str, Any] | None,
+        prices: dict[str, float],
+        timestamp: int,
+    ) -> tuple[str, str] | None:
+        """Mirrors PaperTrader._capital_gate exactly -- risk-budget + beta
+        gates through src/engine/risk_budget.py, same order, same semantics,
+        so live and backtest refuse the same entries (rule #2)."""
+        if not risk_budget.position_large_enough(notional, equity):
+            return ("position_too_small",
+                    f"notional {notional:.2f} < {risk_budget.MIN_POSITION_NOTIONAL_PCT:.0%} "
+                    f"of equity {equity:.2f} (dust; cash nearly exhausted)")
+        quantity = notional / price if price else 0.0
+        cand_risk = risk_budget.position_risk(direction, price, stop_loss, quantity)
+        open_risk = 0.0
+        legs: list[dict[str, Any]] = []
+        for t in self.open_trades:
+            cur = prices.get(t.symbol, t.entry_price)
+            open_risk += risk_budget.position_risk(t.direction, cur, t.stop_loss, t.quantity)
+            legs.append({"direction": t.direction, "notional": t.quantity * cur,
+                         "beta": self._symbol_beta(t.symbol, timestamp)})
+            if t.hedge_symbol:
+                legs.append({"direction": t.hedge_direction,
+                             "notional": float(t.hedge_quantity) * float(t.hedge_entry_price),
+                             "beta": self._symbol_beta(t.hedge_symbol, timestamp)})
+
+        if not risk_budget.risk_budget_allows(open_risk, cand_risk, equity, config.TOTAL_RISK_BUDGET_PCT):
+            return ("risk_budget",
+                    f"risk budget: open {open_risk:.2f} + candidate {cand_risk:.2f} "
+                    f"> {config.TOTAL_RISK_BUDGET_PCT:.0%} of equity {equity:.2f}")
+
+        cand_legs = [{"direction": direction, "notional": notional,
+                      "beta": self._symbol_beta(symbol, timestamp)}]
+        if hedge_leg is not None:
+            cand_legs.append({"direction": hedge_leg["hedge_direction"],
+                              "notional": hedge_leg["hedge_notional"],
+                              "beta": self._symbol_beta(hedge_leg["hedge_symbol"], timestamp)})
+        if config.MAX_NET_BETA_EXPOSURE < risk_budget.BETA_UNLIMITED:
+            net = risk_budget.net_beta_exposure([*legs, *cand_legs], equity)
+            if abs(net) > config.MAX_NET_BETA_EXPOSURE:
+                return ("beta_exposure",
+                        f"net beta exposure {net:+.2f} exceeds cap {config.MAX_NET_BETA_EXPOSURE:g}")
+        return None
 
     def _atr_pct(self, symbol: str, timestamp: int) -> float | None:
         """Mirrors PaperTrader._atr_pct exactly, point-in-time (before=timestamp
@@ -276,6 +348,11 @@ class BacktestPortfolio:
             )
         combined_notional = notional + (hedge_leg["hedge_notional"] if hedge_leg else 0.0)
         if notional <= 0 or self.cash < combined_notional:
+            return None
+
+        equity = self.value(prices, timestamp)
+        if self._capital_gate(symbol, direction, price, stop_loss, notional,
+                              equity, hedge_leg, prices, timestamp) is not None:
             return None
 
         # Slippage moves the FILL price; stop/take-profit keep the same

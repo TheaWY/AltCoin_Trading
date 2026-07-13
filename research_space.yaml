@@ -58,6 +58,14 @@ axes:
   # simulation exists; taker remains the conservative default.
   FEE_MODE: ["taker", "maker"]
 
+  # Capital constraints (src/engine/risk_budget.py, both engines, 2026-07-14).
+  # These replaced MAX_OPEN_POSITIONS as the binding constraint: total
+  # dollars-at-risk-to-stop over equity, and |beta-weighted net directional
+  # notional| over equity (999 = unlimited). The walk-forward judges the
+  # values, not a human.
+  TOTAL_RISK_BUDGET_PCT: [0.03, 0.05, 0.08]
+  MAX_NET_BETA_EXPOSURE: [0.5, 1.0, 999]
+
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:

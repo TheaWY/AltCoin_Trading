@@ -132,7 +132,19 @@ TRADING_SYMBOLS = [
 # universe. Research/bootstrap scripts can still use the full universe when
 # they call trading_symbols() directly.
 ACTIVE_TRADING_SYMBOLS_LIMIT = int(os.getenv("ACTIVE_TRADING_SYMBOLS_LIMIT", "20"))
-MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "5"))
+# 2026-07-14: no longer the binding constraint -- a position COUNT was an
+# arbitrary proxy for risk. Kept only as a high safety ceiling against
+# runaway bugs; the binding constraints are TOTAL_RISK_BUDGET_PCT and
+# MAX_NET_BETA_EXPOSURE below (src/engine/risk_budget.py, both engines).
+MAX_OPEN_POSITIONS = int(os.getenv("MAX_OPEN_POSITIONS", "20"))
+# Sum over open positions of dollars-at-risk-to-current-stop / equity.
+# Research axis: [0.03, 0.05, 0.08].
+TOTAL_RISK_BUDGET_PCT = float(os.getenv("TOTAL_RISK_BUDGET_PCT", "0.05"))
+# |direction-signed, beta-weighted notional / equity| cap -- the real
+# diversification constraint (measured effective breadth was 1.89: many alt
+# positions collapse into one leveraged BTC bet). >=999 = unlimited.
+# Research axis: [0.5, 1.0, 999].
+MAX_NET_BETA_EXPOSURE = float(os.getenv("MAX_NET_BETA_EXPOSURE", "1.0"))
 # Dashboard payload is expensive with hundreds of symbols; serve a cached
 # build for this many seconds (a finished trading cycle invalidates it).
 DASHBOARD_CACHE_SECONDS = int(os.getenv("DASHBOARD_CACHE_SECONDS", "45"))

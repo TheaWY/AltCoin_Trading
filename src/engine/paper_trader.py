@@ -12,6 +12,7 @@ from src.data.storage import Storage, get_storage
 from src.engine import execution_cost
 from src.engine import exits
 from src.engine import hedge as hedge_engine
+from src.engine import risk_budget
 from src.engine import indicators
 from src.strategies.base import SignalDirection
 
@@ -59,6 +60,9 @@ class PaperTrader:
 
     def __init__(self, storage: Storage | None = None) -> None:
         self.storage = storage or get_storage()
+        # (symbol, day-bucket) -> ex-ante beta, for the capital gate; betas
+        # move slowly, one estimate per symbol per day is plenty.
+        self._beta_cache: dict[tuple[str, int], float | None] = {}
 
     def ensure_portfolio(self, current_price: float | None = None) -> dict[str, Any]:
         state = self.storage.get_portfolio_state()
@@ -324,12 +328,99 @@ class PaperTrader:
         trades = self.storage.get_all_trades_for_symbol(symbol)
         if not trades:
             return False
-        opened_times = [int(t["opened_at"]) for t in trades if t.get("opened_at") is not None]
+        # Cooldown is scoped to the CURRENT book: trades opened before the
+        # baseline reset (benchmark_started_at) are archived and must not
+        # lock the new book out. Found 2026-07-14: the reset's administrative
+        # closes armed 48h cooldowns across 18/20 universe symbols, freezing
+        # the fresh book at ~20% deployment. This also restores parity with
+        # BacktestPortfolio._symbol_in_cooldown, which only ever sees its own
+        # book by construction (every backtest starts empty). The 48h value
+        # itself is unchanged and binds fully within the book.
+        state = self.storage.get_portfolio_state()
+        book_start = int(state["benchmark_started_at"] or 0) if state else 0
+        opened_times = [
+            int(t["opened_at"]) for t in trades
+            if t.get("opened_at") is not None and int(t["opened_at"]) >= book_start
+        ]
         if not opened_times:
             return False
         last_opened = max(opened_times)
         age_hours = (datetime.now(timezone.utc).timestamp() - last_opened) / 3600.0
         return age_hours < hours
+
+    def _symbol_beta(self, symbol: str) -> float | None:
+        """Ex-ante beta vs BTC over the trailing HEDGE_BETA_LOOKBACK_H, for
+        the capital gate. None (insufficient history) is treated as 1.0 by
+        risk_budget -- unknown correlation must not read as diversification."""
+        if symbol == config.SYMBOL:
+            return 1.0
+        bucket = int(datetime.now(timezone.utc).timestamp()) // 86400
+        key = (symbol, bucket)
+        if key not in self._beta_cache:
+            limit = config.HEDGE_BETA_LOOKBACK_H + 24
+            sym_rows = self.storage.get_prices(symbol, limit=limit, timeframe="1h")
+            btc_rows = self.storage.get_prices(config.SYMBOL, limit=limit, timeframe="1h")
+            self._beta_cache[key] = hedge_engine.ex_ante_beta(
+                sym_rows, btc_rows, config.HEDGE_BETA_LOOKBACK_H, config.HEDGE_BETA_MIN_POINTS
+            )
+        return self._beta_cache[key]
+
+    def _capital_gate(
+        self,
+        symbol: str,
+        direction: str,
+        price: float,
+        stop_loss: float,
+        notional: float,
+        equity: float,
+        hedge_leg: dict[str, Any] | None,
+    ) -> tuple[str, str] | None:
+        """Risk-budget + beta-exposure gates (src/engine/risk_budget.py) --
+        the binding capital constraints as of 2026-07-14 (MAX_OPEN_POSITIONS
+        is only a safety ceiling now). Returns (gate_name, reason) on refusal,
+        None when the entry fits. Quality gates are untouched: this runs
+        AFTER confidence/regime/category/cooldown, and refusing here means
+        idle cash by design, reported under its own funnel counter."""
+        if not risk_budget.position_large_enough(notional, equity):
+            return ("position_too_small",
+                    f"notional {notional:.2f} < {risk_budget.MIN_POSITION_NOTIONAL_PCT:.0%} "
+                    f"of equity {equity:.2f} (dust; cash nearly exhausted)")
+        quantity = notional / price if price else 0.0
+        cand_risk = risk_budget.position_risk(direction, price, stop_loss, quantity)
+        open_risk = 0.0
+        legs: list[dict[str, Any]] = []
+        for t in self.storage.get_open_trades():
+            row = self.storage.get_latest_price(t["symbol"])
+            cur = float(row["close"]) if row else float(t["entry_price"])
+            open_risk += risk_budget.position_risk(
+                t["direction"], cur, float(t["stop_loss"]), float(t["quantity"])
+            )
+            legs.append({"direction": t["direction"], "notional": float(t["quantity"]) * cur,
+                         "beta": self._symbol_beta(t["symbol"])})
+            if t.get("hedge_symbol"):
+                legs.append({"direction": t["hedge_direction"],
+                             "notional": float(t["hedge_quantity"]) * float(t["hedge_entry_price"]),
+                             "beta": self._symbol_beta(t["hedge_symbol"])})
+
+        if not risk_budget.risk_budget_allows(open_risk, cand_risk, equity, config.TOTAL_RISK_BUDGET_PCT):
+            return ("risk_budget",
+                    f"risk budget: open {open_risk:.2f} + candidate {cand_risk:.2f} "
+                    f"> {config.TOTAL_RISK_BUDGET_PCT:.0%} of equity {equity:.2f}")
+
+        # Candidate contributes ALL its legs at once: a market-neutral entry's
+        # hedge leg largely cancels its primary leg's beta, and the gate must
+        # see that, not refuse the primary in isolation.
+        cand_legs = [{"direction": direction, "notional": notional, "beta": self._symbol_beta(symbol)}]
+        if hedge_leg is not None:
+            cand_legs.append({"direction": hedge_leg["hedge_direction"],
+                              "notional": hedge_leg["hedge_notional"],
+                              "beta": self._symbol_beta(hedge_leg["hedge_symbol"])})
+        if config.MAX_NET_BETA_EXPOSURE < risk_budget.BETA_UNLIMITED:
+            net = risk_budget.net_beta_exposure([*legs, *cand_legs], equity)
+            if abs(net) > config.MAX_NET_BETA_EXPOSURE:
+                return ("beta_exposure",
+                        f"net beta exposure {net:+.2f} exceeds cap {config.MAX_NET_BETA_EXPOSURE:g}")
+        return None
 
     def _hedge_leg_for_open(
         self,
@@ -394,6 +485,13 @@ class PaperTrader:
             notional = self._position_notional(portfolio, cash, current_price, stop_loss)
         if notional <= 0:
             return {"opened": False, "reason": "no cash / zero position size"}
+
+        capital_refusal = self._capital_gate(
+            symbol, direction, current_price, stop_loss, notional, portfolio, hedge_leg
+        )
+        if capital_refusal is not None:
+            gate, reason = capital_refusal
+            return {"opened": False, "reason": reason, "gate": gate}
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
 
