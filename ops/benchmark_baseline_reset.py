@@ -52,15 +52,28 @@ def main() -> int:
         print("ERROR: open trades remain after close pass; aborting")
         return 1
 
-    # 2. Reset the strategy book. init_portfolio_state REPLACEs the single
-    # portfolio_state row and stamps benchmark_btc_price/started_at = now,
-    # which is exactly the shared start anchor the hold-books key off.
+    # 2. Reset the strategy book. init_portfolio_state is INSERT OR IGNORE
+    # (a no-op when the row already exists -- learned the hard way on the
+    # first reset attempt, 2026-07-14), so the reset must be an explicit
+    # UPDATE of the single row: cash back to starting capital, benchmark
+    # anchor re-stamped to now. The worker MUST be stopped while this runs
+    # or its in-flight cycle races these writes.
     btc_row = storage.get_latest_price(config.SYMBOL)
     if not btc_row:
         print("ERROR: no BTC price; aborting")
         return 1
     btc_price = float(btc_row["close"])
     storage.init_portfolio_state(config.PAPER_STARTING_CAPITAL, benchmark_btc_price=btc_price)
+    with storage._connect() as conn:  # noqa: SLF001
+        conn.execute(
+            "UPDATE portfolio_state SET cash = ?, benchmark_btc_price = ?, "
+            "benchmark_started_at = ? WHERE id = 1",
+            (config.PAPER_STARTING_CAPITAL, btc_price, now),
+        )
+    state = storage.get_portfolio_state()
+    if abs(float(state["cash"]) - config.PAPER_STARTING_CAPITAL) > 1e-6:
+        print(f"ERROR: cash reset did not take (cash={state['cash']}); aborting")
+        return 1
 
     # 3. Clear benchmark series/meta and the random seed books, then
     # initialize the hold books at the SAME timestamp.
