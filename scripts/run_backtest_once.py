@@ -70,6 +70,19 @@ def main() -> int:
         # for DSR (per-trade return series) and correlation gates — capped
         "trade_pnls": [round(p, 4) for p in pnls[:5000]],
         "daily_pnl": daily,
+        # Market-neutral trades only (research_decisions,
+        # subject='rel_strength_market_neutral'): raw per-trade hedge detail
+        # so the walk-forward aggregator can compute an exact (not
+        # weighted-average-of-averages) net-of-funding expectancy and
+        # basis-risk split across ALL windows' trades, not just this one.
+        "hedge_trades": [
+            {
+                "pnl": t["pnl"], "fees": t["fees"], "funding_pnl": t.get("funding_pnl"),
+                "hedge_beta": t.get("hedge_beta"), "realized_beta": t.get("realized_beta"),
+                "realized_correlation": t.get("realized_correlation"),
+            }
+            for t in trades if t.get("hedge_symbol")
+        ],
     }
     print(MARKER_BEGIN)
     print(json.dumps(compact))

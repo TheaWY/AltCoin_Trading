@@ -415,6 +415,8 @@ def _rel_strength_setup(
 
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
+    if not config.SETUP_SWING_ENABLED:
+        return None
     pct_7d = metrics["pct_7d"]
     price_sma20 = metrics["sma_20"]
     price_sma50 = metrics["sma_50"]

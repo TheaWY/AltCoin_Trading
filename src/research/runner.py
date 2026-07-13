@@ -102,6 +102,53 @@ def _run_subprocess(overrides: dict[str, Any], start: str, end: str) -> dict[str
         return None
 
 
+def _hedge_aggregate(windows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Merge every window's raw hedge_trades into one exact (not
+    weighted-average-of-averages) net-of-funding expectancy and basis-risk
+    split. research_decisions, subject='rel_strength_market_neutral',
+    additions 2 & 3. None when no window produced any hedge trades."""
+    from src.engine import hedge as hedge_engine  # noqa: PLC0415 — avoid import cost for non-hedge strategies
+
+    trades = [t for w in windows for t in (w.get("hedge_trades") or [])]
+    if not trades:
+        return None
+
+    def pct(pnl: float, notional: float) -> float | None:
+        return (pnl / notional * 100.0) if notional else None
+
+    with_funding = [float(t["pnl"] or 0.0) for t in trades]
+    without_funding = [float(t["pnl"] or 0.0) - float(t.get("funding_pnl") or 0.0) for t in trades]
+
+    buckets: dict[str, list[dict[str, Any]]] = {
+        "correlation_held": [], "correlation_spiked": [], "unknown": [],
+    }
+    for t in trades:
+        status = hedge_engine.basis_risk_status(
+            t.get("hedge_beta"), t.get("realized_beta"), config.BASIS_RISK_BETA_TOLERANCE
+        )
+        buckets[status].append(t)
+
+    def bucket_summary(bucket: list[dict[str, Any]]) -> dict[str, Any]:
+        if not bucket:
+            return {"n": 0, "avg_pnl": None}
+        pnls = [float(t["pnl"] or 0.0) for t in bucket]
+        return {"n": len(bucket), "avg_pnl": round(sum(pnls) / len(pnls), 6)}
+
+    return {
+        "trades": len(trades),
+        "avg_pnl_with_funding": round(sum(with_funding) / len(with_funding), 6),
+        "avg_pnl_without_funding": round(sum(without_funding) / len(without_funding), 6),
+        "avg_funding_pnl": round(
+            sum(float(t.get("funding_pnl") or 0.0) for t in trades) / len(trades), 6
+        ),
+        "basis_risk": {
+            "correlation_held": bucket_summary(buckets["correlation_held"]),
+            "correlation_spiked": bucket_summary(buckets["correlation_spiked"]),
+            "unknown": bucket_summary(buckets["unknown"]),
+        },
+    }
+
+
 def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
     trades = sum(w["trade_count"] for w in windows)
     total = sum(w["total_pnl"] for w in windows)
@@ -125,6 +172,13 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
         "category_coverage_pct": round(
             category_present / category_checks * 100.0, 2
         ) if category_checks else None,
+        # None for non-hedge strategies; the plain "expectancy" field above
+        # is ALREADY net-of-funding for hedge trades (trade.pnl folds
+        # funding_pnl in at close via hedge.combined_trade_pnl) -- this key
+        # additionally reports what it would have been WITHOUT funding and
+        # the basis-risk split, so funding's contribution is visible, not
+        # assumed.
+        "hedge_aggregate": _hedge_aggregate(windows),
     }
 
 
@@ -158,7 +212,8 @@ def run_experiments(max_runs: int) -> dict[str, Any]:
     budget = budget_override if budget_override > 0 else max_trials_for_history(history_years)
     with storage._connect() as conn:  # noqa: SLF001
         tried_row = conn.execute(
-            "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed')"
+            "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed') "
+            "AND counts_against_trial_budget = 1"
         ).fetchone()
         tried = int(_row_value(tried_row, "count", 0) or 0)
     remaining = max(budget - tried, 0)

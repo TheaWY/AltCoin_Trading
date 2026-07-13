@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import bisect
 import json
 import math
 import os
@@ -25,6 +26,7 @@ from src.engine.paper_trader import FakeDeltaNeutralError  # noqa: E402
 from src.engine.regime import btc_regime  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
 from src.research.market_categories import category_at  # noqa: E402
+from src.research.rel_strength import LOOKBACK_BARS as REL_STRENGTH_LOOKBACK_BARS  # noqa: E402
 from src.strategies.base import Signal, SignalDirection  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
@@ -421,10 +423,29 @@ class SnapshotStorage:
         storage: Storage,
         timestamp: int,
         latest_signal: dict[str, Any] | None,
+        price_cache: dict[tuple[str, str], list[dict[str, Any]]] | None = None,
     ) -> None:
         self.storage = storage
         self.timestamp = timestamp
         self.latest_signal = latest_signal
+        # {(symbol, timeframe): rows sorted ascending by timestamp}, pre-loaded
+        # once per BacktestEngine.run() to cover everything the run could ever
+        # need. Without this, get_prices() re-queries the DB from scratch on
+        # every hourly timestep -- fine for the ~100-720 row lookbacks most
+        # strategies use, ruinous for rel_strength_rotation's 17,520-row (2y)
+        # lookback: 1440 timestamps x 6 symbols x 2 such queries per 60-day
+        # window measured at ~7.5 minutes/window before this cache existed.
+        self._price_cache = price_cache or {}
+
+    def _cached_prices(
+        self, symbol: str, timeframe: str, since: int | None, effective_before: int
+    ) -> list[dict[str, Any]] | None:
+        rows = self._price_cache.get((symbol, timeframe))
+        if rows is None:
+            return None
+        lo = bisect.bisect_left(rows, since, key=lambda r: int(r["timestamp"])) if since is not None else 0
+        hi = bisect.bisect_right(rows, effective_before, key=lambda r: int(r["timestamp"]))
+        return rows[lo:hi]
 
     def get_latest_price(self, symbol: str, timeframe: str = "1h") -> dict[str, Any] | None:
         prices = self.storage.get_prices(
@@ -458,6 +479,9 @@ class SnapshotStorage:
         effective_before = min(
             value for value in (before, self.timestamp) if value is not None
         )
+        cached = self._cached_prices(symbol, timeframe, since, effective_before)
+        if cached is not None:
+            return cached[-limit:] if limit else cached
         return self.storage.get_prices(
             symbol,
             limit=limit,
@@ -541,7 +565,7 @@ EVALUATION_ENGINE_STRATEGIES = frozenset({"rel_strength_rotation"})
 # _env_bool_dynamic), so it only needs the env var forced, not a config attr.
 _OTHER_LIVE_SETUP_FLAGS = (
     "SETUP_MEANREV_ENABLED", "SETUP_BREAKOUT_ENABLED", "SETUP_TSMOM_ENABLED",
-    "SETUP_VOLUME_ENABLED", "SETUP_FUNDING_ENABLED",
+    "SETUP_VOLUME_ENABLED", "SETUP_FUNDING_ENABLED", "SETUP_SWING_ENABLED",
 )
 _OTHER_LIVE_SETUP_ENV_ONLY_FLAGS = ("SETUP_FAILED_PUMP_ENABLED",)
 
@@ -588,7 +612,7 @@ class BacktestEngine:
         NUMBER, not direction or entry, so skipping it is documented and
         bounded rather than a silent lookahead gap.
         """
-        snapshot = SnapshotStorage(self.storage, ts, None)
+        snapshot = SnapshotStorage(self.storage, ts, None, price_cache=self._price_cache)
         category_row = category_at(self.storage, symbol, ts)
         category = (category_row or {}).get("category")
         regime = btc_regime(snapshot)
@@ -643,6 +667,7 @@ class BacktestEngine:
 
     def run(self) -> dict[str, Any]:
         prices_by_symbol = self._load_prices()
+        self._price_cache = self._load_price_cache()
         timeline = sorted(
             {
                 row["timestamp"]
@@ -704,7 +729,7 @@ class BacktestEngine:
                 # Same data path as live trading: the snapshot hides rows
                 # after `ts`, and gather_strategy_data fetches exactly what
                 # the strategy declares in get_required_data().
-                snapshot = SnapshotStorage(self.storage, ts, None)
+                snapshot = SnapshotStorage(self.storage, ts, None, price_cache=self._price_cache)
                 data = gather_strategy_data(snapshot, self.strategy, symbol)
                 if self.strategy.validate_data(data):
                     continue
@@ -806,6 +831,17 @@ class BacktestEngine:
                     "fees": round(float(getattr(t, "fees", 0.0) or 0.0), 6),
                     "opened_at": getattr(t, "opened_at", None),
                     "closed_at": getattr(t, "closed_at", None),
+                    # Hedge fields (None for non-hedge trades) -- carried through
+                    # so the walk-forward runner can report net-of-funding
+                    # expectancy and the basis-risk split without re-deriving
+                    # them from raw paper_trades rows.
+                    "hedge_symbol": getattr(t, "hedge_symbol", None),
+                    "hedge_beta": getattr(t, "hedge_beta", None),
+                    "hedge_pnl": getattr(t, "hedge_pnl", None),
+                    "hedge_fees": getattr(t, "hedge_fees", None),
+                    "funding_pnl": getattr(t, "funding_pnl", None),
+                    "realized_beta": getattr(t, "realized_beta", None),
+                    "realized_correlation": getattr(t, "realized_correlation", None),
                 }
                 for t in portfolio.closed_trades
             ],
@@ -827,6 +863,29 @@ class BacktestEngine:
                 timeframe="1h",
             )
             for symbol in self.symbols
+        }
+
+    def _load_price_cache(self) -> dict[tuple[str, str], list[dict[str, Any]]]:
+        """Pre-load once per run() call so SnapshotStorage.get_prices() never
+        re-queries the DB per timestep. EVALUATION_ENGINE_STRATEGIES members
+        (e.g. rel_strength_rotation) need REL_STRENGTH_LOOKBACK_BARS (~2y) of
+        prior history for their own beta/spread computation; everything else
+        only ever asks for a few hundred bars, well inside the backtest
+        window itself, so the extra lookback is skipped for them to avoid
+        loading years of unnecessary history on every run.
+        """
+        extra_lookback_s = (
+            REL_STRENGTH_LOOKBACK_BARS * 3600
+            if self.strategy_name in EVALUATION_ENGINE_STRATEGIES
+            else 0
+        )
+        since = self.start_ts - extra_lookback_s
+        symbols = set(self.symbols) | {config.SYMBOL}
+        return {
+            (symbol, "1h"): self.storage.get_prices(
+                symbol, limit=1_000_000, since=since, before=self.end_ts, timeframe="1h"
+            )
+            for symbol in symbols
         }
 
     def _advance_prices(

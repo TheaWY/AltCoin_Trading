@@ -13,7 +13,13 @@ from collections import Counter, defaultdict
 from typing import Any
 
 from src.data.storage import Storage, get_storage
-from src.research.promotion import S1_MIN_PROFIT_FACTOR, S1_MIN_TRADES, S1_MIN_WINDOW_WIN_FRACTION, _SCHEMA
+from src.research.promotion import (
+    S1_MIN_PROFIT_FACTOR,
+    S1_MIN_TRADES,
+    S1_MIN_WINDOW_WIN_FRACTION,
+    _SCHEMA,
+    _migrate_experiments_columns,
+)
 from src.research.robust_stats import max_trials_for_history
 from src.research.runner import WINDOW_COUNT, WINDOW_STEP_DAYS, WINDOW_TEST_DAYS
 
@@ -26,6 +32,7 @@ def _ensure_schema_for(storage: Storage) -> None:
         for statement in _SCHEMA.split(";"):
             if statement.strip():
                 conn.execute(statement)
+    _migrate_experiments_columns(storage)
 
 
 def trial_budget_status(storage: Storage | None = None) -> dict[str, Any]:
@@ -36,7 +43,8 @@ def trial_budget_status(storage: Storage | None = None) -> dict[str, Any]:
     budget = budget_override if budget_override > 0 else max_trials_for_history(history_years)
     with storage._connect() as conn:  # noqa: SLF001
         tried_row = conn.execute(
-            "SELECT COUNT(*) AS n FROM experiments WHERE status IN ('done','failed')"
+            "SELECT COUNT(*) AS n FROM experiments WHERE status IN ('done','failed') "
+            "AND counts_against_trial_budget = 1"
         ).fetchone()
         counts = {
             str(r["status"]): int(r["n"])

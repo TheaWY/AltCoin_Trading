@@ -22,6 +22,15 @@ axes:
   # Failed pump short: catches coins that ran hard over 7d and then roll over
   # intraday with structure break. Added after dashboard review of SKL-like cases.
   SETUP_FAILED_PUMP_ENABLED: [true, false]
+  # 2026-07-13: was MISSING here entirely, so every ACTIVE_STRATEGY=
+  # rel_strength_rotation experiment ever queued would run with this at its
+  # default (false) -- _rel_strength_setup() returns None immediately, zero
+  # trades, zero information. Single-value axis (like SETUP_FUNDING_ENABLED
+  # below) so it doesn't multiply the space; it's a no-op for every OTHER
+  # strategy (see OVERRIDE_KEY_PREFIXES comment in promotion.py -- SETUP_*
+  # flags are only read by evaluate_symbol(), never by the generic
+  # generate_signal()+AltAnalyzer path the other 4 strategies use).
+  SETUP_REL_STRENGTH_ENABLED: [true]
 
   # Axes below are proven live in scripts/run_backtest_once.py A/B probes.
   # Setup/confluence knobs are intentionally absent until a strategy path

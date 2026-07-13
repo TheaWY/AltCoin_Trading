@@ -145,12 +145,39 @@ CREATE TABLE IF NOT EXISTS promotions (
 """
 
 
+def _migrate_experiments_columns(storage: Any) -> None:
+    """counts_against_trial_budget: added 2026-07-13 so a completed trial
+    that is a byte-identical duplicate of an earlier one (varied axes were
+    no-ops on the code path that ran -- see OVERRIDE_KEY_PREFIXES comment
+    above) can be excluded from the MinBTL trial-budget denominator without
+    deleting the row or touching `status`. Defaults to 1 (counts) so every
+    row -- past or future -- counts unless explicitly corrected; see
+    research_decisions, subject='trial_budget_distinct_outcome_2026-07-13'
+    for the one-time correction this enabled."""
+    with storage._connect() as conn:  # noqa: SLF001
+        if conn.is_postgres:
+            conn.execute(
+                "ALTER TABLE experiments ADD COLUMN IF NOT EXISTS "
+                "counts_against_trial_budget INTEGER NOT NULL DEFAULT 1"
+            )
+            return
+        existing = {
+            row["name"] for row in conn.raw.execute("PRAGMA table_info(experiments)").fetchall()
+        }
+        if "counts_against_trial_budget" not in existing:
+            conn.raw.execute(
+                "ALTER TABLE experiments ADD COLUMN "
+                "counts_against_trial_budget INTEGER NOT NULL DEFAULT 1"
+            )
+
+
 def _ensure_schema() -> None:
     storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001 — research module, see NOTES
         for statement in _SCHEMA.split(";"):
             if statement.strip():
                 conn.execute(statement)
+    _migrate_experiments_columns(storage)
 
 
 def config_hash(config_dict: dict[str, Any]) -> str:
@@ -215,7 +242,8 @@ def dsr_pass(exp: dict[str, Any]) -> tuple[bool, str]:
     storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001
         n_trials_row = conn.execute(
-            "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed')"
+            "SELECT COUNT(*) FROM experiments WHERE status IN ('done','failed') "
+            "AND counts_against_trial_budget = 1"
         ).fetchone()
         n_trials = int(_row_value(n_trials_row, "count", 0) or 0)
         rows = conn.execute(

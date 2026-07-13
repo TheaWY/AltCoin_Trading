@@ -226,7 +226,16 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "scalp"
     if raw in ("swing", "스윙"):
         return "swing"
-    if raw in ("rel_strength_neutral",):
+    # "시장중립72h" is evaluation.py's STYLE_REL_STRENGTH_NEUTRAL (raw Korean
+    # setup label). evaluate_symbol() calls holding_style_allowed()/
+    # direction_blocked() on setup["style"] directly, BEFORE cycle.py's
+    # STYLE_MAP ever translates it -- scalp/swing's Korean labels ("단타"/
+    # "스윙") are recognized here for the same reason. Without this, every
+    # rel_strength_neutral setup gets silently blocked inside evaluate_symbol
+    # itself (policy_blocked_setups), in both backtest and live, before it
+    # can ever become the verdict -- not a hypothetical, this is exactly how
+    # it failed on first real backtest run (2026-07-13).
+    if raw in ("rel_strength_neutral", "시장중립72h"):
         return "rel_strength_neutral"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
         return "long_term_hold"
@@ -305,6 +314,14 @@ def round_trip_cost_pct() -> float:
 
 
 # --- Setup toggles (research_space.yaml) ---
+# 2026-07-13: _swing_setup (evaluation.py) had no enable flag at all, so
+# BacktestEngine.EVALUATION_ENGINE_STRATEGIES's isolation ("force every OTHER
+# setup off so evaluate_symbol's only possible verdict is the one strategy
+# under test") could never actually silence it -- a rel_strength_rotation
+# backtest was really testing whichever of {_swing_setup, _rel_strength_setup}
+# scored higher, contaminating any result. Default True: unchanged live
+# behavior; scripts/backtest.py force-disables it during isolated tests.
+SETUP_SWING_ENABLED = _env_bool("SETUP_SWING_ENABLED", default=True)
 SETUP_MEANREV_ENABLED = _env_bool("SETUP_MEANREV_ENABLED", default=True)
 # Disable weak/high-turnover branches by default; research runner can re-enable.
 SETUP_BREAKOUT_ENABLED = _env_bool("SETUP_BREAKOUT_ENABLED", default=False)
