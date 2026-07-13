@@ -85,13 +85,6 @@ def _ensure_schema(storage: Storage) -> None:
                 UNIQUE(book, seed, timestamp)
             )
         """)
-        # deployed_pct added 2026-07-14 for exposure-adjusted comparison --
-        # a strategy holding 80% cash must not get credit for "beating" a
-        # fully-invested benchmark by losing less.
-        try:
-            conn.execute("ALTER TABLE benchmark_equity ADD COLUMN deployed_pct REAL")
-        except Exception:  # noqa: BLE001 -- column already exists
-            pass
         conn.execute("""
             CREATE TABLE IF NOT EXISTS benchmark_meta (
                 book TEXT PRIMARY KEY,
@@ -99,6 +92,16 @@ def _ensure_schema(storage: Storage) -> None:
                 created_at INTEGER NOT NULL
             )
         """)
+    # deployed_pct migration (2026-07-14, exposure-adjusted comparison) in
+    # its OWN connection: on Postgres a failed ALTER poisons the whole
+    # transaction (InFailedSqlTransaction for every later statement in it),
+    # so it must never share one with the CREATEs/DELETEs -- this exact
+    # mistake aborted a baseline reset halfway.
+    try:
+        with storage._connect() as conn:  # noqa: SLF001
+            conn.execute("ALTER TABLE benchmark_equity ADD COLUMN deployed_pct REAL")
+    except Exception:  # noqa: BLE001 -- column already exists
+        pass
 
 
 def _get_meta(storage: Storage, book: str) -> dict[str, Any] | None:
