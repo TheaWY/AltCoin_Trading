@@ -53,6 +53,20 @@ class FundingCarryStrategy(BaseStrategy):
     def generate_signal(self, data: dict[str, Any]) -> Signal:
         symbol = data.get("symbol", config.SYMBOL)
         entry_price = float(data["latest_price"]["close"])
+
+        if not config.SETUP_FUNDING_CARRY_ENABLED:
+            return Signal(
+                direction=SignalDirection.NONE,
+                reason=(
+                    "funding_carry disabled -- execution_mode=delta_neutral has no "
+                    "real hedge leg in either path (see research_decisions, "
+                    "subject='funding_carry_disabled')"
+                ),
+                symbol=symbol,
+                entry_price=entry_price,
+                metadata={"execution_mode": "delta_neutral", "disabled": True},
+            )
+
         rates = settlement_rates(data["funding_history"])
 
         need = config.CARRY_ENTRY_CONSECUTIVE

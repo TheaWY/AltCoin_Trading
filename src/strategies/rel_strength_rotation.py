@@ -26,12 +26,19 @@ signal x horizon test grid. Full detail: research_decisions,
 subject='rel_strength_market_neutral'.
 
 Conclusion: this class as written (naive long) is not the strategy the
-evidence supports. What's worth building is a market-neutral 72h version
-(long the signal, short beta-matched BTC) -- deliberately NOT built yet;
-it needs real hedge-leg position management in both this backtest path and
-_rel_strength_setup's live path, not a small patch. Do not enable
-SETUP_REL_STRENGTH_ENABLED or spend trial budget on ACTIVE_STRATEGY=
-rel_strength_rotation until that redesign happens.
+evidence supports. The market-neutral 72h version (long the signal, short
+beta-matched BTC, hedge sized/closed via src.engine.hedge) has landed in
+_rel_strength_setup (src/engine/evaluation.py) -- the live-reachable path,
+gated by SETUP_REL_STRENGTH_ENABLED (default False). Backtest validates
+that exact path via BacktestEngine.EVALUATION_ENGINE_STRATEGIES, which
+bypasses this class's generate_signal() below entirely for
+strategy_name="rel_strength_rotation" -- so the naive long-only logic here
+is dead for real capital/backtest decisions either way. Left unchanged
+(rather than deleted) because ACTIVE_STRATEGY-driven walk-forward research
+still resolves the strategy object through get_strategy() for validation;
+do not enable SETUP_REL_STRENGTH_ENABLED or spend trial budget on
+ACTIVE_STRATEGY=rel_strength_rotation without first re-reading
+research_decisions subject='rel_strength_market_neutral' for current status.
 """
 
 from __future__ import annotations

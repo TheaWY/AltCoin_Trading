@@ -16,6 +16,7 @@ from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.engine import hedge as hedge_engine
 from src.engine import indicators
 from src.engine.calibration import build_calibration_map, calibrate_score
 from src.engine.regime import btc_regime, direction_blocked
@@ -40,6 +41,10 @@ STRATEGY_CATEGORY_MAP = {
 
 STYLE_SCALP = "단타"
 STYLE_SWING = "스윙"
+# Distinct from STYLE_SWING so cycle.py's STYLE_MAP routes it to
+# config.normalize_holding_style's "rel_strength_neutral" (72h hold cap) --
+# not the 720h swing cap _rel_strength_setup's evidence doesn't cover.
+STYLE_REL_STRENGTH_NEUTRAL = "시장중립72h"
 
 
 def _direction_label(direction: str | None) -> str:
@@ -336,17 +341,22 @@ def _tsmom28_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
 def _rel_strength_setup(
     storage: Storage, symbol: str, metrics: dict[str, Any]
 ) -> dict[str, Any] | None:
-    """스윙: 7d relative-strength-vs-BTC rotation continuation.
+    """시장중립 72h: 7d relative-strength-vs-BTC rotation, hedged.
 
-    2026-07-13 status -- this fires a naive LONG, but the evidence now says
-    that's the wrong shape: on 50 symbols the raw effect shrank and the
-    24h version fails market-neutral re-testing entirely (was mostly BTC
-    beta, not idiosyncratic rotation). Only 72h survives neutralization.
-    Full detail: src/strategies/rel_strength_rotation.py's module docstring
-    and research_decisions subject='rel_strength_market_neutral'. Stays off
-    (SETUP_REL_STRENGTH_ENABLED default False) until this becomes an actual
-    market-neutral (long signal, short beta-matched BTC) setup -- not built
-    yet, real hedge-leg position management, not a small patch.
+    2026-07-13 status -- market-neutral (long the alt, short beta-matched
+    BTC), hold capped at REL_STRENGTH_NEUTRAL_HOLD_HOURS (72h). Only the 72h
+    horizon survives neutralized re-testing (research_decisions,
+    subject='rel_strength_market_neutral'): on 50 symbols the raw 24h/72h
+    effect shrank from the original 6-symbol study, and the 24h version
+    fails market-neutral re-testing entirely (was mostly BTC beta, not
+    idiosyncratic rotation). The entry criterion itself (7d spread >= 95th
+    pctl) is unchanged; what changed is the hedge leg and the hold cap.
+    Ex-ante beta is a point-in-time OLS estimate (src.engine.hedge.
+    ex_ante_beta, same lookback/min-points as
+    scripts/event_study_market_neutral.py used to validate the effect) --
+    if it can't be estimated or comes back non-positive, this returns None
+    (no trade), never a default beta. Stays off by default
+    (SETUP_REL_STRENGTH_ENABLED).
     """
     if not config.SETUP_REL_STRENGTH_ENABLED:
         return None
@@ -382,12 +392,24 @@ def _rel_strength_setup(
     if rank < REL_STRENGTH_PCTL:
         return None
 
+    beta = hedge_engine.ex_ante_beta(
+        sym_rows, btc_rows, config.HEDGE_BETA_LOOKBACK_H, config.HEDGE_BETA_MIN_POINTS
+    )
+    if beta is None:
+        return None
+
     return {
-        "style": STYLE_SWING,
+        "style": STYLE_REL_STRENGTH_NEUTRAL,
         "strategy": "rel_strength_rotation",
         "direction": "LONG",
         "score": 0.58,
-        "reason": f"7d 대비 BTC 상대강도 스프레드 {current:+.1%} (상위 {(1 - rank) * 100:.1f}%) — 로테이션 지속 롱",
+        "reason": (
+            f"7d 대비 BTC 상대강도 스프레드 {current:+.1%} (상위 {(1 - rank) * 100:.1f}%) — "
+            f"BTC 숏 헤지(β={beta:.2f}) 시장중립 72h 로테이션 롱"
+        ),
+        "execution_mode": "market_neutral",
+        "beta": beta,
+        "hedge_symbol": config.SYMBOL,
     }
 
 

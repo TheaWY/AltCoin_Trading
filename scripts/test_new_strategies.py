@@ -21,6 +21,7 @@ _tmp = tempfile.mkdtemp()
 os.environ["DATABASE_PATH"] = str(Path(_tmp) / "test.db")
 os.environ["DATABASE_URL"] = ""
 
+from src import config  # noqa: E402
 from src.data.storage import Storage  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
 from src.strategies.funding_carry import FundingCarryStrategy, settlement_rates  # noqa: E402
@@ -117,6 +118,13 @@ def funding_rows(rates_per_settlement: list[float]) -> list[dict]:
 rates = settlement_rates(sorted(funding_rows([0.0002, 0.0003]), key=lambda r: r["timestamp"]))
 check("settlement bucketing collapses prints", len(rates) == 2 and abs(rates[-1] - 0.0003) < 1e-9,
       str(rates))
+
+# funding_carry's execution_mode="delta_neutral" has no real hedge leg in
+# either path (research_decisions, subject='funding_carry_disabled') --
+# SETUP_FUNDING_CARRY_ENABLED defaults False in production. Force it on for
+# these checks so they still exercise the persistence/fee-hurdle math itself
+# rather than just the disabled short-circuit.
+config.SETUP_FUNDING_CARRY_ENABLED = True
 
 # persistent fat funding -> SHORT (carry leg)
 st = fresh_storage()

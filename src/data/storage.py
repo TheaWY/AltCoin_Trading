@@ -110,6 +110,17 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     trail_price REAL,
     exit_reason TEXT,
     fees REAL,
+    hedge_symbol TEXT,
+    hedge_direction TEXT,
+    hedge_entry_price REAL,
+    hedge_exit_price REAL,
+    hedge_quantity REAL,
+    hedge_beta REAL,
+    hedge_pnl REAL,
+    hedge_fees REAL,
+    funding_pnl REAL,
+    realized_beta REAL,
+    realized_correlation REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (signal_id) REFERENCES signals(id)
 );
@@ -244,6 +255,17 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     trail_price DOUBLE PRECISION,
     exit_reason TEXT,
     fees DOUBLE PRECISION,
+    hedge_symbol TEXT,
+    hedge_direction TEXT,
+    hedge_entry_price DOUBLE PRECISION,
+    hedge_exit_price DOUBLE PRECISION,
+    hedge_quantity DOUBLE PRECISION,
+    hedge_beta DOUBLE PRECISION,
+    hedge_pnl DOUBLE PRECISION,
+    hedge_fees DOUBLE PRECISION,
+    funding_pnl DOUBLE PRECISION,
+    realized_beta DOUBLE PRECISION,
+    realized_correlation DOUBLE PRECISION,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -253,6 +275,17 @@ ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS atr_pct DOUBLE PRECISION;
 ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS trail_price DOUBLE PRECISION;
 ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS exit_reason TEXT;
 ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS fees DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_symbol TEXT;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_direction TEXT;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_entry_price DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_exit_price DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_quantity DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_beta DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_pnl DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS hedge_fees DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS funding_pnl DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS realized_beta DOUBLE PRECISION;
+ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS realized_correlation DOUBLE PRECISION;
 
 CREATE TABLE IF NOT EXISTS market_metrics (
     id BIGSERIAL PRIMARY KEY,
@@ -438,6 +471,17 @@ class Storage:
         "trail_price": "REAL",
         "exit_reason": "TEXT",
         "fees": "REAL",
+        "hedge_symbol": "TEXT",
+        "hedge_direction": "TEXT",
+        "hedge_entry_price": "REAL",
+        "hedge_exit_price": "REAL",
+        "hedge_quantity": "REAL",
+        "hedge_beta": "REAL",
+        "hedge_pnl": "REAL",
+        "hedge_fees": "REAL",
+        "funding_pnl": "REAL",
+        "realized_beta": "REAL",
+        "realized_correlation": "REAL",
     }
 
     def _migrate_paper_trades_columns(self, conn: sqlite3.Connection) -> None:
@@ -924,19 +968,25 @@ class Storage:
 
     def insert_paper_trade(self, row: dict[str, Any]) -> int:
         row = dict(row)
-        for optional in ("strategy", "style", "atr_pct", "trail_price", "exit_reason", "fees"):
+        for optional in (
+            "strategy", "style", "atr_pct", "trail_price", "exit_reason", "fees",
+            "hedge_symbol", "hedge_direction", "hedge_entry_price", "hedge_quantity",
+            "hedge_beta",
+        ):
             row.setdefault(optional, None)
         sql = """
             INSERT INTO paper_trades
                 (signal_id, symbol, direction, entry_price, exit_price,
                  quantity, stop_loss, take_profit, status, pnl,
                  opened_at, closed_at, strategy, style, atr_pct,
-                 trail_price, exit_reason, fees)
+                 trail_price, exit_reason, fees, hedge_symbol, hedge_direction,
+                 hedge_entry_price, hedge_quantity, hedge_beta)
             VALUES
                 (:signal_id, :symbol, :direction, :entry_price, :exit_price,
                  :quantity, :stop_loss, :take_profit, :status, :pnl,
                  :opened_at, :closed_at, :strategy, :style, :atr_pct,
-                 :trail_price, :exit_reason, :fees)
+                 :trail_price, :exit_reason, :fees, :hedge_symbol, :hedge_direction,
+                 :hedge_entry_price, :hedge_quantity, :hedge_beta)
         """
         with self._connect() as conn:
             return conn.insert_returning_id(sql, row)

@@ -11,7 +11,7 @@ from src import config
 from src.data.storage import Storage, get_storage
 from src.engine.analyzer import AltAnalyzer
 from src.engine.calibration import build_calibration_map
-from src.engine.evaluation import evaluate_symbol
+from src.engine.evaluation import STYLE_REL_STRENGTH_NEUTRAL, evaluate_symbol
 from src.engine.market_compare import MarketCompare
 from src.engine.paper_trader import PaperTrader
 from src.engine.regime import btc_regime, direction_blocked
@@ -20,7 +20,11 @@ from src.symbols import cycle_symbols, health_gate_scope, trading_symbols
 
 logger = logging.getLogger(__name__)
 
-STYLE_MAP = {"단타": "scalp", "스윙": "swing"}
+STYLE_MAP = {
+    "단타": "scalp",
+    "스윙": "swing",
+    STYLE_REL_STRENGTH_NEUTRAL: "rel_strength_neutral",
+}
 
 
 def _portfolio_accounting_invariant(portfolio: dict[str, Any]) -> tuple[bool, dict[str, float]]:
@@ -596,6 +600,12 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     "confluence": verdict.get("confluence"),
                     "market_category": (candidate.get("category") or {}).get("category") if candidate.get("category") else None,
                     "category_reason": candidate.get("category_filter_reason"),
+                    # Only set by market-neutral setups (e.g. _rel_strength_setup);
+                    # absent for everything else, so PaperTrader's hedge-open
+                    # check is a no-op for non-hedged strategies.
+                    "execution_mode": verdict.get("execution_mode"),
+                    "beta": verdict.get("beta"),
+                    "hedge_symbol": verdict.get("hedge_symbol"),
                 },
             }
             opened = trader.process_signal(signal_result, float(price_row["close"]), require_worth=False)

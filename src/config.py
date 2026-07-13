@@ -226,6 +226,8 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "scalp"
     if raw in ("swing", "스윙"):
         return "swing"
+    if raw in ("rel_strength_neutral",):
+        return "rel_strength_neutral"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
         return "long_term_hold"
     return None
@@ -233,7 +235,7 @@ def normalize_holding_style(style: str | None) -> str | None:
 
 def holding_style_allowed(style: str | None) -> bool:
     normalized = normalize_holding_style(style)
-    if normalized in ("scalp", "swing"):
+    if normalized in ("scalp", "swing", "rel_strength_neutral"):
         return True
     if normalized == "long_term_hold":
         return LONG_TERM_HOLD_ENABLED
@@ -246,6 +248,8 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return SCALP_MAX_HOLD_HOURS
     if normalized == "swing":
         return SWING_MAX_HOLD_HOURS
+    if normalized == "rel_strength_neutral":
+        return REL_STRENGTH_NEUTRAL_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
         return SWING_MAX_HOLD_HOURS
     return 0.0
@@ -272,6 +276,11 @@ RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.01"))
 # LONG_TERM_HOLD_ENABLED=false.
 SCALP_MAX_HOLD_HOURS = float(os.getenv("SCALP_MAX_HOLD_HOURS", "48"))
 SWING_MAX_HOLD_HOURS = float(os.getenv("SWING_MAX_HOLD_HOURS", "720"))
+# rel_strength's market-neutral setup only has evidence at the 72h horizon
+# (research_decisions, subject='rel_strength_market_neutral') -- the 24h
+# effect does not survive market-neutral re-testing, so this style must exit
+# well before SWING_MAX_HOLD_HOURS would let it drift into untested territory.
+REL_STRENGTH_NEUTRAL_HOLD_HOURS = float(os.getenv("REL_STRENGTH_NEUTRAL_HOLD_HOURS", "72"))
 # Trailing stop for swing trades: once price moves 1 ATR in favor, trail the
 # stop TRAIL_ATR_MULT x ATR behind the best price seen.
 TRAILING_STOP_ENABLED = _env_bool("TRAILING_STOP_ENABLED", default=True)
@@ -307,6 +316,26 @@ SETUP_VOLUME_ENABLED = _env_bool("SETUP_VOLUME_ENABLED", default=False)
 # effect at 24h/72h, CI excludes zero, consistent across regimes). Off until a
 # walk-forward backtest of this exact setup beats the champion.
 SETUP_REL_STRENGTH_ENABLED = _env_bool("SETUP_REL_STRENGTH_ENABLED", default=False)
+# 2026-07-13: funding_carry's execution_mode="delta_neutral" P&L math computes
+# returns for a spot-long hedge leg that has never been implemented in either
+# path -- it has simply never fired (funding never crossed CARRY_ENTRY_RATE),
+# so no bad numbers have shipped, but that was luck, not a guarantee. Off
+# until a real hedge leg exists. See research_decisions,
+# subject='funding_carry_disabled'.
+SETUP_FUNDING_CARRY_ENABLED = _env_bool("SETUP_FUNDING_CARRY_ENABLED", default=False)
+
+# --- Market-neutral hedge sizing (src/engine/hedge.py) ---
+# Ex-ante beta lookback for hedge sizing -- matches the weekly beta window
+# scripts/event_study_market_neutral.py used to validate the underlying
+# effect, so live sizing uses the same beta definition the evidence is
+# based on.
+HEDGE_BETA_LOOKBACK_H = int(os.getenv("HEDGE_BETA_LOOKBACK_H", "720"))
+HEDGE_BETA_MIN_POINTS = int(os.getenv("HEDGE_BETA_MIN_POINTS", "24"))
+# Relative deviation of realized beta from the ex-ante beta used for sizing,
+# above which a trade is flagged "correlation_spiked" rather than
+# "correlation_held" in basis-risk reporting (research_decisions,
+# subject='rel_strength_market_neutral', addition 3).
+BASIS_RISK_BETA_TOLERANCE = float(os.getenv("BASIS_RISK_BETA_TOLERANCE", "0.5"))
 
 # Minimum confidence to treat a setup as tradable.
 # Live/future stages keep MIN_CONFIDENCE. Paper can run a lower gate to collect

@@ -3,28 +3,27 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.engine import hedge as hedge_engine
 from src.engine import indicators
 from src.strategies.base import SignalDirection
-from src.strategies.funding_carry import settlement_rates
 
 logger = logging.getLogger(__name__)
 
 ROUND_TRIP_COST_PCT = config.round_trip_cost_pct()
 
-_SETTLEMENT_SECONDS = 8 * 3600
 
-
-@dataclass(frozen=True)
-class _CarryPnL:
-    funding: float
-    basis_drift: float
+class FakeDeltaNeutralError(RuntimeError):
+    """funding_carry's execution_mode="delta_neutral" has no real hedge leg
+    in either path (see research_decisions, subject='funding_carry_disabled').
+    Computing P&L for it would silently report returns for a spot-long leg
+    that doesn't exist. Raise loudly instead -- a crash is recoverable and
+    obvious; a wrong number that looks plausible is neither."""
 
 
 def _execution_mode_from_trade(storage: Storage, trade: dict[str, Any]) -> str | None:
@@ -46,31 +45,6 @@ def _execution_mode_from_trade(storage: Storage, trade: dict[str, Any]) -> str |
     return str(mode) if mode is not None else None
 
 
-def _carry_pnl(storage: Storage, symbol: str, opened_at: int, notional: float) -> _CarryPnL:
-    """Accrued carry PnL approximation: funding minus basis drift.
-
-    Funding is summed over *complete* settlements observed after entry.
-    Basis drift is modeled as 0.0 here (spot/perp basis not tracked in storage).
-    """
-    rows = storage.get_funding_rates(symbol, limit=800, since=opened_at) or []
-    if not rows:
-        return _CarryPnL(funding=0.0, basis_drift=0.0)
-
-    opened_bucket = int(opened_at) // _SETTLEMENT_SECONDS
-    buckets: dict[int, float] = {}
-    for row in rows:
-        try:
-            bucket = int(row["timestamp"]) // _SETTLEMENT_SECONDS
-            buckets[bucket] = float(row["funding_rate"])
-        except Exception:
-            continue
-
-    settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
-    complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
-    funding = sum(complete_after_entry) * notional
-    return _CarryPnL(funding=funding, basis_drift=0.0)
-
-
 class PaperTrader:
     """Opens/closes simulated trades with position sizing and SL/TP rules."""
 
@@ -90,6 +64,33 @@ class PaperTrader:
         assert state is not None
         return state
 
+    def _price_for(self, symbol: str, prices_by_symbol: dict[str, float]) -> float:
+        price = prices_by_symbol.get(symbol)
+        if price is not None:
+            return price
+        row = self.storage.get_latest_price(symbol)
+        return float(row["close"]) if row else 0.0
+
+    def _hedge_leg_value_and_pnl(
+        self, trade: dict[str, Any], prices_by_symbol: dict[str, float]
+    ) -> tuple[float, float]:
+        """Current mark and unrealized P&L of the hedge leg, if this trade has
+        one. Unrealized marks never include funding or fees -- consistent
+        with the primary leg, which also only realizes those at close."""
+        hedge_symbol = trade.get("hedge_symbol")
+        if not hedge_symbol:
+            return 0.0, 0.0
+        price = prices_by_symbol.get(hedge_symbol)
+        if price is None:
+            row = self.storage.get_latest_price(hedge_symbol)
+            price = float(row["close"]) if row else float(trade["hedge_entry_price"])
+        direction = trade["hedge_direction"]
+        entry = float(trade["hedge_entry_price"])
+        qty = float(trade["hedge_quantity"])
+        value = hedge_engine.leg_position_value(direction, entry, price, qty)
+        pnl = hedge_engine.leg_pnl(direction, entry, price, qty)
+        return value, pnl
+
     def portfolio_value(self, prices_by_symbol: dict[str, float] | None = None) -> float:
         """Total portfolio value using latest price per open position."""
         prices_by_symbol = prices_by_symbol or {}
@@ -101,12 +102,10 @@ class PaperTrader:
 
         total = cash
         for trade in self.storage.get_open_trades():
-            sym = trade["symbol"]
-            price = prices_by_symbol.get(sym)
-            if price is None:
-                row = self.storage.get_latest_price(sym)
-                price = float(row["close"]) if row else float(trade["entry_price"])
+            price = self._price_for(trade["symbol"], prices_by_symbol)
             total += self._position_value(trade, price)
+            hedge_value, _ = self._hedge_leg_value_and_pnl(trade, prices_by_symbol)
+            total += hedge_value
         return total
 
     def _open_position_value(self, trade: dict[str, Any], price: float) -> float:
@@ -128,6 +127,11 @@ class PaperTrader:
             reserved += notional
             value += position_value
             unrealized += self._realized_pnl(trade, price)
+            hedge_value, hedge_pnl = self._hedge_leg_value_and_pnl(trade, prices)
+            if trade.get("hedge_symbol"):
+                reserved += float(trade["hedge_quantity"]) * float(trade["hedge_entry_price"])
+            value += hedge_value
+            unrealized += hedge_pnl
         return {
             "reserved_margin": reserved,
             "open_position_value": value,
@@ -283,56 +287,121 @@ class PaperTrader:
         age_hours = (datetime.now(timezone.utc).timestamp() - last_opened) / 3600.0
         return age_hours < hours
 
+    def _hedge_leg_for_open(
+        self,
+        signal_result: dict[str, Any],
+        direction: str,
+        portfolio: float,
+        cash: float,
+        primary_price: float,
+    ) -> dict[str, Any] | None:
+        """Compute the hedge leg's sizing for a market-neutral entry, or None
+        if this isn't a market-neutral signal / the hedge can't be sized.
+
+        No naked leg by construction: this is called from _open_trade before
+        any insert happens, and both legs land in the SAME insert_paper_trade
+        call -- there is no code path that opens the primary without also
+        recording the hedge, or vice versa.
+        """
+        metadata = signal_result.get("metadata") or {}
+        if metadata.get("execution_mode") != "market_neutral":
+            return None
+        hedge_symbol = metadata.get("hedge_symbol") or config.SYMBOL
+        beta = metadata.get("beta")
+        if not beta or beta <= 0:
+            return None
+        hedge_row = self.storage.get_latest_price(hedge_symbol)
+        if not hedge_row:
+            return None
+        hedge_price = float(hedge_row["close"])
+
+        primary_cap, hedge_cap = hedge_engine.position_caps(portfolio, config.MAX_POSITION_PCT, beta)
+        available = min(primary_cap + hedge_cap, cash)
+        primary_notional = available / (1.0 + beta)
+        hedge_notional = primary_notional * beta
+        if primary_notional <= 0 or hedge_notional <= 0:
+            return None
+
+        return {
+            "hedge_symbol": hedge_symbol,
+            "hedge_direction": hedge_engine.hedge_direction_for(direction),
+            "hedge_entry_price": hedge_price,
+            "hedge_quantity": hedge_notional / hedge_price,
+            "hedge_beta": float(beta),
+            "primary_notional": primary_notional,
+            "hedge_notional": hedge_notional,
+        }
+
     def _open_trade(self, signal_result: dict[str, Any], current_price: float) -> dict[str, Any]:
         symbol = signal_result.get("symbol", config.SYMBOL)
         state = self.ensure_portfolio(current_price)
         portfolio = self.portfolio_value()
+        cash = float(state["cash"])
         direction = signal_result["direction"]
         style = config.normalize_holding_style(signal_result.get("style"))
 
         atr = self._atr_pct(symbol)
         stop_loss, take_profit = self._exit_levels(direction, current_price, atr)
-        notional = self._position_notional(
-            portfolio, float(state["cash"]), current_price, stop_loss
-        )
+
+        hedge_leg = self._hedge_leg_for_open(signal_result, direction, portfolio, cash, current_price)
+        if hedge_leg is not None:
+            notional = hedge_leg["primary_notional"]
+        else:
+            notional = self._position_notional(portfolio, cash, current_price, stop_loss)
         if notional <= 0:
             return {"opened": False, "reason": "no cash / zero position size"}
         quantity = notional / current_price
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
-        trade_id = self.storage.insert_paper_trade(
-            {
-                "signal_id": signal_result.get("signal_id"),
-                "symbol": symbol,
-                "direction": direction,
-                "entry_price": current_price,
-                "exit_price": None,
-                "quantity": quantity,
-                "stop_loss": stop_loss,
-                "take_profit": take_profit,
-                "status": "open",
-                "pnl": None,
-                "opened_at": now_ts,
-                "closed_at": None,
-                "strategy": signal_result.get("strategy"),
-                "style": style,
-                "atr_pct": atr,
-                "trail_price": current_price,
-                "exit_reason": None,
-                "fees": None,
-            }
-        )
+        trade_row = {
+            "signal_id": signal_result.get("signal_id"),
+            "symbol": symbol,
+            "direction": direction,
+            "entry_price": current_price,
+            "exit_price": None,
+            "quantity": quantity,
+            "stop_loss": stop_loss,
+            "take_profit": take_profit,
+            "status": "open",
+            "pnl": None,
+            "opened_at": now_ts,
+            "closed_at": None,
+            "strategy": signal_result.get("strategy"),
+            "style": style,
+            "atr_pct": atr,
+            "trail_price": current_price,
+            "exit_reason": None,
+            "fees": None,
+        }
+        cash_reserved = notional
+        if hedge_leg is not None:
+            trade_row.update(
+                {
+                    "hedge_symbol": hedge_leg["hedge_symbol"],
+                    "hedge_direction": hedge_leg["hedge_direction"],
+                    "hedge_entry_price": hedge_leg["hedge_entry_price"],
+                    "hedge_quantity": hedge_leg["hedge_quantity"],
+                    "hedge_beta": hedge_leg["hedge_beta"],
+                }
+            )
+            cash_reserved += hedge_leg["hedge_notional"]
 
-        new_cash = float(state["cash"]) - notional
+        trade_id = self.storage.insert_paper_trade(trade_row)
+
+        new_cash = cash - cash_reserved
         self.storage.update_portfolio_cash(new_cash)
 
         logger.info(
-            "Paper trade opened id=%s %s %s qty=%.6f @ %.2f",
+            "Paper trade opened id=%s %s %s qty=%.6f @ %.2f%s",
             trade_id,
             symbol,
             direction,
             quantity,
             current_price,
+            f" hedge={hedge_leg['hedge_symbol']} {hedge_leg['hedge_direction']} "
+            f"qty={hedge_leg['hedge_quantity']:.6f} beta={hedge_leg['hedge_beta']:.3f}"
+            if hedge_leg is not None
+            else "",
         )
         return {
             "opened": True,
@@ -342,58 +411,114 @@ class PaperTrader:
             "entry_price": current_price,
         }
 
+    def _close_hedge_leg(
+        self, trade: dict[str, Any], opened_at: int, closed_at: int
+    ) -> tuple[float, dict[str, Any]]:
+        """Close the hedge leg in lockstep with the primary leg. Returns the
+        hedge leg's reserved notional (to release back to cash -- its P&L is
+        already folded into the combined pnl the caller adds separately) and
+        the fields to persist. No independent exit condition -- this only
+        runs because the primary leg is closing, for any reason.
+        """
+        hedge_symbol = trade.get("hedge_symbol")
+        if not hedge_symbol:
+            return 0.0, {}
+
+        direction = trade["hedge_direction"]
+        entry = float(trade["hedge_entry_price"])
+        qty = float(trade["hedge_quantity"])
+        notional = entry * qty
+
+        row = self.storage.get_latest_price(hedge_symbol)
+        if row:
+            exit_price = float(row["close"])
+        else:
+            # Stale/missing price: never defer the hedge close -- fall back
+            # to entry price (zero hedge P&L) rather than leave a naked leg.
+            exit_price = entry
+            logger.warning(
+                "No price available to close hedge leg %s for trade id=%s; "
+                "closing at entry price %.6f",
+                hedge_symbol,
+                trade.get("id"),
+                entry,
+            )
+
+        hedge_pnl = hedge_engine.leg_pnl(direction, entry, exit_price, qty)
+        hedge_fees = hedge_engine.leg_fees(notional, ROUND_TRIP_COST_PCT)
+
+        funding_rows = self.storage.get_funding_rates(hedge_symbol, since=opened_at, before=closed_at)
+        funding_pnl = hedge_engine.funding_pnl_for_leg(direction, funding_rows, notional, opened_at, closed_at)
+
+        primary_rows = self.storage.get_prices(trade["symbol"], since=opened_at, before=closed_at, timeframe="1h")
+        hedge_rows = self.storage.get_prices(hedge_symbol, since=opened_at, before=closed_at, timeframe="1h")
+        realized = hedge_engine.realized_beta_and_correlation(
+            primary_rows, hedge_rows, opened_at, closed_at, config.HEDGE_BETA_MIN_POINTS
+        )
+
+        fields = {
+            "hedge_exit_price": exit_price,
+            "hedge_pnl": hedge_pnl,
+            "hedge_fees": hedge_fees,
+            "funding_pnl": funding_pnl,
+            "realized_beta": realized["beta"],
+            "realized_correlation": realized["correlation"],
+        }
+        return notional, fields
+
     def _close_trade(
         self, trade: dict[str, Any], current_price: float, reason: str
     ) -> dict[str, Any]:
         notional = float(trade["quantity"]) * float(trade["entry_price"])
         execution_mode = _execution_mode_from_trade(self.storage, trade)
         if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            fees = notional * config.CARRY_FEE_ROUNDTRIP
-        else:
-            fees = notional * ROUND_TRIP_COST_PCT
-        pnl = self._realized_pnl(trade, current_price) - fees
-        state = self.storage.get_portfolio_state()
-        cash = float(state["cash"]) if state else 0.0
-        self.storage.update_portfolio_cash(cash + notional + pnl)
+            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
+        fees = notional * ROUND_TRIP_COST_PCT
+        primary_pnl = self._realized_pnl(trade, current_price)
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
-        self.storage.update_paper_trade(
-            int(trade["id"]),
-            {
-                "exit_price": current_price,
-                "status": "closed",
-                "pnl": pnl,
-                "closed_at": now_ts,
-                "exit_reason": reason,
-                "fees": fees,
-            },
+        opened_at = int(trade["opened_at"])
+        hedge_notional, hedge_fields = self._close_hedge_leg(trade, opened_at, now_ts)
+        pnl = hedge_engine.combined_trade_pnl(
+            primary_pnl,
+            fees,
+            hedge_fields.get("hedge_pnl", 0.0),
+            hedge_fields.get("hedge_fees", 0.0),
+            hedge_fields.get("funding_pnl", 0.0),
         )
+
+        state = self.storage.get_portfolio_state()
+        cash = float(state["cash"]) if state else 0.0
+        # Release both legs' reserved notional; pnl already nets out both
+        # legs' P&L, fees, and funding, so it's added exactly once.
+        self.storage.update_portfolio_cash(cash + notional + hedge_notional + pnl)
+
+        update_fields = {
+            "exit_price": current_price,
+            "status": "closed",
+            "pnl": pnl,
+            "closed_at": now_ts,
+            "exit_reason": reason,
+            "fees": fees,
+            **hedge_fields,
+        }
+        self.storage.update_paper_trade(int(trade["id"]), update_fields)
         logger.info(
-            "Paper trade closed id=%s pnl=%.2f reason=%s",
+            "Paper trade closed id=%s pnl=%.2f reason=%s%s",
             trade["id"],
             pnl,
             reason,
+            f" hedge_pnl={hedge_fields['hedge_pnl']:.4f} funding_pnl={hedge_fields['funding_pnl']:.4f} "
+            f"realized_beta={hedge_fields['realized_beta']}"
+            if hedge_fields
+            else "",
         )
         return {"trade_id": trade["id"], "pnl": pnl, "reason": reason}
 
     def _check_exit(self, trade: dict[str, Any], price: float) -> str | None:
         execution_mode = _execution_mode_from_trade(self.storage, trade)
         if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            opened_at = trade.get("opened_at")
-            if opened_at is None:
-                return None
-            rates = settlement_rates(
-                self.storage.get_funding_rates(trade["symbol"], limit=800, since=int(opened_at))
-                or []
-            )
-            if not rates:
-                return None
-            if rates[-1] < 0:
-                return "carry_negative_funding"
-            need = int(config.CARRY_EXIT_CONSECUTIVE)
-            if len(rates) >= need and all(rate < config.CARRY_EXIT_RATE for rate in rates[-need:]):
-                return "carry_funding_cooled"
-            return None
+            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
 
         direction = trade["direction"]
         stop = float(trade["stop_loss"])
@@ -426,11 +551,7 @@ class PaperTrader:
         notional = qty * entry
         execution_mode = _execution_mode_from_trade(self.storage, trade)
         if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            opened_at = trade.get("opened_at")
-            if opened_at is None:
-                return notional
-            carry = _carry_pnl(self.storage, trade["symbol"], int(opened_at), notional)
-            return notional + carry.funding - carry.basis_drift
+            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
         if trade["direction"] == SignalDirection.LONG.value:
             return qty * price
         return notional + (entry - price) * qty
@@ -476,12 +597,7 @@ class PaperTrader:
         entry = float(trade["entry_price"])
         execution_mode = _execution_mode_from_trade(self.storage, trade)
         if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            opened_at = trade.get("opened_at")
-            notional = qty * entry
-            if opened_at is None:
-                return 0.0
-            carry = _carry_pnl(self.storage, trade["symbol"], int(opened_at), notional)
-            return carry.funding - carry.basis_drift
+            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
         if trade["direction"] == SignalDirection.LONG.value:
             return (exit_price - entry) * qty
         return (entry - exit_price) * qty
@@ -552,6 +668,17 @@ class PaperTrader:
         total_pnl = realized_pnl + unrealized
         total_pnl_pct = (total_pnl / invested * 100.0) if invested else None
 
+        hedge_info = None
+        if open_trade.get("hedge_symbol"):
+            _, hedge_unrealized = self._hedge_leg_value_and_pnl(open_trade, {})
+            hedge_info = {
+                "hedge_symbol": open_trade["hedge_symbol"],
+                "hedge_direction": open_trade["hedge_direction"],
+                "hedge_beta": float(open_trade["hedge_beta"]) if open_trade.get("hedge_beta") else None,
+                "hedge_unrealized_pnl": round(hedge_unrealized, 2),
+                "combined_unrealized_pnl": round(unrealized + hedge_unrealized, 2),
+            }
+
         # Original ATR stop at entry — lets the UI show trailing adjustments
         # ("손절 $X → $Y 조정됨") without a separate audit table.
         entry = float(open_trade["entry_price"])
@@ -596,6 +723,7 @@ class PaperTrader:
             "trade_id": open_trade["id"],
             "closed_trades": len(closed),
             "lifetime_invested": round(closed_invested + invested, 2),
+            "hedge": hedge_info,
         }
 
     def holdings_for_symbols(self, symbols: list[str]) -> dict[str, dict[str, Any]]:

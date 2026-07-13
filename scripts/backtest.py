@@ -20,11 +20,12 @@ from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
 from src.engine.evaluation import STRATEGY_CATEGORY_MAP, evaluate_symbol  # noqa: E402
+from src.engine import hedge as hedge_engine  # noqa: E402
+from src.engine.paper_trader import FakeDeltaNeutralError  # noqa: E402
 from src.engine.regime import btc_regime  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
 from src.research.market_categories import category_at  # noqa: E402
 from src.strategies.base import Signal, SignalDirection  # noqa: E402
-from src.strategies.funding_carry import settlement_rates  # noqa: E402
 from src.strategies.registry import get_strategy, list_strategies  # noqa: E402
 
 
@@ -67,6 +68,17 @@ class BacktestTrade:
     pnl: float | None = None
     exit_reason: str | None = None
     fees: float | None = None
+    hedge_symbol: str | None = None
+    hedge_direction: str | None = None
+    hedge_entry_price: float | None = None
+    hedge_quantity: float | None = None
+    hedge_beta: float | None = None
+    hedge_exit_price: float | None = None
+    hedge_pnl: float | None = None
+    hedge_fees: float | None = None
+    funding_pnl: float | None = None
+    realized_beta: float | None = None
+    realized_correlation: float | None = None
 
     @property
     def notional(self) -> float:
@@ -80,6 +92,46 @@ class BacktestPortfolio:
     open_trades: list[BacktestTrade] = field(default_factory=list)
     closed_trades: list[BacktestTrade] = field(default_factory=list)
 
+    def _hedge_leg_for_open(
+        self,
+        direction: str,
+        metadata: dict[str, Any] | None,
+        prices: dict[str, float],
+        timestamp: int,
+    ) -> dict[str, Any] | None:
+        """Compute the hedge leg's sizing for a market-neutral entry, or None
+        if this isn't a market-neutral signal / the hedge can't be sized.
+        Mirrors src.engine.paper_trader.PaperTrader._hedge_leg_for_open so
+        live and backtest can never size a hedge differently."""
+        metadata = metadata or {}
+        if metadata.get("execution_mode") != "market_neutral":
+            return None
+        hedge_symbol = metadata.get("hedge_symbol") or config.SYMBOL
+        beta = metadata.get("beta")
+        if not beta or beta <= 0:
+            return None
+        hedge_price = prices.get(hedge_symbol)
+        if hedge_price is None:
+            return None
+
+        portfolio_value = self.value(prices, timestamp)
+        primary_cap, hedge_cap = hedge_engine.position_caps(portfolio_value, config.MAX_POSITION_PCT, beta)
+        available = min(primary_cap + hedge_cap, self.cash)
+        primary_notional = available / (1.0 + beta)
+        hedge_notional = primary_notional * beta
+        if primary_notional <= 0 or hedge_notional <= 0:
+            return None
+
+        return {
+            "hedge_symbol": hedge_symbol,
+            "hedge_direction": hedge_engine.hedge_direction_for(direction),
+            "hedge_entry_price": hedge_price,
+            "hedge_quantity": hedge_notional / hedge_price,
+            "hedge_beta": float(beta),
+            "primary_notional": primary_notional,
+            "hedge_notional": hedge_notional,
+        }
+
     def open_trade(
         self,
         symbol: str,
@@ -89,6 +141,7 @@ class BacktestPortfolio:
         *,
         strategy: str | None = None,
         metadata: dict[str, Any] | None = None,
+        prices: dict[str, float] | None = None,
     ) -> BacktestTrade | None:
         if direction not in (SignalDirection.LONG.value, SignalDirection.SHORT.value):
             return None
@@ -102,9 +155,15 @@ class BacktestPortfolio:
         if self._symbol_in_cooldown(symbol, timestamp):
             return None
 
-        portfolio_value = self.value({}, timestamp)
-        notional = portfolio_value * config.MAX_POSITION_PCT
-        if notional <= 0 or self.cash < notional:
+        prices = prices or {}
+        hedge_leg = self._hedge_leg_for_open(direction, metadata, prices, timestamp)
+        if hedge_leg is not None:
+            notional = hedge_leg["primary_notional"]
+        else:
+            portfolio_value = self.value({}, timestamp)
+            notional = portfolio_value * config.MAX_POSITION_PCT
+        combined_notional = notional + (hedge_leg["hedge_notional"] if hedge_leg else 0.0)
+        if notional <= 0 or self.cash < combined_notional:
             return None
 
         quantity = notional / price
@@ -125,8 +184,13 @@ class BacktestPortfolio:
             opened_at=timestamp,
             strategy=strategy,
             metadata=metadata,
+            hedge_symbol=hedge_leg["hedge_symbol"] if hedge_leg else None,
+            hedge_direction=hedge_leg["hedge_direction"] if hedge_leg else None,
+            hedge_entry_price=hedge_leg["hedge_entry_price"] if hedge_leg else None,
+            hedge_quantity=hedge_leg["hedge_quantity"] if hedge_leg else None,
+            hedge_beta=hedge_leg["hedge_beta"] if hedge_leg else None,
         )
-        self.cash -= notional
+        self.cash -= combined_notional
         self.open_trades.append(trade)
         return trade
 
@@ -137,7 +201,7 @@ class BacktestPortfolio:
             reason = self._exit_reason(trade, price, timestamp)
             if reason:
                 close_price = price if price is not None else trade.entry_price
-                self.close_trade(trade, close_price, timestamp, reason)
+                self.close_trade(trade, close_price, timestamp, reason, prices=prices)
             else:
                 still_open.append(trade)
         self.open_trades = still_open
@@ -145,36 +209,116 @@ class BacktestPortfolio:
     def close_all(self, prices: dict[str, float], timestamp: int) -> None:
         for trade in list(self.open_trades):
             price = prices.get(trade.symbol, trade.entry_price)
-            self.close_trade(trade, price, timestamp, "end_of_backtest")
+            self.close_trade(trade, price, timestamp, "end_of_backtest", prices=prices)
         self.open_trades = []
 
+    def _close_hedge_leg(
+        self, trade: BacktestTrade, closed_at: int, prices: dict[str, float]
+    ) -> tuple[float, dict[str, Any]]:
+        """Close the hedge leg in lockstep with the primary leg. Returns the
+        hedge leg's reserved notional (to release back to cash -- its P&L is
+        folded into the combined pnl the caller adds separately) and the
+        fields to persist. Mirrors PaperTrader._close_hedge_leg exactly."""
+        if not trade.hedge_symbol:
+            return 0.0, {}
+
+        direction = trade.hedge_direction
+        entry = float(trade.hedge_entry_price)
+        qty = float(trade.hedge_quantity)
+        notional = entry * qty
+        exit_price = prices.get(trade.hedge_symbol, entry)
+
+        hedge_pnl = hedge_engine.leg_pnl(direction, entry, exit_price, qty)
+        hedge_fees = hedge_engine.leg_fees(notional, config.round_trip_cost_pct())
+
+        opened_at = trade.opened_at
+        realized_beta = realized_correlation = None
+        funding_pnl = 0.0
+        if self.storage is not None:
+            funding_rows = self.storage.get_funding_rates(
+                trade.hedge_symbol, since=opened_at, before=closed_at
+            )
+            funding_pnl = hedge_engine.funding_pnl_for_leg(
+                direction, funding_rows, notional, opened_at, closed_at
+            )
+            primary_rows = self.storage.get_prices(
+                trade.symbol, since=opened_at, before=closed_at, timeframe="1h"
+            )
+            hedge_rows = self.storage.get_prices(
+                trade.hedge_symbol, since=opened_at, before=closed_at, timeframe="1h"
+            )
+            realized = hedge_engine.realized_beta_and_correlation(
+                primary_rows, hedge_rows, opened_at, closed_at, config.HEDGE_BETA_MIN_POINTS
+            )
+            realized_beta, realized_correlation = realized["beta"], realized["correlation"]
+
+        fields = {
+            "hedge_exit_price": exit_price,
+            "hedge_pnl": hedge_pnl,
+            "hedge_fees": hedge_fees,
+            "funding_pnl": funding_pnl,
+            "realized_beta": realized_beta,
+            "realized_correlation": realized_correlation,
+        }
+        return notional, fields
+
     def close_trade(
-        self, trade: BacktestTrade, price: float, timestamp: int, reason: str
+        self,
+        trade: BacktestTrade,
+        price: float,
+        timestamp: int,
+        reason: str,
+        prices: dict[str, float] | None = None,
     ) -> None:
-        pnl = self._realized_pnl(trade, price, timestamp)
-        fees = 0.0
         if (
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
         ):
-            fees = trade.notional * config.CARRY_FEE_ROUNDTRIP
-            pnl -= fees
-        else:
-            fees = trade.notional * config.round_trip_cost_pct()
-            pnl -= fees
+            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
+        primary_pnl = self._realized_pnl(trade, price, timestamp)
+        fees = trade.notional * config.round_trip_cost_pct()
+
+        hedge_notional, hedge_fields = self._close_hedge_leg(trade, timestamp, prices or {})
+        pnl = hedge_engine.combined_trade_pnl(
+            primary_pnl,
+            fees,
+            hedge_fields.get("hedge_pnl", 0.0),
+            hedge_fields.get("hedge_fees", 0.0),
+            hedge_fields.get("funding_pnl", 0.0),
+        )
+
         trade.fees = fees
         trade.exit_price = price
         trade.closed_at = timestamp
         trade.pnl = pnl
         trade.exit_reason = reason
-        self.cash += trade.notional + pnl
+        for key, value in hedge_fields.items():
+            setattr(trade, key, value)
+        # Release both legs' reserved notional; pnl already nets out both
+        # legs' P&L, fees, and funding, so it's added exactly once.
+        self.cash += trade.notional + hedge_notional + pnl
         self.closed_trades.append(trade)
+
+    def _hedge_unrealized(
+        self, trade: BacktestTrade, prices: dict[str, float]
+    ) -> tuple[float, float]:
+        if not trade.hedge_symbol:
+            return 0.0, 0.0
+        price = prices.get(trade.hedge_symbol, trade.hedge_entry_price)
+        direction = trade.hedge_direction
+        entry = float(trade.hedge_entry_price)
+        qty = float(trade.hedge_quantity)
+        value = hedge_engine.leg_position_value(direction, entry, price, qty)
+        pnl = hedge_engine.leg_pnl(direction, entry, price, qty)
+        return value, pnl
 
     def value(self, prices: dict[str, float], timestamp: int | None) -> float:
         total = self.cash
         for trade in self.open_trades:
             price = prices.get(trade.symbol, trade.entry_price)
             total += self._position_value(trade, price, timestamp=timestamp)
+            hedge_value, _ = self._hedge_unrealized(trade, prices)
+            total += hedge_value
         return total
 
     def pnl_by_symbol(self, prices: dict[str, float], timestamp: int | None) -> dict[str, float]:
@@ -189,7 +333,14 @@ class BacktestPortfolio:
                 for t in self.open_trades
                 if t.symbol == symbol
             )
-            result[symbol] = realized + unrealized
+            # Hedge legs aren't a separate tradable position -- their P&L
+            # belongs to the primary symbol's trade that opened them.
+            hedge_unrealized = sum(
+                self._hedge_unrealized(t, prices)[1]
+                for t in self.open_trades
+                if t.symbol == symbol
+            )
+            result[symbol] = realized + unrealized + hedge_unrealized
         return result
 
     def _symbol_in_cooldown(self, symbol: str, timestamp: int) -> bool:
@@ -211,22 +362,7 @@ class BacktestPortfolio:
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
         ):
-            if self.storage is None:
-                return None
-            rates = settlement_rates(
-                self.storage.get_funding_rates(
-                    trade.symbol, limit=800, since=trade.opened_at, before=timestamp
-                )
-                or []
-            )
-            if not rates:
-                return None
-            if rates[-1] < 0:
-                return "carry_negative_funding"
-            need = int(config.CARRY_EXIT_CONSECUTIVE)
-            if len(rates) >= need and all(rate < config.CARRY_EXIT_RATE for rate in rates[-need:]):
-                return "carry_funding_cooled"
-            return None
+            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
 
         if price is None:
             return None
@@ -258,25 +394,8 @@ class BacktestPortfolio:
         if (
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
-            and self.storage is not None
         ):
-            rows = self.storage.get_funding_rates(
-                trade.symbol, limit=800, since=trade.opened_at, before=timestamp
-            ) or []
-            # funding over complete settlements after entry
-            opened_bucket = int(trade.opened_at) // (8 * 3600)
-            buckets: dict[int, float] = {}
-            for row in rows:
-                try:
-                    bucket = int(row["timestamp"]) // (8 * 3600)
-                    buckets[bucket] = float(row["funding_rate"])
-                except Exception:
-                    continue
-            settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
-            complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
-            funding = sum(complete_after_entry) * trade.notional
-            basis_drift = 0.0
-            return funding - basis_drift
+            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
         if trade.direction == SignalDirection.LONG.value:
             return (price - trade.entry_price) * trade.quantity
         return (trade.entry_price - price) * trade.quantity
@@ -287,25 +406,8 @@ class BacktestPortfolio:
         if (
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
-            and self.storage is not None
         ):
-            before = timestamp if timestamp is not None else None
-            rows = self.storage.get_funding_rates(
-                trade.symbol, limit=800, since=trade.opened_at, before=before
-            ) or []
-            opened_bucket = int(trade.opened_at) // (8 * 3600)
-            buckets: dict[int, float] = {}
-            for row in rows:
-                try:
-                    bucket = int(row["timestamp"]) // (8 * 3600)
-                    buckets[bucket] = float(row["funding_rate"])
-                except Exception:
-                    continue
-            settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
-            complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
-            funding = sum(complete_after_entry) * trade.notional
-            basis_drift = 0.0
-            return trade.notional + funding - basis_drift
+            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
         if trade.direction == SignalDirection.LONG.value:
             return trade.quantity * price
         return trade.notional + (trade.entry_price - price) * trade.quantity
@@ -527,8 +629,16 @@ class BacktestEngine:
             entry_price=float(last_price),
             # verdict["style"] is the raw Korean label ("스윙") --
             # config.normalize_holding_style() accepts it directly, same as
-            # the live path, so no translation needed here.
-            metadata={"style": verdict.get("style")},
+            # the live path, so no translation needed here. execution_mode/
+            # beta/hedge_symbol are only set by market-neutral setups (e.g.
+            # _rel_strength_setup); absent for everything else, so this is a
+            # no-op for strategies that don't hedge.
+            metadata={
+                "style": verdict.get("style"),
+                "execution_mode": verdict.get("execution_mode"),
+                "beta": verdict.get("beta"),
+                "hedge_symbol": verdict.get("hedge_symbol"),
+            },
         )
 
     def run(self) -> dict[str, Any]:
@@ -585,6 +695,7 @@ class BacktestEngine:
                         ts,
                         strategy=self.strategy_name,
                         metadata=signal.metadata,
+                        prices=current_prices,
                     )
                     if opened:
                         opened_count += 1
@@ -643,6 +754,7 @@ class BacktestEngine:
                         ts,
                         strategy=self.strategy_name,
                         metadata=signal.metadata,
+                        prices=current_prices,
                     )
                     if opened:
                         opened_count += 1
@@ -697,6 +809,12 @@ class BacktestEngine:
                 }
                 for t in portfolio.closed_trades
             ],
+            # Market-neutral trades only (research_decisions,
+            # subject='rel_strength_market_neutral', additions 2 & 3): net
+            # expectancy with/without funding, and expectancy split by
+            # whether the realized beta stayed close to the ex-ante beta
+            # used for sizing. None when no hedge trades closed.
+            "hedge_analysis": _hedge_analysis(portfolio.closed_trades),
         }
 
     def _load_prices(self) -> dict[str, list[dict[str, Any]]]:
@@ -772,6 +890,58 @@ class BacktestEngine:
                 "max_drawdown_pct": round(_max_drawdown(symbol_curves[symbol]), 2),
             }
         return result
+
+
+def _hedge_analysis(trades: list[BacktestTrade]) -> dict[str, Any] | None:
+    """Net-of-funding expectancy and basis-risk split for market-neutral
+    trades (research_decisions, subject='rel_strength_market_neutral',
+    additions 2 & 3). None when no hedge trades closed -- zero trades is
+    information, not something to paper over with a zeroed-out report."""
+    hedge_trades = [t for t in trades if t.hedge_symbol]
+    if not hedge_trades:
+        return None
+
+    def pct(pnl: float, notional: float) -> float | None:
+        return (pnl / notional * 100.0) if notional else None
+
+    def bucket_summary(bucket: list[BacktestTrade]) -> dict[str, Any]:
+        if not bucket:
+            return {"n": 0, "avg_pnl": None, "avg_pnl_pct": None}
+        pnls = [float(t.pnl or 0.0) for t in bucket]
+        pcts = [p for t, p in zip(bucket, (pct(pn, t.notional) for pn, t in zip(pnls, bucket))) if p is not None]
+        return {
+            "n": len(bucket),
+            "avg_pnl": round(sum(pnls) / len(pnls), 6),
+            "avg_pnl_pct": round(sum(pcts) / len(pcts), 4) if pcts else None,
+        }
+
+    with_funding = [float(t.pnl or 0.0) for t in hedge_trades]
+    without_funding = [float(t.pnl or 0.0) - float(t.funding_pnl or 0.0) for t in hedge_trades]
+    with_funding_pcts = [p for t, p in zip(hedge_trades, (pct(v, t.notional) for v, t in zip(with_funding, hedge_trades))) if p is not None]
+    without_funding_pcts = [p for t, p in zip(hedge_trades, (pct(v, t.notional) for v, t in zip(without_funding, hedge_trades))) if p is not None]
+
+    buckets: dict[str, list[BacktestTrade]] = {
+        "correlation_held": [], "correlation_spiked": [], "unknown": [],
+    }
+    for t in hedge_trades:
+        status = hedge_engine.basis_risk_status(t.hedge_beta, t.realized_beta, config.BASIS_RISK_BETA_TOLERANCE)
+        buckets[status].append(t)
+
+    return {
+        "trades": len(hedge_trades),
+        "avg_pnl_with_funding": round(sum(with_funding) / len(with_funding), 6),
+        "avg_pnl_pct_with_funding": round(sum(with_funding_pcts) / len(with_funding_pcts), 4)
+        if with_funding_pcts else None,
+        "avg_pnl_without_funding": round(sum(without_funding) / len(without_funding), 6),
+        "avg_pnl_pct_without_funding": round(sum(without_funding_pcts) / len(without_funding_pcts), 4)
+        if without_funding_pcts else None,
+        "avg_funding_pnl": round(sum(float(t.funding_pnl or 0.0) for t in hedge_trades) / len(hedge_trades), 6),
+        "basis_risk": {
+            "correlation_held": bucket_summary(buckets["correlation_held"]),
+            "correlation_spiked": bucket_summary(buckets["correlation_spiked"]),
+            "unknown": bucket_summary(buckets["unknown"]),
+        },
+    }
 
 
 def _max_drawdown(values: list[float | int]) -> float:
