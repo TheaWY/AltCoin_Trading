@@ -75,6 +75,11 @@ OVERRIDE_KEY_EXACT = frozenset(
         "SETUP_CAPITULATION_BAR_ENABLED",
         "SETUP_VOLUME_ZSCORE_ENABLED",
         "SETUP_PUMP24_EXTREME_ENABLED",
+        # Same reasoning: REGIME_GATE is checked inside the four setups above,
+        # inside evaluate_symbol(), so a backtest expectancy for it is
+        # evidence about it too. See research_decisions,
+        # subject='regime_gate_diagnosis'.
+        "REGIME_GATE",
     }
 )
 

@@ -373,6 +373,8 @@ def _rel_strength_setup(
     """
     if not config.SETUP_REL_STRENGTH_ENABLED:
         return None
+    if _regime_gate_blocks_entry(storage):
+        return None
     if symbol == config.SYMBOL:
         return None
 
@@ -435,6 +437,27 @@ def _latest_bar_ts(storage: Storage, symbol: str) -> int | None:
     return int(rows[-1]["timestamp"]) if rows else None
 
 
+def _regime_gate_blocks_entry(storage: Storage) -> bool:
+    """REGIME_GATE=low_vol_only: block new entries in the four volatility-
+    dislocation setups (rel_strength_rotation, capitulation_bar,
+    volume_zscore_3plus, pump24_extreme -- NOT a universal filter on every
+    strategy) when BTC's trailing 30d annualized realized vol is at/above
+    REGIME_GATE_VOL_THRESHOLD_PCT. See research_decisions,
+    subject='regime_gate_diagnosis' for why this is LOW-vol-permissive, not
+    high-vol-permissive as originally hypothesized -- the diagnosis found
+    the opposite polarity. Same evaluate_symbol() call in both backtest and
+    live, so this is identical in both paths by construction, not by
+    separate implementation.
+    """
+    if config.REGIME_GATE != "low_vol_only":
+        return False
+    btc_rows = storage.get_prices(config.SYMBOL, limit=721, timeframe="1h")
+    vol = indicators.realized_vol_annualized(indicators.closes(btc_rows), window=720)
+    if vol is None:
+        return False  # insufficient history -- don't block on missing data
+    return vol >= config.REGIME_GATE_VOL_THRESHOLD_PCT
+
+
 def _capitulation_bar_setup(
     storage: Storage, symbol: str, metrics: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -455,6 +478,8 @@ def _capitulation_bar_setup(
     72h version.
     """
     if not config.SETUP_CAPITULATION_BAR_ENABLED:
+        return None
+    if _regime_gate_blocks_entry(storage):
         return None
     latest_ts = _latest_bar_ts(storage, symbol)
     if latest_ts is None:
@@ -487,6 +512,8 @@ def _volume_zscore_setup(
     version.
     """
     if not config.SETUP_VOLUME_ZSCORE_ENABLED:
+        return None
+    if _regime_gate_blocks_entry(storage):
         return None
     latest_ts = _latest_bar_ts(storage, symbol)
     if latest_ts is None:
@@ -530,6 +557,8 @@ def _pump24_extreme_setup(
     fires the 24h version.
     """
     if not config.SETUP_PUMP24_EXTREME_ENABLED:
+        return None
+    if _regime_gate_blocks_entry(storage):
         return None
     latest_ts = _latest_bar_ts(storage, symbol)
     if latest_ts is None:

@@ -423,6 +423,26 @@ REGIME_BTC_DROP_7D_PCT = float(os.getenv("REGIME_BTC_DROP_7D_PCT", "-8.0"))
 REGIME_BTC_PUMP_24H_PCT = float(os.getenv("REGIME_BTC_PUMP_24H_PCT", "3.0"))
 REGIME_BTC_PUMP_7D_PCT = float(os.getenv("REGIME_BTC_PUMP_7D_PCT", "8.0"))
 
+# Regime conditioning for the four volatility-dislocation setups (rel_strength
+# _rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme). Diagnosis
+# (research_decisions, subject='regime_gate_diagnosis', 2026-07-13): trailing
+# BTC TREND showed no consistent ex-ante signal across the four strategies
+# (direction/magnitude varied, sometimes inverted); trailing BTC 30d realized
+# VOLATILITY did, but in the OPPOSITE direction from the original "trade
+# during dislocation/high-vol" hypothesis -- LOW trailing vol precedes
+# meaningfully higher win rates (10-35pp gap for 3/4 strategies), robust
+# across 14/21/30/45/60-day lookback choices. "off" leaves every setup
+# exactly as validated; "low_vol_only" blocks new entries in those four
+# setups specifically when BTC's trailing 30d annualized realized vol is at
+# or above REGIME_GATE_VOL_THRESHOLD_PCT -- not a universal filter on every
+# strategy, since only these four were diagnosed.
+REGIME_GATE = os.getenv("REGIME_GATE", "off").strip().lower()
+# Empirical median of trailing-30d BTC realized vol across the 40 walk-forward
+# windows (~48.4%), rounded. Fixed/documented threshold, matching how
+# REGIME_BTC_DROP_24H_PCT etc. above are also fixed constants rather than a
+# recomputed expanding percentile.
+REGIME_GATE_VOL_THRESHOLD_PCT = float(os.getenv("REGIME_GATE_VOL_THRESHOLD_PCT", "48.4"))
+
 # --- Confidence calibration ---
 # Blend hardcoded setup scores with the realized win rate of closed trades for
 # the same strategy+direction. The prior weight is how many "virtual trades"

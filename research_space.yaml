@@ -37,6 +37,16 @@ axes:
   SETUP_CAPITULATION_BAR_ENABLED: [true]
   SETUP_VOLUME_ZSCORE_ENABLED: [true]
   SETUP_PUMP24_EXTREME_ENABLED: [true]
+  # Regime conditioning for the four volatility-dislocation setups above
+  # (research_decisions, subject='regime_gate_diagnosis', 2026-07-13):
+  # trailing BTC trend showed no consistent ex-ante signal; trailing BTC
+  # realized vol did, but LOW vol precedes better outcomes, not high --
+  # opposite of the original "trade during dislocation" hypothesis.
+  # low_vol_only blocks entries in those four setups specifically when
+  # BTC's trailing 30d vol is at/above REGIME_GATE_VOL_THRESHOLD_PCT; it is
+  # a no-op for every other strategy (checked only inside those four setup
+  # functions, not a universal filter).
+  REGIME_GATE: ["off", "low_vol_only"]
 
   # Axes below are proven live in scripts/run_backtest_once.py A/B probes.
   # Setup/confluence knobs are intentionally absent until a strategy path
