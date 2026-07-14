@@ -257,6 +257,7 @@ def _seed_storage(seed: int) -> Storage:
 def _run_random_book(
     main: Storage, seed: int, symbols: list[str], now_ts: int,
     mirror_entries: list[dict[str, Any]], prices: dict[str, float],
+    strategy_open: list[dict[str, Any]] | None = None,
 ) -> tuple[float, float]:
     """One cycle of one random book through the REAL PaperTrader. Entries
     MIRROR the strategy's entry events (same moment, same direction, same
@@ -277,23 +278,53 @@ def _run_random_book(
         if price:
             trader.check_open_trades_for_symbol(trade["symbol"], price)
 
+    def _try_open(rng: _random.Random, direction: str, style: str, why: str) -> bool:
+        """One randomized entry through the identical machinery. Tries
+        several symbol picks because the seed book's own cooldowns/capital
+        gates may refuse individual symbols -- the same gates the strategy
+        faces."""
+        candidates = [s for s in symbols if prices.get(s)]
+        rng.shuffle(candidates)
+        if not config.direction_allowed(direction):
+            return False
+        for symbol in candidates[:8]:
+            r = trader.process_signal(
+                {"symbol": symbol, "strategy": "random_benchmark",
+                 "direction": direction, "reason": why, "style": style},
+                prices[symbol],
+            )
+            if r.get("opened"):
+                return True
+        return False
+
     for entry in mirror_entries:
         # Deterministic per (seed, mirrored trade): re-running a cycle
         # reproduces the same picks.
         rng = _random.Random(f"benchmark:{seed}:{entry['id']}")
-        candidates = [s for s in symbols if prices.get(s)]
-        if not candidates:
-            continue
-        symbol = rng.choice(candidates)
-        if not config.direction_allowed(entry["direction"]):
-            continue
-        trader.process_signal(
-            {"symbol": symbol, "strategy": "random_benchmark",
-             "direction": entry["direction"],
-             "reason": f"mirror of strategy trade id={entry['id']} seed={seed}",
-             "style": entry.get("style") or "scalp"},
-            prices[symbol],
-        )
+        _try_open(rng, entry["direction"], entry.get("style") or "scalp",
+                  f"mirror of strategy trade id={entry['id']} seed={seed}")
+
+    # Continuous count-matching (2026-07-14): if this seed book holds FEWER
+    # positions than the strategy (its random symbols stopped out earlier),
+    # top up with fresh random entries so deployment tracks the strategy
+    # between entry events -- otherwise early exits leave seeds in cash and
+    # the control under-deploys, contaminating the verdict with exposure
+    # differences. Top-up is upward only: force-closing to match downward
+    # would bypass the identical exit machinery. Residual gap after this is
+    # structural: per-symbol ATR differences move risk-sized notionals, and
+    # a seed can transiently hold MORE positions when the strategy exits
+    # first -- which is why the exposure-adjusted line stays the primary
+    # comparison.
+    if strategy_open:
+        bucket = now_ts // (config.COLLECTION_INTERVAL_MINUTES * 60)
+        slot = 0
+        while book.count_open_trades() < len(strategy_open) and slot < len(strategy_open):
+            template = strategy_open[book.count_open_trades() % len(strategy_open)]
+            rng = _random.Random(f"benchmark:{seed}:topup:{bucket}:{slot}")
+            if not _try_open(rng, template["direction"], template.get("style") or "scalp",
+                             f"count-match top-up seed={seed}"):
+                break
+            slot += 1
 
     summary = trader.summary(prices.get(config.SYMBOL))
     equity = float(summary.get("equity") or 0.0)
@@ -349,12 +380,19 @@ def run_benchmark_cycle(
                 "SELECT MAX(timestamp) AS mx FROM benchmark_equity WHERE book = 'random'"
             ).fetchone()
         last_ts = int(dict(last_ts_row)["mx"] or 0) if last_ts_row else 0
-        mirror_entries = _new_strategy_entries(main, last_ts, _book_epoch(main))
+        epoch = _book_epoch(main)
+        mirror_entries = _new_strategy_entries(main, last_ts, epoch)
+        strategy_open = [
+            {"direction": t["direction"], "style": t.get("style") or "scalp"}
+            for t in main.get_open_trades()
+            if int(t.get("opened_at") or 0) >= epoch
+        ]
 
         for seed in range(N_RANDOM_SEEDS):
             try:
                 equity, deployed = _run_random_book(
-                    main, seed, symbols, now_ts, mirror_entries, prices
+                    main, seed, symbols, now_ts, mirror_entries, prices,
+                    strategy_open=strategy_open,
                 )
                 _snapshot(main, "random", seed, now_ts, equity, capital, deployed)
                 result["snapshots"] += 1

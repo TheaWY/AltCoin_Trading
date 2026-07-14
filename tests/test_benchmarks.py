@@ -129,6 +129,25 @@ class RandomBookDeterminismTests(unittest.TestCase):
         seed_book = benchmarks._seed_storage(0)
         self.assertEqual(seed_book.count_open_trades(), 1)
 
+    def test_count_matching_tops_up_after_early_seed_exit(self) -> None:
+        """If the strategy holds 2 positions but this seed book holds 0
+        (its random symbols stopped out earlier), the cycle tops the book
+        back up to 2 through the identical machinery -- deployment tracks
+        the strategy between entry events."""
+        main = _storage()
+        now = int(time.time())
+        _seed_market(main, now, n_alts=6)
+        main.init_portfolio_state(1000.0, benchmark_btc_price=50_000.0)
+        prices = {"BTC/USDT": 50_000.0} | {f"ALT{i:02d}/USDT": 1.0 for i in range(6)}
+        strategy_open = [{"direction": "LONG", "style": "scalp"},
+                         {"direction": "LONG", "style": "scalp"}]
+        equity, deployed = benchmarks._run_random_book(
+            main, seed=2, symbols=[f"ALT{i:02d}/USDT" for i in range(6)], now_ts=now,
+            mirror_entries=[], prices=prices, strategy_open=strategy_open,
+        )
+        self.assertEqual(benchmarks._seed_storage(2).count_open_trades(), 2)
+        self.assertGreater(deployed, 0.0)
+
     def test_no_strategy_entries_means_no_random_entries(self) -> None:
         """Deployment matching cuts both ways: a strategy holding cash means
         the random books hold cash too -- the control must not out-deploy

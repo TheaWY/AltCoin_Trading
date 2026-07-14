@@ -656,6 +656,16 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
 
     _record_funnel(entry_funnel, storage)
 
+    # Version-parity guard: publish which code THIS worker process loaded,
+    # so the dashboard can detect worker/dashboard version splits
+    # (divergence class #6, 2026-07-14).
+    try:
+        from src.version_guard import publish_worker_build
+
+        publish_worker_build(storage)
+    except Exception:
+        logger.exception("worker build publish failed")
+
     # Permanent benchmark books (btc_hold / alt_hold / 20 random-entry seeds
     # through the real PaperTrader) -- run FOREVER, in parallel, including
     # after real money goes live. Never disable: the random band is the

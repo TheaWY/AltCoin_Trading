@@ -566,6 +566,16 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
     except Exception:
         benchmarks = None
 
+    # Version-parity guard (divergence class #6): is this dashboard process
+    # running the same code the worker is?
+    try:
+        from src.version_guard import check_version_parity, warn_once_on_mismatch
+
+        version_parity = check_version_parity(storage)
+        warn_once_on_mismatch(storage, version_parity)
+    except Exception:
+        version_parity = None
+
     state = storage.get_portfolio_state()
     book_epoch = int(state.get("benchmark_started_at") or 0) if state else 0
     all_closed = storage.get_recent_closed_trades(60)
@@ -621,6 +631,7 @@ def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, An
         "closed_trades": closed_current,
         "closed_trades_archived": closed_archived,
         "book_epoch": book_epoch,
+        "version_parity": version_parity,
         "accuracy": storage.get_signal_accuracy(config.SIGNAL_ACCURACY_ROLLING_DAYS),
         "health": build_data_health(storage),
         "data_health": build_entry_gate_health(storage),
