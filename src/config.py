@@ -316,6 +316,22 @@ ATR_STOP_MULT = float(os.getenv("ATR_STOP_MULT", "1.5"))
 ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "2.5"))
 # How many ATRs in favor before the trailing ratchet arms (was hardcoded 1.0).
 TRAIL_ARM_ATR = float(os.getenv("TRAIL_ARM_ATR", "1.0"))
+# Volatility entry filters (src/engine/entry_filters.py, research axes,
+# pre-registered subject='atr_entry_filters'). Both default UNLIMITED (999)
+# so live behavior is unchanged until the walk-forward promotes a cap.
+# MAX_ENTRY_ATR_PCT: refuse entry if 1h ATR% exceeds this.
+MAX_ENTRY_ATR_PCT = float(os.getenv("MAX_ENTRY_ATR_PCT", "999"))
+# MAX_STOP_GAP_TOLERANCE: refuse if recent max 1h range > N x intended stop
+# distance (scales with the stop -- more targeted than a flat ATR cap).
+MAX_STOP_GAP_TOLERANCE = float(os.getenv("MAX_STOP_GAP_TOLERANCE", "999"))
+
+# DIAGNOSTIC ONLY (2026-07-14 inversion hypothesis): flip every backtest
+# signal's direction (LONG<->SHORT), everything else identical, to test
+# whether the signals carry information (inverted ~= -normal) or are just
+# costs+variance (inverted also negative). Deliberately NOT in any
+# OVERRIDE/research-axis list -- it must never be promotable, only run by
+# hand for the inverted-arm backtest.
+INVERT_SIGNAL_DIRECTION = _env_bool("INVERT_SIGNAL_DIRECTION", default=False)
 # Partial take-profit: at PARTIAL_TP_AT_R R-multiples in favor (R = initial
 # stop distance), close HALF the position and trail the rest. 0 = off.
 PARTIAL_TP_AT_R = float(os.getenv("PARTIAL_TP_AT_R", "0"))

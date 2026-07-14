@@ -72,6 +72,9 @@ OVERRIDE_KEY_EXACT = frozenset(
         # backtest expectancy is evidence about them too.
         "ATR_STOP_MULT", "ATR_TP_MULT", "TRAIL_ARM_ATR", "TRAIL_ATR_MULT",
         "PARTIAL_TP_AT_R",
+        # Volatility entry filters (entry_filters.py): read identically by
+        # both engines' entry paths, so backtest expectancy is evidence.
+        "MAX_ENTRY_ATR_PCT", "MAX_STOP_GAP_TOLERANCE",
         # Exceptions to the SETUP_ ban above: scripts/backtest.py's
         # EVALUATION_ENGINE_STRATEGIES routes these ACTIVE_STRATEGY values
         # through evaluate_symbol() directly (the same function live's

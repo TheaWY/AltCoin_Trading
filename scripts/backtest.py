@@ -21,6 +21,7 @@ from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
 from src.engine.evaluation import STRATEGY_CATEGORY_MAP, evaluate_symbol  # noqa: E402
+from src.engine import entry_filters  # noqa: E402
 from src.engine import execution_cost  # noqa: E402
 from src.engine import exits  # noqa: E402
 from src.engine import risk_budget  # noqa: E402
@@ -243,6 +244,19 @@ class BacktestPortfolio:
             return None
         return indicators.atr_pct(rows, period=14)
 
+    def _recent_max_range_pct(self, symbol: str, timestamp: int, lookback: int = 24) -> float | None:
+        """Mirrors PaperTrader._recent_max_range_pct, point-in-time
+        (before=timestamp). Max (high-low)/close over the last `lookback` 1h
+        bars -- the MAX_STOP_GAP_TOLERANCE entry-filter input."""
+        if self.storage is None:
+            return None
+        rows = self.storage.get_prices(symbol, limit=lookback, before=timestamp, timeframe="1h")
+        ranges = [
+            (float(r["high"]) - float(r["low"])) / float(r["close"]) * 100.0
+            for r in rows if float(r["close"]) > 0
+        ]
+        return max(ranges) if ranges else None
+
     def _bar_range_pct(self, symbol: str, ts: int) -> float | None:
         """Mirrors PaperTrader._bar_range_pct exactly."""
         if self.storage is None:
@@ -340,6 +354,17 @@ class BacktestPortfolio:
             atr_stop_mult=config.ATR_STOP_MULT, atr_tp_mult=config.ATR_TP_MULT,
             fallback_stop_pct=config.STOP_LOSS_PCT, fallback_tp_pct=config.TAKE_PROFIT_PCT,
         )
+
+        # Volatility entry filters -- mirrors PaperTrader._open_trade exactly
+        # (shared entry_filters.volatility_entry_block), same inputs, so live
+        # and backtest refuse the same violent-symbol entries (rule #2).
+        stop_dist_pct = abs(price - stop_loss) / price * 100.0 if price else 0.0
+        if entry_filters.volatility_entry_block(
+            atr_pct, self._recent_max_range_pct(symbol, timestamp), stop_dist_pct,
+            max_entry_atr_pct=config.MAX_ENTRY_ATR_PCT,
+            max_stop_gap_tolerance=config.MAX_STOP_GAP_TOLERANCE,
+        ) is not None:
+            return None
 
         hedge_leg = self._hedge_leg_for_open(direction, metadata, prices, timestamp)
         if hedge_leg is not None:
@@ -880,6 +905,25 @@ class BacktestEngine:
         # favor of _evaluation_engine_signal.
         self.strategy = get_strategy(strategy_name)
 
+    @staticmethod
+    def _exec_direction(direction_value: str) -> str:
+        """DIAGNOSTIC (config.INVERT_SIGNAL_DIRECTION): flip the direction at
+        EXECUTION only, so the inverted-arm backtest opens the opposite side
+        at the SAME entry points the original signals selected -- entry
+        gates (confidence, category, tradable) still see the real signal and
+        select identically. Flipping earlier would let the confidence gate
+        re-reject the flipped direction, which tests a different question
+        ('does the opposite setup fire') and produced zero trades. Sizing,
+        stops, targets, and the hedge leg all derive from the value returned
+        here, so they flip consistently. No-op unless the flag is set."""
+        if not config.INVERT_SIGNAL_DIRECTION:
+            return direction_value
+        if direction_value == SignalDirection.LONG.value:
+            return SignalDirection.SHORT.value
+        if direction_value == SignalDirection.SHORT.value:
+            return SignalDirection.LONG.value
+        return direction_value
+
     def _evaluation_engine_signal(self, ts: int, symbol: str) -> Signal | None:
         """Route through evaluate_symbol() (what live actually runs under
         ENTRY_DECISION_ENGINE=evaluation) instead of a BaseStrategy
@@ -1006,7 +1050,7 @@ class BacktestEngine:
                     confidence_pass_count += 1
                     opened = portfolio.open_trade(
                         symbol,
-                        signal.direction.value,
+                        self._exec_direction(signal.direction.value),
                         float(signal.entry_price),
                         ts,
                         strategy=self.strategy_name,
@@ -1065,7 +1109,7 @@ class BacktestEngine:
                     confidence_pass_count += 1
                     opened = portfolio.open_trade(
                         symbol,
-                        signal.direction.value,
+                        self._exec_direction(signal.direction.value),
                         float(price_row["close"]),
                         ts,
                         strategy=self.strategy_name,

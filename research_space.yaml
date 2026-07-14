@@ -84,6 +84,14 @@ axes:
   ATR_TP_MULT: [2.0, 2.5, 3.5]
   PARTIAL_TP_AT_R: [0, 1.0]
 
+  # Volatility entry filters (research_decisions subject='atr_entry_filters',
+  # pre-registered). 999 = unlimited (the null). Suspect origin: a losing
+  # week concentrated in high-ATR names (corr(ATR,return)=-0.48, n=18) -- the
+  # walk-forward decides whether excluding the violent tail helps over 5y, or
+  # just strips out most of these volatility-event strategies' trades.
+  MAX_ENTRY_ATR_PCT: [3, 5, 999]
+  MAX_STOP_GAP_TOLERANCE: [1.5, 2.5, 999]
+
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:

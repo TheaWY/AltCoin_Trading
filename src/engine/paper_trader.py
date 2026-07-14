@@ -9,6 +9,7 @@ from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.engine import entry_filters
 from src.engine import execution_cost
 from src.engine import exits
 from src.engine import hedge as hedge_engine
@@ -314,6 +315,17 @@ class PaperTrader:
             return None
         return indicators.atr_pct(rows, period=14)
 
+    def _recent_max_range_pct(self, symbol: str, lookback: int = 24) -> float | None:
+        """Max (high-low)/close over the last `lookback` 1h bars, as a
+        percent -- the 'how violent does a normal bar get here' input to the
+        MAX_STOP_GAP_TOLERANCE entry filter. Mirrors BacktestPortfolio."""
+        rows = self.storage.get_prices(symbol, limit=lookback, timeframe="1h")
+        ranges = [
+            (float(r["high"]) - float(r["low"])) / float(r["close"]) * 100.0
+            for r in rows if float(r["close"]) > 0
+        ]
+        return max(ranges) if ranges else None
+
     def _bar_range_pct(self, symbol: str, ts: int) -> float | None:
         """(high-low)/close of the 1h bar containing `ts` -- used only for
         the stress-bar-range check (execution_cost.is_stress_bar), not for
@@ -554,6 +566,20 @@ class PaperTrader:
 
         atr = self._atr_pct(symbol)
         stop_loss, take_profit = self._exit_levels(direction, current_price, atr)
+
+        # Volatility entry filters (shared with backtest): refuse names too
+        # violent to stop out of, BEFORE sizing. Quality gates already passed
+        # upstream; this is a capital-preservation filter, so a refusal here
+        # is idle-cash-by-design, reported under its own funnel counter.
+        stop_dist_pct = abs(current_price - stop_loss) / current_price * 100.0 if current_price else 0.0
+        vol_refusal = entry_filters.volatility_entry_block(
+            atr, self._recent_max_range_pct(symbol), stop_dist_pct,
+            max_entry_atr_pct=config.MAX_ENTRY_ATR_PCT,
+            max_stop_gap_tolerance=config.MAX_STOP_GAP_TOLERANCE,
+        )
+        if vol_refusal is not None:
+            gate, reason = vol_refusal
+            return {"opened": False, "reason": reason, "gate": gate}
 
         hedge_leg = self._hedge_leg_for_open(signal_result, direction, portfolio, cash, current_price)
         if hedge_leg is not None:

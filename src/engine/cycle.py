@@ -644,6 +644,8 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     entry_funnel["blocked_position_too_small"] = (
                         entry_funnel.get("blocked_position_too_small", 0) + 1
                     )
+                elif gate in ("entry_atr_too_high", "stop_gap_risk"):
+                    entry_funnel[f"blocked_{gate}"] = entry_funnel.get(f"blocked_{gate}", 0) + 1
                 else:
                     entry_funnel["open_rejected"] += 1
                 _record_candidate_stop(
