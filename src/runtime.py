@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -50,6 +51,42 @@ def trading_cycle() -> None:
     )
 
 
+def start_liquidation_stream() -> threading.Thread | None:
+    """Start the forced-liquidation websocket consumer in its own daemon thread.
+
+    Fault isolation is total and layered: (1) run_liquidation_stream() never
+    raises into its caller — it catches every error, logs, and reconnects;
+    (2) it runs on a separate daemon thread with its own asyncio loop, so even a
+    hard crash of the stream cannot touch the APScheduler thread that drives the
+    trading cycle; (3) any failure to even START the thread is swallowed here.
+    A liquidation-stream problem can, at worst, cost liquidation data — never a
+    trading cycle. Returns the thread (for tests) or None if disabled/failed.
+    """
+    if not config.LIQUIDATION_STREAM_ENABLED:
+        logger.info("Liquidation stream disabled (LIQUIDATION_STREAM_ENABLED=false)")
+        return None
+
+    def _run() -> None:
+        try:
+            from src.data.collectors.liquidations import run_liquidation_stream
+            from src.data.storage import get_storage
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(run_liquidation_stream(get_storage()))
+        except Exception:
+            logger.exception("liquidation stream thread exited (trading unaffected)")
+
+    try:
+        thread = threading.Thread(target=_run, name="liquidation-stream", daemon=True)
+        thread.start()
+        logger.info("Liquidation stream started (forward-only; clock running)")
+        return thread
+    except Exception:
+        logger.exception("could not start liquidation stream (trading unaffected)")
+        return None
+
+
 def start_scheduler() -> BackgroundScheduler:
     """Start the background trading scheduler and run the first cycle immediately."""
     scheduler = BackgroundScheduler()
@@ -74,6 +111,7 @@ def start_scheduler() -> BackgroundScheduler:
             coalesce=True,
         )
     scheduler.start()
+    start_liquidation_stream()
     logger.info(
         "Scheduler started — collecting every %s min, exit-poll every %s min",
         config.COLLECTION_INTERVAL_MINUTES,

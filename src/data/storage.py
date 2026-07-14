@@ -914,6 +914,45 @@ class Storage:
             )
             return cursor.rowcount
 
+    # --- forced liquidations (hourly aggregates; raw kept in `liquidations`) ---
+
+    def get_liquidation_agg(
+        self,
+        symbol: str,
+        limit: int = 720,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Hourly liquidation aggregates ascending. `before` gives a strict
+        point-in-time read (only buckets closed at or before t) for features."""
+        clauses = ["symbol = ?"]
+        params: list[Any] = [symbol]
+        if since is not None:
+            clauses.append("timestamp >= ?")
+            params.append(since)
+        if before is not None:
+            clauses.append("timestamp <= ?")
+            params.append(before)
+
+        sql = f"""
+            SELECT * FROM liquidation_agg_1h
+            WHERE {' AND '.join(clauses)}
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        params.append(limit)
+        with self._connect() as conn:
+            try:
+                rows = conn.execute(sql, params).fetchall()
+            except Exception:
+                # Table is created lazily by the stream's ensure_schema(); a
+                # reader that runs before the collector has ever started should
+                # see "no data", not crash.
+                return []
+            result = [dict(r) for r in rows]
+            result.reverse()
+            return result
+
     # --- signals ---
 
     def insert_signal(self, row: dict[str, Any]) -> int:

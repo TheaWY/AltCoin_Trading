@@ -168,6 +168,20 @@ for part in os.getenv("SYMBOL_CCXT_MAP", "").split(","):
 
 # --- Scheduler ---
 COLLECTION_INTERVAL_MINUTES = int(os.getenv("COLLECTION_INTERVAL_MINUTES", "5"))
+# Forced-liquidation stream (forward-only; no historical backfill exists — the
+# allForceOrders REST endpoints were removed by Binance). A persistent
+# websocket, fault-isolated from the trading cycle.
+#
+# DEPLOYMENT: the Binance FUTURES websocket data-plane is geo-blocked from the
+# Mac mini's egress (fstream returns a successful handshake but zero data
+# frames; fstream-mm returns HTTP 403), while futures REST works. So the stream
+# does NOT run in the Mac mini worker — it runs as a standalone process on a
+# small host in a Binance-permitted region (ops/collect_liquidations.py +
+# ops/liquidation-collector.service), writing to this same Postgres over
+# Tailscale. Hence this in-worker hook defaults OFF; the remote entrypoint runs
+# the stream directly. Run EXACTLY ONE collector instance (the 1h aggregate is
+# additive per flush, so two live collectors would double-count it).
+LIQUIDATION_STREAM_ENABLED = _env_bool("LIQUIDATION_STREAM_ENABLED", default=False)
 OHLCV_TIMEFRAMES = [
     s.strip()
     for s in os.getenv("OHLCV_TIMEFRAMES", "15m,1h,1d").split(",")

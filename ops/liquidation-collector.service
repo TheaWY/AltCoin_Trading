@@ -1,0 +1,33 @@
+# systemd unit for the standalone forced-liquidation collector.
+# Runs on a small VPS in a Binance-permitted region, writing to the shared
+# Postgres over Tailscale. See ops/REMOTE_LIQUIDATION_COLLECTOR.md.
+#
+# Install:
+#   sudo cp ops/liquidation-collector.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now liquidation-collector
+#   journalctl -u liquidation-collector -f
+#
+# Edit WorkingDirectory, User, and the DATABASE_URL below for your host.
+
+[Unit]
+Description=AltCoin forced-liquidation collector (Binance !forceOrder@arr)
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=altcoin
+WorkingDirectory=/opt/AltCoin_Trading
+# Point at the Mac mini's Postgres over Tailscale. Requires Postgres to listen
+# on the tailnet interface and a pg_hba.conf rule for the collector host.
+Environment=DATABASE_URL=postgresql://altcoin:CHANGE_ME@100.88.26.107:5432/altcoin_trading
+Environment=PYTHONPATH=/opt/AltCoin_Trading
+ExecStart=/opt/AltCoin_Trading/.venv/bin/python ops/collect_liquidations.py
+Restart=always
+RestartSec=5
+# Fault isolation is also in-code (the stream never raises and self-reconnects);
+# Restart=always covers a hard process death.
+
+[Install]
+WantedBy=multi-user.target
