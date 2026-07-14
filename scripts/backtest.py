@@ -487,13 +487,68 @@ class BacktestPortfolio:
                     trade.stop_loss = updates["stop_loss"]
             if price is not None:
                 self._maybe_partial_tp(trade, price, timestamp)
-            reason = self._exit_reason(trade, price, timestamp)
-            if reason:
+
+            # funding_carry delta-neutral guard (raise), preserved from
+            # _exit_reason.
+            if (trade.strategy == "funding_carry"
+                    and (trade.metadata or {}).get("execution_mode") == "delta_neutral"):
+                raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
+
+            # INTRA-BAR stop/TP via the shared exits.evaluate_stop_exit: uses
+            # this bar's high/low, not just the close, so a touch the close
+            # recovered from is no longer missed (the bias that made backtests
+            # look better than reality). Lookahead-safe: run() calls
+            # check_exits BEFORE entries each timestep, so a trade opened at
+            # ts is first checked at ts+1 against a bar entirely after entry.
+            # Falls back to a degenerate one-tick bar (= the old point check,
+            # = live's tick) when no stored bar exists, which keeps the
+            # cross-engine parity tests exact.
+            exit_result = None
+            if price is not None:
+                bar = self._current_bar(trade.symbol, timestamp)
+                o, h, l, c = bar if bar else (price, price, price, price)
+                exit_result = exits.evaluate_stop_exit(
+                    trade.direction, trade.stop_loss, trade.take_profit, o, h, l, c
+                )
+            if exit_result is not None:
+                reason, fill_price = exit_result
+                self.close_trade(trade, fill_price, timestamp, reason, prices=prices)
+                continue
+
+            time_reason = self._time_stop_reason(trade, timestamp)
+            if time_reason:
                 close_price = price if price is not None else trade.entry_price
-                self.close_trade(trade, close_price, timestamp, reason, prices=prices)
+                self.close_trade(trade, close_price, timestamp, time_reason, prices=prices)
             else:
                 still_open.append(trade)
         self.open_trades = still_open
+
+    def _current_bar(self, symbol: str, timestamp: int) -> tuple[float, float, float, float] | None:
+        """OHLC of the 1h bar containing `timestamp` (for intra-bar stop
+        evaluation). None when no storage or no bar. DATA CONSTRAINT: this is
+        1h-bar granularity -- the honest ceiling, since no 1-min history
+        exists; it catches within-the-hour touches via high/low but cannot
+        resolve sub-hour order (stop-vs-target within one bar defaults to
+        stop-first, conservative)."""
+        if self.storage is None:
+            return None
+        bucket = (timestamp // 3600) * 3600
+        rows = self.storage.get_prices(symbol, limit=1, since=bucket, before=bucket + 1, timeframe="1h")
+        if not rows:
+            return None
+        r = rows[-1]
+        if float(r["close"]) <= 0:
+            return None
+        return float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"])
+
+    def _time_stop_reason(self, trade: BacktestTrade, timestamp: int) -> str | None:
+        """The max-hold time_stop, split out of _exit_reason so the intra-bar
+        stop/TP path (exits.evaluate_stop_exit) owns price triggers and this
+        owns the horizon cap."""
+        max_hours = config.max_hold_hours_for_style((trade.metadata or {}).get("style"))
+        if max_hours > 0 and (timestamp - trade.opened_at) / 3600.0 >= max_hours:
+            return "time_stop"
+        return None
 
     def close_all(self, prices: dict[str, float], timestamp: int) -> None:
         for trade in list(self.open_trades):

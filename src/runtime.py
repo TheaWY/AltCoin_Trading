@@ -10,7 +10,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 from src import config
 from src.api.websocket import broadcast_snapshot
-from src.engine.cycle import run_trading_cycle
+from src.engine.cycle import run_exit_poll, run_trading_cycle
 from src.health import get_health
 
 logger = logging.getLogger(__name__)
@@ -63,9 +63,31 @@ def start_scheduler() -> BackgroundScheduler:
         max_instances=1,
         coalesce=True,
     )
+    if config.EXIT_POLL_INTERVAL_MINUTES > 0:
+        scheduler.add_job(
+            _exit_poll_job,
+            "interval",
+            minutes=config.EXIT_POLL_INTERVAL_MINUTES,
+            id="exit_poll",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
     scheduler.start()
     logger.info(
-        "Scheduler started — collecting every %s min",
+        "Scheduler started — collecting every %s min, exit-poll every %s min",
         config.COLLECTION_INTERVAL_MINUTES,
+        config.EXIT_POLL_INTERVAL_MINUTES,
     )
     return scheduler
+
+
+def _exit_poll_job() -> None:
+    """Faster exit-only pass between full cycles (see cycle.run_exit_poll)."""
+    try:
+        result = run_exit_poll()
+        if result.get("closed"):
+            logger.info("Exit poll closed %s position(s) across %s symbol(s)",
+                        result["closed"], result["symbols"])
+    except Exception:
+        logger.exception("exit poll job failed")

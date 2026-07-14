@@ -180,6 +180,31 @@ class GapFillTests(unittest.TestCase):
         realized_loss_pct = (entry_price - closed.exit_price) / entry_price
         self.assertGreater(realized_loss_pct, nominal_stop_distance_pct)
 
+    def test_backtest_intra_bar_touch_caught_when_close_recovers(self) -> None:
+        """The fidelity fix (2026-07-14): a bar whose LOW pierces the stop but
+        whose CLOSE recovers above it must still stop out (at the stop level).
+        The old close-only check missed this -- the bias that made backtests
+        look better than reality."""
+        storage = _storage()
+        ts_open = 1_700_000_000
+        portfolio = BacktestPortfolio(cash=1000.0, storage=storage)
+        trade = portfolio.open_trade("AAA/USDT", "LONG", 1.0, ts_open, strategy="test")
+        stop = trade.stop_loss  # ~0.95
+        ts_next = ts_open + HOUR
+        # Bar low dips below the stop; close recovers ABOVE it. A close-only
+        # check (close 0.99 > stop) would NOT exit; intra-bar must.
+        storage.insert_prices([{
+            "symbol": "AAA/USDT", "timestamp": (ts_next // HOUR) * HOUR,
+            "open": 0.99, "high": 1.00, "low": stop - 0.01, "close": 0.99, "volume": 1,
+        }])
+        portfolio.check_exits({"AAA/USDT": 0.99}, ts_next)
+        self.assertEqual(len(portfolio.closed_trades), 1)
+        closed = portfolio.closed_trades[0]
+        self.assertEqual(closed.exit_reason, "stop_loss")
+        # Intra-bar cross fills at the stop level (plus sell-side slippage),
+        # NOT at the recovered close of 0.99.
+        self.assertLessEqual(closed.exit_price, stop + 1e-9)
+
     def test_paper_trader_stop_loss_gap_through_fills_beyond_stop_and_stop_distance(self) -> None:
         storage = _storage()
         storage.init_portfolio_state(1000.0)

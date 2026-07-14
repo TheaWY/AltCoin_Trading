@@ -54,6 +54,57 @@ def exit_levels(
     return price * (1 + stop_frac), price * (1 - tp_frac)
 
 
+def evaluate_stop_exit(
+    direction: str,
+    stop_loss: float,
+    take_profit: float,
+    bar_open: float,
+    bar_high: float,
+    bar_low: float,
+    bar_close: float,
+) -> tuple[str, float] | None:
+    """Decide whether a bar triggers the stop or take-profit, and at what
+    FILL price. INTRA-BAR aware: uses the bar's high/low, not just the
+    close, so a touch the close recovered from is not missed -- that omission
+    was why backtests looked better than reality (2026-07-14).
+
+    Fill model:
+      - a GAP through the level at the open fills at the OPEN (the real
+        gapped price -- reality already moved past the stop);
+      - an intra-bar CROSS fills at the LEVEL (price traded through the stop
+        during the bar, so that's where we'd have been filled).
+    The stop takes PRIORITY over the take-profit when one bar spans both
+    (conservative: assume the adverse excursion happened first, since we
+    cannot see intra-bar order at this granularity).
+
+    For LIVE this is called with open=high=low=close=current_price (a
+    degenerate one-tick bar), which reduces exactly to the point check live
+    already did -- so wiring live through this function is behavior-
+    preserving; only the POLL CADENCE changes live's fidelity. Returns
+    (reason, fill_price) or None.
+    """
+    is_long = direction == "LONG"
+    if is_long:
+        if bar_open <= stop_loss:            # gapped down through the stop
+            return "stop_loss", bar_open
+        if bar_low <= stop_loss:             # crossed the stop intra-bar
+            return "stop_loss", stop_loss
+        if bar_open >= take_profit:          # gapped up through the target
+            return "take_profit", bar_open
+        if bar_high >= take_profit:
+            return "take_profit", take_profit
+    else:
+        if bar_open >= stop_loss:
+            return "stop_loss", bar_open
+        if bar_high >= stop_loss:
+            return "stop_loss", stop_loss
+        if bar_open <= take_profit:
+            return "take_profit", bar_open
+        if bar_low <= take_profit:
+            return "take_profit", take_profit
+    return None
+
+
 def position_notional(
     portfolio_value: float,
     cash: float,

@@ -330,6 +330,13 @@ MAX_ENTRY_ATR_PCT = float(os.getenv("MAX_ENTRY_ATR_PCT", "999"))
 # distance (scales with the stop -- more targeted than a flat ATR cap).
 MAX_STOP_GAP_TOLERANCE = float(os.getenv("MAX_STOP_GAP_TOLERANCE", "999"))
 
+# Exit-poll cadence (2026-07-14): open positions get their stops/targets
+# checked every EXIT_POLL_INTERVAL_MINUTES, decoupled from the 5-min entry
+# cycle -- the 5-min discretization let price move ~2% past the stop on a
+# 3%-ATR name between checks. Lightweight: only open-position symbols are
+# re-priced. 0 disables the separate job (falls back to per-cycle exits).
+EXIT_POLL_INTERVAL_MINUTES = float(os.getenv("EXIT_POLL_INTERVAL_MINUTES", "1.0"))
+
 # DIAGNOSTIC ONLY (2026-07-14 inversion hypothesis): flip every backtest
 # signal's direction (LONG<->SHORT), everything else identical, to test
 # whether the signals carry information (inverted ~= -normal) or are just

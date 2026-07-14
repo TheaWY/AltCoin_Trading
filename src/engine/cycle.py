@@ -229,6 +229,49 @@ def _entry_candidates_from_legacy_analyzer(
     return filtered[: config.MAX_OPEN_POSITIONS]
 
 
+def run_exit_poll(storage: Storage | None = None) -> dict[str, Any]:
+    """Lightweight exit-only pass: re-price ONLY open-position symbols and
+    run their stop/target/trailing checks, decoupled from the 5-min entry
+    cycle (2026-07-14). No entries, no evaluation, no orderbook -- just close
+    positions faster so the 5-min discretization stops manufacturing
+    stop-overshoots. Never raises: a poll failure must not touch the cycle.
+    """
+    storage = storage or get_storage()
+    result: dict[str, Any] = {"symbols": 0, "closed": 0}
+    try:
+        open_trades = storage.get_open_trades()
+        symbols = sorted({t["symbol"] for t in open_trades})
+        if not symbols:
+            return result
+        result["symbols"] = len(symbols)
+        try:
+            from src.data.collectors.binance import run_collection
+
+            run_collection(symbols)  # fresh prices for just these symbols
+        except Exception:
+            logger.exception("exit-poll price refresh failed; using last stored prices")
+
+        if config.LIVE_TRADING:
+            from src.engine.live_trader import LiveTrader
+
+            trader = LiveTrader(storage)
+        else:
+            trader = PaperTrader(storage)
+        for symbol in symbols:
+            row = storage.get_latest_price(symbol)
+            if not row:
+                continue
+            try:
+                closed = trader.check_open_trades_for_symbol(symbol, float(row["close"]))
+                result["closed"] += len(closed)
+            except Exception:
+                logger.exception("exit-poll check failed for %s", symbol)
+    except Exception:
+        logger.exception("exit poll failed")
+        result["error"] = True
+    return result
+
+
 def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
     """Full cycle: collect → signal → evaluate → paper trade → outcomes."""
     storage = storage or get_storage()

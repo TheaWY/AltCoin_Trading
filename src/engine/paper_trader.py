@@ -796,20 +796,17 @@ class PaperTrader:
         if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
             raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
 
-        direction = trade["direction"]
-        stop = float(trade["stop_loss"])
-        target = float(trade["take_profit"])
-
-        if direction == SignalDirection.LONG.value:
-            if price <= stop:
-                return "stop_loss"
-            if price >= target:
-                return "take_profit"
-        else:
-            if price >= stop:
-                return "stop_loss"
-            if price <= target:
-                return "take_profit"
+        # Stop/TP via the SAME shared function backtest uses -- here with a
+        # degenerate one-tick bar (open=high=low=close=price), which reduces
+        # to the point check live has always done (behavior-preserving). The
+        # fidelity lever for live is POLL CADENCE (the faster exit-check job),
+        # not this function: more frequent ticks catch the level sooner.
+        result = exits.evaluate_stop_exit(
+            trade["direction"], float(trade["stop_loss"]), float(trade["take_profit"]),
+            price, price, price, price,
+        )
+        if result is not None:
+            return result[0]
 
         max_hours = config.max_hold_hours_for_style(trade.get("style"))
         opened_at = trade.get("opened_at")

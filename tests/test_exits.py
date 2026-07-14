@@ -188,5 +188,47 @@ class MfeCaptureTests(unittest.TestCase):
         self.assertAlmostEqual(cap, 1.0 / 3.0, places=3)
 
 
+class EvaluateStopExitTests(unittest.TestCase):
+    def test_long_intra_bar_touch_fills_at_stop(self):
+        # low pierces stop but close recovers above it -- must still exit at stop
+        r = exits.evaluate_stop_exit("LONG", 97.0, 110.0, 100.0, 101.0, 96.5, 99.0)
+        self.assertEqual(r, ("stop_loss", 97.0))
+
+    def test_long_close_only_would_have_missed_it(self):
+        # the exact bias being fixed: close (99) is above stop (97), but the
+        # bar's low (96.5) pierced -- old close-only check missed this.
+        self.assertIsNotNone(exits.evaluate_stop_exit("LONG", 97.0, 110.0, 100.0, 101.0, 96.5, 99.0))
+
+    def test_long_gap_through_stop_fills_at_open(self):
+        r = exits.evaluate_stop_exit("LONG", 97.0, 110.0, 90.0, 91.0, 88.0, 89.0)
+        self.assertEqual(r, ("stop_loss", 90.0))  # gapped, real fill at open, worse than stop
+
+    def test_long_take_profit_intra_bar(self):
+        r = exits.evaluate_stop_exit("LONG", 90.0, 105.0, 100.0, 106.0, 99.0, 104.0)
+        self.assertEqual(r, ("take_profit", 105.0))
+
+    def test_long_stop_priority_when_bar_spans_both(self):
+        # bar touches both stop (low 96) and tp (high 106) -> stop wins
+        r = exits.evaluate_stop_exit("LONG", 97.0, 105.0, 100.0, 106.0, 96.0, 101.0)
+        self.assertEqual(r[0], "stop_loss")
+
+    def test_long_no_touch(self):
+        self.assertIsNone(exits.evaluate_stop_exit("LONG", 90.0, 110.0, 100.0, 101.0, 99.0, 100.5))
+
+    def test_short_mirror_intra_bar_touch(self):
+        r = exits.evaluate_stop_exit("SHORT", 103.0, 90.0, 100.0, 103.5, 99.0, 101.0)
+        self.assertEqual(r, ("stop_loss", 103.0))
+
+    def test_short_gap_through_stop_fills_at_open(self):
+        r = exits.evaluate_stop_exit("SHORT", 103.0, 90.0, 110.0, 112.0, 108.0, 111.0)
+        self.assertEqual(r, ("stop_loss", 110.0))
+
+    def test_degenerate_bar_equals_point_check(self):
+        # live's one-tick bar (o=h=l=c) reduces to the point check
+        p = 96.0
+        r = exits.evaluate_stop_exit("LONG", 97.0, 110.0, p, p, p, p)
+        self.assertEqual(r, ("stop_loss", 96.0))  # gap branch: open<=stop -> fill at open=price
+
+
 if __name__ == "__main__":
     unittest.main()
