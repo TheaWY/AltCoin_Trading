@@ -748,6 +748,19 @@ def _mean_reversion_long_setup(
         "execution_mode": "market_neutral",
         "beta": beta,
         "hedge_symbol": config.SYMBOL,
+        # Standalone entry: this setup is a self-hedged, market-neutral setup
+        # whose OWN pre-registered criteria (bottom-MEAN_REVERSION_LONG_PCTL 24h
+        # weakness, >MAX_DD exclusion, computable beta — the exact definition the
+        # +0.72%/72h event study validated) ARE the entry gate. It fires on
+        # weakness and so structurally never earns confluence from momentum
+        # setups that fire on strength; subjecting it to the confluence-based
+        # ENTRY_MIN_CONFIDENCE gate is a category error that blocks it entirely
+        # (score 0.58 -> confidence 0.52 < 0.60). evaluate_symbol() therefore
+        # skips the confluence adjustment and the confidence threshold for
+        # standalone setups. NOT a lowered threshold — its own criteria replace,
+        # not relax, the gate (rule #4). See research_decisions
+        # 'gate_result_invalidated' / 'standalone_entry_exemption'.
+        "standalone_entry": True,
     }
 
 
@@ -1039,7 +1052,14 @@ def evaluate_symbol(
         setups.sort(key=lambda s: -s["score"])
 
     best = setups[0] if setups else None
-    if best is not None:
+    # A standalone setup (e.g. market-neutral mean_reversion_long) gates itself
+    # by its own pre-registered entry criteria; the confluence-confidence gate
+    # (built for corroborating directional setups) is a category error for it.
+    # Skip both the confluence adjustment and the ENTRY_MIN_CONFIDENCE threshold
+    # for it. It still passed every hard/policy/regime/category gate above to
+    # become `best`, so this exempts ONLY the confidence threshold, nothing else.
+    standalone = bool(best and best.get("standalone_entry"))
+    if best is not None and not standalone:
         _apply_confluence(best, setups, metrics)
     confidence = (
         best["score"]
@@ -1047,7 +1067,7 @@ def evaluate_symbol(
         else _proximity_confidence(metrics, funding_rate, blocked=bool(blockers))
     )
     min_confidence = config.ENTRY_MIN_CONFIDENCE
-    tradable = best is not None and confidence >= min_confidence
+    tradable = best is not None and (standalone or confidence >= min_confidence)
 
     why_not: list[str] = []
     if not tradable:
