@@ -41,6 +41,7 @@ STRATEGY_CATEGORY_MAP = {
     "positioning_short": {"crowded_funding"},
     "failed_pump_short": {"liquid_trend", "volume_surge"},
     "failed_pump_long": {"liquid_trend", "volume_surge"},
+    "mean_reversion_long": {"liquid_trend", "volume_surge"},
     # rel_strength_rotation, capitulation_bar, volume_zscore_3plus,
     # pump24_extreme deliberately absent: none of their event studies were
     # run per-category, so in CATEGORY_STRATEGY_MODE="matched" each is
@@ -60,6 +61,7 @@ STYLE_CAPITULATION_BOUNCE = "반등72h"
 STYLE_VOLUME_ZSCORE = "거래량72h"
 STYLE_PUMP24_EXTREME = "펌프24h"
 STYLE_FAILED_PUMP_LONG = "펌프반등"
+STYLE_MEAN_REVERSION_LONG = "약세반등"
 
 
 def _direction_label(direction: str | None) -> str:
@@ -666,6 +668,89 @@ def _pump24_extreme_setup(
     }
 
 
+def _mean_reversion_long_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """The third family -- "buy dislocation, don't sell it" (research_decisions,
+    subject='mean_reversion_long_build' / 'shorting_weakness_generic',
+    pre-registered). Market-neutral LONG on 24h WEAKNESS: fire when the 24h
+    return is at/below the MEAN_REVERSION_LONG_PCTL (5th) percentile of its
+    own EXPANDING history -- the exact event-study weakness definition
+    (percentile_rank on 24h returns, same helper the study used), not
+    RSI+Bollinger. Long the dislocated alt, short beta-matched BTC, because
+    the +0.72%/72h effect was measured MARKET-NEUTRALIZED -- an unhedged
+    version is not what the evidence covers.
+
+    Excludes names already down >= MEAN_REVERSION_LONG_MAX_DD_PCT (80%) from
+    their 90d high: the study's effect vanishes/inverts there (n=37 corpses,
+    -7.5%/72h) -- excluded because the evidence does NOT cover them, not for
+    performance. Default OFF; earns its place only through the walk-forward
+    gate net of costs (built explicitly to attack the consistency wall).
+    """
+    if not _env_bool_dynamic("SETUP_MEAN_REVERSION_LONG_ENABLED", False):
+        return None
+    if symbol == config.SYMBOL:
+        return None
+    latest_ts = _latest_bar_ts(storage, symbol)
+    if latest_ts is None:
+        return None
+    rows = storage.get_prices(
+        symbol, limit=REL_STRENGTH_LOOKBACK_BARS + 48, timeframe="1h"
+    )
+    if not rows or int(rows[-1]["timestamp"]) != latest_ts:
+        return None
+    closes = [float(r["close"]) for r in rows]
+    highs = [float(r["high"]) for r in rows]
+    ts_list = [int(r["timestamp"]) for r in rows]
+
+    # Expanding-history 24h-return percentile (weakness = bottom pctl).
+    history: list[float] = []
+    current: float | None = None
+    for i in range(24, len(closes)):
+        prev = closes[i - 24]
+        if prev <= 0:
+            continue
+        value = (closes[i] - prev) / prev
+        if ts_list[i] == latest_ts:
+            current = value
+            break
+        history.append(value)
+    if current is None or len(history) < _CANDLE_MIN_HISTORY:
+        return None
+    rank = percentile_rank(current, history)
+    if rank > config.MEAN_REVERSION_LONG_PCTL:
+        return None
+
+    # Drawdown-from-90d-high exclusion (corpses the evidence doesn't cover).
+    lookback = min(len(highs), 90 * 24)
+    hi_90d = max(highs[-lookback:])
+    if hi_90d > 0:
+        dd_pct = abs((closes[-1] - hi_90d) / hi_90d * 100.0)
+        if dd_pct >= config.MEAN_REVERSION_LONG_MAX_DD_PCT:
+            return None
+
+    btc_rows = storage.get_prices(config.SYMBOL, limit=REL_STRENGTH_LOOKBACK_BARS, timeframe="1h")
+    beta = hedge_engine.ex_ante_beta(
+        rows, btc_rows, config.HEDGE_BETA_LOOKBACK_H, config.HEDGE_BETA_MIN_POINTS
+    )
+    if beta is None:
+        return None
+
+    return {
+        "style": STYLE_MEAN_REVERSION_LONG,
+        "strategy": "mean_reversion_long",
+        "direction": "LONG",
+        "score": 0.58,
+        "reason": (
+            f"24h 수익률 {current:+.1%} (하위 {rank * 100:.1f}%) — "
+            f"BTC 숏 헤지(β={beta:.2f}) 시장중립 약세 반등 롱"
+        ),
+        "execution_mode": "market_neutral",
+        "beta": beta,
+        "hedge_symbol": config.SYMBOL,
+    }
+
+
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
     if not config.SETUP_SWING_ENABLED:
@@ -920,6 +1005,7 @@ def evaluate_symbol(
             _capitulation_bar_setup(storage, symbol, metrics),
             _volume_zscore_setup(storage, symbol, metrics),
             _pump24_extreme_setup(storage, symbol, metrics),
+            _mean_reversion_long_setup(storage, symbol, metrics),
         ):
             if setup is None:
                 continue

@@ -6,6 +6,7 @@ from src.strategies.base import BaseStrategy
 from src.strategies.candle_signals_round2 import (
     CapitulationBarStrategy,
     FailedPumpLongStrategy,
+    MeanReversionLongStrategy,
     Pump24ExtremeStrategy,
     VolumeZscoreStrategy,
 )
@@ -30,6 +31,7 @@ _REGISTRY: dict[str, type[BaseStrategy]] = {
     VolumeZscoreStrategy.name: VolumeZscoreStrategy,
     Pump24ExtremeStrategy.name: Pump24ExtremeStrategy,
     FailedPumpLongStrategy.name: FailedPumpLongStrategy,
+    MeanReversionLongStrategy.name: MeanReversionLongStrategy,
     # Benchmark null (BENCHMARK_PERCENTILE ensemble) -- registered so the
     # walk-forward harness can run it; deliberately NOT in
     # research_space.yaml and never promotable.

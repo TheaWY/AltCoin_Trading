@@ -263,6 +263,8 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "pump24_continuation"
     if raw in ("failed_pump_long", "펌프반등"):
         return "failed_pump_long"
+    if raw in ("mean_reversion_long", "약세반등"):
+        return "mean_reversion_long"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
         return "long_term_hold"
     return None
@@ -273,7 +275,7 @@ def holding_style_allowed(style: str | None) -> bool:
     if normalized in (
         "scalp", "swing", "rel_strength_neutral",
         "capitulation_bounce", "volume_zscore_breakout", "pump24_continuation",
-        "failed_pump_long",
+        "failed_pump_long", "mean_reversion_long",
     ):
         return True
     if normalized == "long_term_hold":
@@ -297,6 +299,8 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return PUMP24_EXTREME_HOLD_HOURS
     if normalized == "failed_pump_long":
         return FAILED_PUMP_LONG_HOLD_HOURS
+    if normalized == "mean_reversion_long":
+        return MEAN_REVERSION_LONG_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
         return SWING_MAX_HOLD_HOURS
     return 0.0
@@ -451,6 +455,20 @@ SETUP_PUMP24_EXTREME_ENABLED = _env_bool("SETUP_PUMP24_EXTREME_ENABLED", default
 # ENABLED) is now default-False in code -- permanently disabled, evidence
 # settled (anti-predictive at n=1660).
 SETUP_FAILED_PUMP_LONG_ENABLED = _env_bool("SETUP_FAILED_PUMP_LONG_ENABLED", default=False)
+# mean_reversion_long ("buy dislocation, don't sell it"): the third family,
+# built to attack the consistency wall. Market-neutral LONG on 24h weakness
+# (24h return below own expanding 5th pctl). Default OFF; read dynamically so
+# the walk-forward subprocess can toggle it. See research_decisions,
+# subject='mean_reversion_long_build' / 'shorting_weakness_generic'.
+SETUP_MEAN_REVERSION_LONG_ENABLED = _env_bool("SETUP_MEAN_REVERSION_LONG_ENABLED", default=False)
+MEAN_REVERSION_LONG_HOLD_HOURS = float(os.getenv("MEAN_REVERSION_LONG_HOLD_HOURS", "72"))
+# Exclude names already down >= this % from their 90d high -- the study's
+# effect vanishes/inverts in the 80%+ bucket (corpses, n=37); excluded
+# because the evidence does not cover them, not for performance tuning.
+MEAN_REVERSION_LONG_MAX_DD_PCT = float(os.getenv("MEAN_REVERSION_LONG_MAX_DD_PCT", "80"))
+# Weakness percentile: fire when 24h return is at/below this percentile of its
+# own expanding history (0.05 = the event-study 5th-pctl definition).
+MEAN_REVERSION_LONG_PCTL = float(os.getenv("MEAN_REVERSION_LONG_PCTL", "0.05"))
 # pump24_early: fire during the pump's DECELERATION rather than after the
 # 99th-pctl bar completes. Research axis on pump24_extreme (bigger winners,
 # more false positives -- the walk-forward decides if it nets out).

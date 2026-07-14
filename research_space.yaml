@@ -7,7 +7,7 @@
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
 
 axes:
-  ACTIVE_STRATEGY: [rel_strength_rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme, failed_pump_long, momentum, volume_spike, mean_reversion, funding_rate]
+  ACTIVE_STRATEGY: [rel_strength_rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme, failed_pump_long, mean_reversion_long, momentum, volume_spike, mean_reversion, funding_rate]
   # momentum SHORT leg (research_decisions: momentum_short_disabled) -- anti-
   # predictive; the walk-forward confirms disabling it helps.
   MOMENTUM_SHORT_ENABLED: [true, false]
@@ -104,6 +104,14 @@ axes:
   # pump24 early-entry (fire during deceleration, not after reversal): bigger
   # winners, more false positives -- the walk-forward decides if it nets out.
   PUMP24_EARLY_ENTRY: [true, false]
+
+  # mean_reversion_long -- the third family (research_decisions:
+  # mean_reversion_long_build). Market-neutral LONG on 24h weakness; built to
+  # attack the cost wall. Single-value enable (no-op for others); hold horizon
+  # [24,72,168=7d] tests whether the effect keeps growing to swamp fixed cost.
+  # FEE_MODE [taker,maker] already an axis above -- maker = the cost attack.
+  SETUP_MEAN_REVERSION_LONG_ENABLED: [true]
+  MEAN_REVERSION_LONG_HOLD_HOURS: [24, 72, 168]
 
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
