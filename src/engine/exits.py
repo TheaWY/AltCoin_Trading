@@ -20,6 +20,10 @@ from __future__ import annotations
 
 from typing import Any
 
+# MFE below this many ATRs of favorable move doesn't count as "was in
+# profit" for the capture metric -- see mfe_capture's docstring.
+MFE_MATERIALITY_ATR = 0.5
+
 
 def exit_levels(
     direction: str,
@@ -158,12 +162,16 @@ def mfe_capture(
     entry_price: float,
     exit_price: float,
     best_price: float | None,
+    atr_pct: float | None = None,
 ) -> tuple[float | None, float | None]:
     """(mfe_pct, capture_fraction): how far the trade went in our favor at
     its best, and what fraction of that favorable move the realized exit
-    captured. capture is None when the trade never went in our favor
-    (nothing to capture -- a straight loser is an entry problem, not an
-    exit problem). The standing metric for judging exit geometry."""
+    captured. capture is None when the favorable move was immaterial --
+    below MATERIALITY_ATR x ATR (or nonpositive): a straight loser with a
+    0.2% wiggle is an entry problem, and dividing by near-zero MFE turns
+    it into a -10.0 outlier that pollutes the distribution (found on the
+    first real comparison, 2026-07-14). The standing metric for judging
+    exit geometry."""
     if not best_price or not entry_price:
         return None, None
     if direction == "LONG":
@@ -172,6 +180,7 @@ def mfe_capture(
     else:
         mfe = (entry_price / float(best_price) - 1.0) * 100.0
         realized = (entry_price / float(exit_price) - 1.0) * 100.0
-    if mfe <= 0:
+    materiality = MFE_MATERIALITY_ATR * float(atr_pct) if atr_pct else 0.0
+    if mfe <= max(materiality, 1e-9):
         return round(mfe, 4), None
     return round(mfe, 4), round(max(-10.0, min(1.0, realized / mfe)), 4)

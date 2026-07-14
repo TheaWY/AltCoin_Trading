@@ -64,7 +64,14 @@ axes:
   # notional| over equity (999 = unlimited). The walk-forward judges the
   # values, not a human.
   TOTAL_RISK_BUDGET_PCT: [0.03, 0.05, 0.08]
-  MAX_NET_BETA_EXPOSURE: [0.5, 1.0, 999]
+  # Ladder derived from principle (research_decisions, subject=
+  # 'beta_cap_ladder', logged BEFORE this edit): 0.25 near-market-neutral /
+  # 0.5 moderate / 1.0 current / 999 unconstrained null. NOTE: 0.25 was
+  # first suggested by a bad day (2026-07-14 net-short book), which makes
+  # it suspect -- it is judged against 5y of walk-forward for that reason,
+  # and only counts as better if expectancy AND window consistency improve,
+  # not if it merely trades less.
+  MAX_NET_BETA_EXPOSURE: [0.25, 0.5, 1.0, 999]
 
   # Exit geometry (2026-07-14, the DEXE capture-window finding: with
   # stop 1.5 / arm 1.0 / trail 2.0 / TP 2.5, any peak in [1.0, 2.5) ATR

@@ -566,7 +566,8 @@ class BacktestPortfolio:
         trade.pnl = pnl
         trade.exit_reason = reason
         trade.mfe_pct, trade.mfe_capture = exits.mfe_capture(
-            trade.direction, trade.entry_price, fill_price, trade.trail_price
+            trade.direction, trade.entry_price, fill_price, trade.trail_price,
+            atr_pct=trade.atr_pct,
         )
         for key, value in hedge_fields.items():
             setattr(trade, key, value)

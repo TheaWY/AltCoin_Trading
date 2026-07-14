@@ -173,6 +173,20 @@ class MfeCaptureTests(unittest.TestCase):
     def test_missing_hwm_returns_none(self):
         self.assertEqual(exits.mfe_capture("LONG", 100.0, 105.0, None), (None, None))
 
+    def test_immaterial_wiggle_has_no_capture(self):
+        """A straight loser with a 0.2%-of-price wiggle (0.1 ATR at 2% ATR)
+        must NOT produce a capture ratio -- dividing by near-zero MFE makes
+        -10.0 outliers that pollute the distribution."""
+        mfe, cap = exits.mfe_capture("SHORT", 100.0, 107.3, 99.8, atr_pct=2.0)
+        self.assertAlmostEqual(mfe, 0.2, delta=0.01)
+        self.assertIsNone(cap)
+
+    def test_material_move_still_captured(self):
+        # 1.5 ATR favorable move clears the 0.5-ATR materiality floor.
+        mfe, cap = exits.mfe_capture("LONG", 100.0, 101.0, 103.0, atr_pct=2.0)
+        self.assertIsNotNone(cap)
+        self.assertAlmostEqual(cap, 1.0 / 3.0, places=3)
+
 
 if __name__ == "__main__":
     unittest.main()
