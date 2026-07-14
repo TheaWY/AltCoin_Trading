@@ -49,6 +49,23 @@ class MomentumStrategy(BaseStrategy):
                 metadata=metadata,
             )
         if pct_24h <= -threshold:
+            # The SHORT leg is anti-predictive (research_decisions,
+            # subject='momentum_short_disabled', 2026-07-14): event study
+            # forward return is POSITIVE after we short (favorable -0.18%/24h,
+            # -0.46%/72h, CI excludes zero) -- a 24h decline mean-reverts UP,
+            # not continues down. Worse on already-collapsed names (corpse
+            # 60-80% bounces +1.33%/72h). This is a DIRECTION problem, not a
+            # filterable one -- even healthy names lose. Default-off; the LONG
+            # leg (validated: +0.16%/24h, +0.40%/72h, beats baseline) stays.
+            if not config.MOMENTUM_SHORT_ENABLED:
+                return Signal(
+                    direction=SignalDirection.NONE,
+                    reason=f"24h momentum {pct_24h:.2f}% down — SHORT leg disabled "
+                           f"(anti-predictive: declines mean-revert up)",
+                    symbol=symbol,
+                    entry_price=entry_price,
+                    metadata=metadata,
+                )
             return Signal(
                 direction=SignalDirection.SHORT,
                 reason=f"24h momentum {pct_24h:.2f}% <= -{threshold:.2f}% — trend continuation short",

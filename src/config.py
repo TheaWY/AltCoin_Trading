@@ -549,6 +549,13 @@ PRIMARY_STRATEGY = ACTIVE_STRATEGIES[0]
 
 # --- Momentum strategy thresholds ---
 MOMENTUM_ENTRY_PCT = float(os.getenv("MOMENTUM_ENTRY_PCT", "3.0"))
+# Momentum SHORT leg: DEFAULT OFF (2026-07-14). The short leg is
+# anti-predictive -- shorting a 24h decline loses because declines
+# mean-revert up (event study favorable -0.18%/24h, -0.46%/72h, CI excludes
+# zero; worse on collapsed names). It was 70% of the recent losses incl the
+# -36% LAB catastrophe. The LONG leg (validated positive) stays on. A
+# research axis so the walk-forward can confirm, but off in live now.
+MOMENTUM_SHORT_ENABLED = _env_bool("MOMENTUM_SHORT_ENABLED", default=False)
 
 # --- Trade evaluation gates (단타/스윙 verdict on the dashboard) ---
 EVAL_MIN_CANDLES = int(os.getenv("EVAL_MIN_CANDLES", "48"))

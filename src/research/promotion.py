@@ -91,7 +91,7 @@ OVERRIDE_KEY_EXACT = frozenset(
         # and pump24's early-entry toggle -- all routed through the same
         # evaluate_symbol() isolation, so backtest expectancy is evidence.
         "SETUP_FAILED_PUMP_LONG_ENABLED", "FAILED_PUMP_LONG_HOLD_HOURS",
-        "PUMP24_EARLY_ENTRY",
+        "PUMP24_EARLY_ENTRY", "MOMENTUM_SHORT_ENABLED",
         # Same reasoning: REGIME_GATE is checked inside the four setups above,
         # inside evaluate_symbol(), so a backtest expectancy for it is
         # evidence about it too. See research_decisions,

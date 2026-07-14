@@ -8,6 +8,9 @@
 
 axes:
   ACTIVE_STRATEGY: [rel_strength_rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme, failed_pump_long, momentum, volume_spike, mean_reversion, funding_rate]
+  # momentum SHORT leg (research_decisions: momentum_short_disabled) -- anti-
+  # predictive; the walk-forward confirms disabling it helps.
+  MOMENTUM_SHORT_ENABLED: [true, false]
   ALLOW_LONG: [true, false]
   CATEGORY_STRATEGY_MODE: ["off", "matched"]
 
