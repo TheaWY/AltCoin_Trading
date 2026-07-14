@@ -86,13 +86,20 @@ def trailing_stop_update(
     atr_pct: float | None,
     *,
     trail_atr_mult: float,
+    trail_arm_atr: float = 1.0,
 ) -> dict[str, Any]:
     """The trailing-stop ratchet, direction-aware, as a pure function.
 
-    Once price has moved 1 ATR in favor of the trade, the stop trails
+    Once price has moved trail_arm_atr x ATR in favor of the trade
+    (research axis; was hardcoded 1.0 until 2026-07-14), the stop trails
     trail_atr_mult x ATR behind the best price seen, and only ever moves in
     the risk-REDUCING direction (up for LONG, down for SHORT) -- never
     widens (system rule #6).
+
+    Geometry note (the DEXE finding): with stop 1.5 / arm 1.0 / trail 2.0 /
+    TP 2.5 (all x ATR), any peak in [arm, TP) that fully reverses exits at
+    ~breakeven -- profit requires reaching TP without a reversal. These are
+    exactly the knobs the exit-geometry research axes vary.
 
     Returns a dict with any of {"trail_price", "stop_loss"} that changed;
     empty dict means nothing to update. Callers persist however they store
@@ -109,7 +116,7 @@ def trailing_stop_update(
         if price > best:
             best = price
             updates["trail_price"] = best
-        if best >= entry_price * (1 + atr_frac):
+        if best >= entry_price * (1 + trail_arm_atr * atr_frac):
             new_stop = best * (1 - trail_atr_mult * atr_frac)
             if new_stop > stop:
                 updates["stop_loss"] = new_stop
@@ -117,9 +124,54 @@ def trailing_stop_update(
         if price < best:
             best = price
             updates["trail_price"] = best
-        if best <= entry_price * (1 - atr_frac):
+        if best <= entry_price * (1 - trail_arm_atr * atr_frac):
             new_stop = best * (1 + trail_atr_mult * atr_frac)
             if new_stop < stop:
                 updates["stop_loss"] = new_stop
 
     return updates
+
+
+def partial_tp_level(
+    direction: str,
+    entry_price: float,
+    r_unit: float,
+    at_r: float,
+) -> float | None:
+    """Price at which the partial take-profit (half off, trail the rest)
+    triggers: at_r R-multiples in favor of the trade, where R = the initial
+    stop distance in price terms. at_r <= 0 disables (the axis's 'off').
+
+    This directly attacks the narrow-capture-window geometry: half the
+    position banked at 1R means a full reversal from any later peak still
+    leaves a profitable trade.
+    """
+    if at_r <= 0 or r_unit <= 0:
+        return None
+    if direction == "LONG":
+        return entry_price + at_r * r_unit
+    return entry_price - at_r * r_unit
+
+
+def mfe_capture(
+    direction: str,
+    entry_price: float,
+    exit_price: float,
+    best_price: float | None,
+) -> tuple[float | None, float | None]:
+    """(mfe_pct, capture_fraction): how far the trade went in our favor at
+    its best, and what fraction of that favorable move the realized exit
+    captured. capture is None when the trade never went in our favor
+    (nothing to capture -- a straight loser is an entry problem, not an
+    exit problem). The standing metric for judging exit geometry."""
+    if not best_price or not entry_price:
+        return None, None
+    if direction == "LONG":
+        mfe = (float(best_price) / entry_price - 1.0) * 100.0
+        realized = (float(exit_price) / entry_price - 1.0) * 100.0
+    else:
+        mfe = (entry_price / float(best_price) - 1.0) * 100.0
+        realized = (entry_price / float(exit_price) - 1.0) * 100.0
+    if mfe <= 0:
+        return round(mfe, 4), None
+    return round(mfe, 4), round(max(-10.0, min(1.0, realized / mfe)), 4)

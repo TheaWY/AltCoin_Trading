@@ -55,6 +55,11 @@ def main() -> int:
             daily[day] = round(daily.get(day, 0.0) + t["pnl"], 4)
     total_fees = sum(t["fees"] for t in trades)
     total_slippage_cost = sum(t.get("slippage_cost", 0.0) for t in trades)
+    # Standing exit-geometry metric: distribution of how much of each
+    # trade's maximum favorable excursion the exit actually captured.
+    captures = sorted(t["mfe_capture"] for t in trades if t.get("mfe_capture") is not None)
+    def _pctl(vals, q):
+        return round(vals[min(len(vals) - 1, int(q * len(vals)))], 4) if vals else None
     compact = {
         "trade_count": len(pnls),
         "total_pnl": round(sum(pnls), 4),
@@ -64,6 +69,14 @@ def main() -> int:
         "win_rate": round(len(wins) / len(pnls), 4) if pnls else 0.0,
         "total_fees": round(total_fees, 4),
         "total_slippage_cost": round(total_slippage_cost, 4),
+        # % of MFE captured: 1.0 = exited at the favorable extreme, 0 = gave
+        # it all back to entry, negative = worse than entry after being in
+        # profit. None-capture trades (never in profit) are excluded --
+        # a straight loser is an entry problem, not an exit-geometry one.
+        "mfe_capture_p25": _pctl(captures, 0.25),
+        "mfe_capture_median": _pctl(captures, 0.50),
+        "mfe_capture_p75": _pctl(captures, 0.75),
+        "mfe_capture_n": len(captures),
         # Pre-cost PnL: adds back BOTH fees and simulated execution slippage,
         # so gross_pnl - total_pnl == total_fees + total_slippage_cost exactly
         # -- the "how much of the edge did realistic costs consume" figure.
@@ -84,6 +97,8 @@ def main() -> int:
                 "symbol": t["symbol"],
                 "exit_reason": t.get("exit_reason"),
                 "atr_pct": t.get("atr_pct"),
+                "mfe_pct": t.get("mfe_pct"),
+                "mfe_capture": t.get("mfe_capture"),
                 "pnl": round(float(t["pnl"]), 6),
                 "fees": round(float(t["fees"]), 6),
                 "slippage_cost": round(float(t.get("slippage_cost", 0.0) or 0.0), 6),

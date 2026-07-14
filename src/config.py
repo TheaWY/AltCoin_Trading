@@ -308,8 +308,17 @@ TAKE_PROFIT_PCT = float(os.getenv("TAKE_PROFIT_PCT", "0.06"))
 
 # --- Risk management (ATR-based exits + volatility-scaled sizing) ---
 # Stop distance = ATR_STOP_MULT x 1h ATR%; target = ATR_TP_MULT x ATR%.
+# Exit-geometry research axes (2026-07-14, the DEXE capture-window finding:
+# a 2.17-ATR favorable move surrendered to ~breakeven because every peak in
+# [arm, TP) that reverses exits near entry). The walk-forward judges these;
+# do not hand-tune.
 ATR_STOP_MULT = float(os.getenv("ATR_STOP_MULT", "1.5"))
 ATR_TP_MULT = float(os.getenv("ATR_TP_MULT", "2.5"))
+# How many ATRs in favor before the trailing ratchet arms (was hardcoded 1.0).
+TRAIL_ARM_ATR = float(os.getenv("TRAIL_ARM_ATR", "1.0"))
+# Partial take-profit: at PARTIAL_TP_AT_R R-multiples in favor (R = initial
+# stop distance), close HALF the position and trail the rest. 0 = off.
+PARTIAL_TP_AT_R = float(os.getenv("PARTIAL_TP_AT_R", "0"))
 # Risk this fraction of portfolio value per trade (position size is derived
 # from the stop distance, so volatile coins automatically get smaller size).
 RISK_PER_TRADE_PCT = float(os.getenv("RISK_PER_TRADE_PCT", "0.01"))

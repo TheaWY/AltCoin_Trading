@@ -100,7 +100,8 @@ class _ParityBase(unittest.TestCase):
         "PAPER_STARTING_CAPITAL", "MAX_POSITION_PCT", "RISK_PER_TRADE_PCT",
         "STOP_LOSS_PCT", "TAKE_PROFIT_PCT", "ATR_STOP_MULT", "ATR_TP_MULT",
         "FEE_MODE", "STOP_SLIPPAGE_MULT", "TRAILING_STOP_ENABLED",
-        "TRAIL_ATR_MULT", "COOLDOWN_HOURS_PER_SYMBOL", "MAX_OPEN_POSITIONS",
+        "TRAIL_ATR_MULT", "TRAIL_ARM_ATR", "PARTIAL_TP_AT_R",
+        "COOLDOWN_HOURS_PER_SYMBOL", "MAX_OPEN_POSITIONS",
         "SCALP_MAX_HOLD_HOURS", "ALLOW_LONG", "ALLOW_SHORT",
     )
 
@@ -279,6 +280,61 @@ class TrailingStopParityTests(_ParityBase):
             live_stop, bt.stop_loss, places=9,
             msg="trailing-stop ratchet diverges between live and backtest",
         )
+
+
+class PartialTpParityTests(_ParityBase):
+    """PARTIAL_TP_AT_R: same trade + same price path -> both engines bank
+    the same half at the same level and leave the same remainder running."""
+
+    def test_partial_fires_identically(self) -> None:
+        config.TRAILING_STOP_ENABLED = False
+        config.PARTIAL_TP_AT_R = 1.0
+        try:
+            storage = _storage()
+            now = int(time.time())
+            _seed_orderbook(storage, "AAA/USDT", now - 10)
+            storage.init_portfolio_state(1000.0)
+
+            # atr_pct=2.0 -> R = 1.5 x 2% = 3% -> partial level at 1.03.
+            storage.insert_paper_trade(
+                _live_trade_row("AAA/USDT", "LONG", 1.0, 100.0, 0.97, 1.10, now - 60))
+            trader = PaperTrader(storage)
+            trader.check_open_trades_for_symbol("AAA/USDT", 1.04)
+            live_open = storage.get_open_trades("AAA/USDT")[0]
+            live_partials = [t for t in storage.get_all_trades_for_symbol("AAA/USDT")
+                             if t.get("exit_reason") == "partial_tp"]
+
+            portfolio = BacktestPortfolio(cash=1000.0, storage=storage)
+            bt = _bt_trade("AAA/USDT", "LONG", 1.0, 100.0, 0.97, 1.10, now - 60)
+            portfolio.open_trades.append(bt)
+            portfolio.cash -= bt.notional
+            portfolio.check_exits({"AAA/USDT": 1.04}, now)
+            bt_partials = [t for t in portfolio.closed_trades if t.exit_reason == "partial_tp"]
+
+            self.assertEqual(len(live_partials), 1)
+            self.assertEqual(len(bt_partials), 1)
+            with self.subTest(knob="remaining quantity"):
+                self.assertAlmostEqual(float(live_open["quantity"]), bt.quantity, places=9)
+            with self.subTest(knob="partial fill price"):
+                self.assertAlmostEqual(float(live_partials[0]["exit_price"]),
+                                       bt_partials[0].exit_price, places=9)
+            with self.subTest(knob="partial pnl"):
+                self.assertAlmostEqual(float(live_partials[0]["pnl"]),
+                                       bt_partials[0].pnl, places=9)
+            with self.subTest(knob="fires once only"):
+                trader.check_open_trades_for_symbol("AAA/USDT", 1.045)
+                portfolio.check_exits({"AAA/USDT": 1.045}, now + 60)
+                self.assertEqual(
+                    len([t for t in storage.get_all_trades_for_symbol("AAA/USDT")
+                         if t.get("exit_reason") == "partial_tp"]), 1)
+                self.assertEqual(
+                    len([t for t in portfolio.closed_trades
+                         if t.exit_reason == "partial_tp"]), 1)
+        finally:
+            config.PARTIAL_TP_AT_R = 0.0
+
+    def test_partial_off_by_default(self) -> None:
+        self.assertEqual(config.PARTIAL_TP_AT_R, 0.0)
 
 
 class CostParityTests(_ParityBase):

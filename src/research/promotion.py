@@ -67,6 +67,11 @@ OVERRIDE_KEY_EXACT = frozenset(
         # engines' _capital_gate at every entry, so backtest expectancy IS
         # evidence about them.
         "TOTAL_RISK_BUDGET_PCT", "MAX_NET_BETA_EXPOSURE",
+        # Exit geometry (exits.py): read identically by both engines'
+        # exit paths (stops, trail arm/distance, TP, partial TP), so
+        # backtest expectancy is evidence about them too.
+        "ATR_STOP_MULT", "ATR_TP_MULT", "TRAIL_ARM_ATR", "TRAIL_ATR_MULT",
+        "PARTIAL_TP_AT_R",
         # Exceptions to the SETUP_ ban above: scripts/backtest.py's
         # EVALUATION_ENGINE_STRATEGIES routes these ACTIVE_STRATEGY values
         # through evaluate_symbol() directly (the same function live's

@@ -200,10 +200,86 @@ class PaperTrader:
         closed = []
         for trade in self.storage.get_open_trades(symbol):
             self._update_trailing_stop(trade, current_price)
+            self._maybe_partial_tp(trade, current_price)
             exit_reason = self._check_exit(trade, current_price)
             if exit_reason:
                 closed.append(self._close_trade(trade, current_price, exit_reason))
         return closed
+
+    def _r_unit(self, trade: dict[str, Any]) -> float:
+        """R = the trade's initial stop distance in price terms, reconstructed
+        from the ATR stored at open (same formula _exit_levels used), so no
+        schema change is needed. Falls back to the fixed stop pct when the
+        trade had no ATR."""
+        entry = float(trade["entry_price"])
+        atr = trade.get("atr_pct")
+        if atr:
+            return entry * config.ATR_STOP_MULT * float(atr) / 100.0
+        return entry * config.STOP_LOSS_PCT
+
+    def _already_partialed(self, trade: dict[str, Any]) -> bool:
+        """A partial close creates a closed 'partial_tp' sibling row sharing
+        opened_at -- its presence marks the trade as already halved."""
+        for t in self.storage.get_all_trades_for_symbol(trade["symbol"]):
+            if (t.get("exit_reason") == "partial_tp"
+                    and int(t.get("opened_at") or 0) == int(trade["opened_at"])):
+                return True
+        return False
+
+    def _maybe_partial_tp(self, trade: dict[str, Any], price: float) -> None:
+        """PARTIAL_TP_AT_R: at N R-multiples in favor, close HALF through the
+        normal cost machinery and let the remainder run with the trail. Skips
+        hedged trades (splitting a hedge pair is out of scope). 0 = off."""
+        if config.PARTIAL_TP_AT_R <= 0 or trade.get("hedge_symbol"):
+            return
+        level = exits.partial_tp_level(
+            trade["direction"], float(trade["entry_price"]),
+            self._r_unit(trade), config.PARTIAL_TP_AT_R,
+        )
+        if level is None:
+            return
+        is_long = trade["direction"] == SignalDirection.LONG.value
+        if (is_long and price < level) or (not is_long and price > level):
+            return
+        if self._already_partialed(trade):
+            return
+
+        half_qty = float(trade["quantity"]) / 2.0
+        entry = float(trade["entry_price"])
+        half_notional = half_qty * entry
+        now_ts = int(datetime.now(timezone.utc).timestamp())
+        fill_price, _meta = self._adjusted_fill_price(
+            trade["symbol"], trade["direction"], is_entry=False, raw_price=price,
+            notional=half_notional, ts=now_ts, reason="partial_tp",
+            atr_pct=trade.get("atr_pct"),
+        )
+        pnl_per_unit = (fill_price - entry) if is_long else (entry - fill_price)
+        fees = half_notional * config.round_trip_cost_pct()
+        partial_pnl = pnl_per_unit * half_qty - fees
+
+        partial_row = {
+            "signal_id": trade.get("signal_id"), "symbol": trade["symbol"],
+            "direction": trade["direction"], "entry_price": entry,
+            "exit_price": fill_price, "quantity": half_qty,
+            "stop_loss": float(trade["stop_loss"]), "take_profit": float(trade["take_profit"]),
+            "status": "closed", "pnl": partial_pnl, "opened_at": int(trade["opened_at"]),
+            "closed_at": now_ts, "strategy": trade.get("strategy"),
+            "style": trade.get("style"), "atr_pct": trade.get("atr_pct"),
+            "trail_price": trade.get("trail_price"), "exit_reason": "partial_tp",
+            "fees": fees,
+        }
+        self.storage.insert_paper_trade(partial_row)
+        self.storage.update_paper_trade(int(trade["id"]), {"quantity": half_qty})
+        trade["quantity"] = half_qty
+
+        state = self.storage.get_portfolio_state()
+        cash = float(state["cash"]) if state else 0.0
+        self.storage.update_portfolio_cash(cash + half_notional + partial_pnl)
+        logger.info(
+            "Partial TP id=%s %s half=%.6f @ %.6f pnl=%.4f (%.1fR reached)",
+            trade["id"], trade["symbol"], half_qty, fill_price, partial_pnl,
+            config.PARTIAL_TP_AT_R,
+        )
 
     def _update_trailing_stop(self, trade: dict[str, Any], price: float) -> None:
         """Ratchet the stop behind the best price seen (swing trades).
@@ -220,6 +296,7 @@ class PaperTrader:
             float(trade.get("trail_price") or trade["entry_price"]),
             float(trade["stop_loss"]), trade.get("atr_pct"),
             trail_atr_mult=config.TRAIL_ATR_MULT,
+            trail_arm_atr=config.TRAIL_ARM_ATR,
         )
         if "stop_loss" in updates:
             trade["stop_loss"] = updates["stop_loss"]

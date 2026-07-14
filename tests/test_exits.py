@@ -118,5 +118,61 @@ class TrailingStopUpdateTests(unittest.TestCase):
         self.assertEqual(updates, {"trail_price": 101.0})
 
 
+class TrailArmTests(unittest.TestCase):
+    def test_lower_arm_engages_earlier(self):
+        # +0.6 ATR move: default arm (1.0) does nothing, arm 0.5 ratchets.
+        base = exits.trailing_stop_update("LONG", 100.0, 101.2, 100.0, 97.0, 2.0,
+                                          trail_atr_mult=1.0, trail_arm_atr=1.0)
+        self.assertNotIn("stop_loss", base)
+        early = exits.trailing_stop_update("LONG", 100.0, 101.2, 100.0, 97.0, 2.0,
+                                           trail_atr_mult=1.0, trail_arm_atr=0.5)
+        self.assertIn("stop_loss", early)
+        self.assertAlmostEqual(early["stop_loss"], 101.2 * 0.98)
+
+    def test_higher_arm_engages_later(self):
+        # +1.2 ATR: arm 1.0 fires, arm 1.5 does not.
+        fired = exits.trailing_stop_update("LONG", 100.0, 102.4, 100.0, 97.0, 2.0,
+                                           trail_atr_mult=1.0, trail_arm_atr=1.0)
+        self.assertIn("stop_loss", fired)
+        held = exits.trailing_stop_update("LONG", 100.0, 102.4, 100.0, 97.0, 2.0,
+                                          trail_atr_mult=1.0, trail_arm_atr=1.5)
+        self.assertNotIn("stop_loss", held)
+
+
+class PartialTpLevelTests(unittest.TestCase):
+    def test_long_level_is_entry_plus_r(self):
+        self.assertAlmostEqual(exits.partial_tp_level("LONG", 100.0, 3.0, 1.0), 103.0)
+
+    def test_short_level_is_entry_minus_r(self):
+        self.assertAlmostEqual(exits.partial_tp_level("SHORT", 100.0, 3.0, 1.0), 97.0)
+
+    def test_zero_at_r_disables(self):
+        self.assertIsNone(exits.partial_tp_level("LONG", 100.0, 3.0, 0.0))
+
+    def test_degenerate_r_disables(self):
+        self.assertIsNone(exits.partial_tp_level("LONG", 100.0, 0.0, 1.0))
+
+
+class MfeCaptureTests(unittest.TestCase):
+    def test_full_capture(self):
+        mfe, cap = exits.mfe_capture("LONG", 100.0, 105.0, 105.0)
+        self.assertAlmostEqual(mfe, 5.0)
+        self.assertAlmostEqual(cap, 1.0)
+
+    def test_dexe_case_gave_it_all_back(self):
+        # +9.5% MFE, exited -0.31%: capture ~ -0.03 -- the finding that
+        # motivated the exit-geometry axes.
+        mfe, cap = exits.mfe_capture("SHORT", 100.0, 100.31, 91.32)
+        self.assertAlmostEqual(mfe, 9.5, delta=0.1)
+        self.assertLess(cap, 0.0)
+
+    def test_never_in_profit_has_no_capture(self):
+        mfe, cap = exits.mfe_capture("LONG", 100.0, 95.0, 100.0)
+        self.assertIsNone(cap)
+
+    def test_missing_hwm_returns_none(self):
+        self.assertEqual(exits.mfe_capture("LONG", 100.0, 105.0, None), (None, None))
+
+
 if __name__ == "__main__":
     unittest.main()

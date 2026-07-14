@@ -99,6 +99,14 @@ class BacktestTrade:
     # paper_trades.trail_price; backtest had NO trailing logic until
     # 2026-07-13 -- another exit-mechanism divergence from live).
     trail_price: float | None = None
+    # PARTIAL_TP_AT_R: half already banked (live infers this from the
+    # closed partial_tp sibling row; the dataclass just carries a flag).
+    partial_done: bool = False
+    # Standing exit-geometry metrics, set at close: how far the trade went
+    # in our favor at its best (from the trail high-water mark) and what
+    # fraction of that favorable move the exit captured.
+    mfe_pct: float | None = None
+    mfe_capture: float | None = None
 
     @property
     def notional(self) -> float:
@@ -389,6 +397,51 @@ class BacktestPortfolio:
         self.open_trades.append(trade)
         return trade
 
+    def _r_unit(self, trade: BacktestTrade) -> float:
+        """Mirrors PaperTrader._r_unit exactly."""
+        if trade.atr_pct:
+            return trade.entry_price * config.ATR_STOP_MULT * float(trade.atr_pct) / 100.0
+        return trade.entry_price * config.STOP_LOSS_PCT
+
+    def _maybe_partial_tp(self, trade: BacktestTrade, price: float, timestamp: int) -> None:
+        """Mirrors PaperTrader._maybe_partial_tp exactly -- half off at N R
+        through the same cost machinery, remainder keeps running."""
+        if config.PARTIAL_TP_AT_R <= 0 or trade.hedge_symbol or trade.partial_done:
+            return
+        level = exits.partial_tp_level(
+            trade.direction, trade.entry_price, self._r_unit(trade), config.PARTIAL_TP_AT_R
+        )
+        if level is None:
+            return
+        is_long = trade.direction == SignalDirection.LONG.value
+        if (is_long and price < level) or (not is_long and price > level):
+            return
+
+        half_qty = trade.quantity / 2.0
+        half_notional = half_qty * trade.entry_price
+        fill_price, _meta = self._adjusted_fill_price(
+            trade.symbol, trade.direction, is_entry=False, raw_price=price,
+            notional=half_notional, ts=timestamp, reason="partial_tp",
+            atr_pct=trade.atr_pct,
+        )
+        pnl_per_unit = (fill_price - trade.entry_price) if is_long else (trade.entry_price - fill_price)
+        fees = half_notional * config.round_trip_cost_pct()
+        partial_pnl = pnl_per_unit * half_qty - fees
+
+        partial = BacktestTrade(
+            symbol=trade.symbol, direction=trade.direction,
+            entry_price=trade.entry_price, quantity=half_qty,
+            stop_loss=trade.stop_loss, take_profit=trade.take_profit,
+            opened_at=trade.opened_at, strategy=trade.strategy,
+            metadata=trade.metadata, exit_price=fill_price, closed_at=timestamp,
+            pnl=partial_pnl, exit_reason="partial_tp", fees=fees,
+            atr_pct=trade.atr_pct, trail_price=trade.trail_price,
+        )
+        self.closed_trades.append(partial)
+        trade.quantity = half_qty
+        trade.partial_done = True
+        self.cash += half_notional + partial_pnl
+
     def check_exits(self, prices: dict[str, float], timestamp: int) -> None:
         still_open = []
         for trade in self.open_trades:
@@ -401,11 +454,14 @@ class BacktestPortfolio:
                     trade.direction, trade.entry_price, price,
                     trade.trail_price or trade.entry_price, trade.stop_loss,
                     trade.atr_pct, trail_atr_mult=config.TRAIL_ATR_MULT,
+                    trail_arm_atr=config.TRAIL_ARM_ATR,
                 )
                 if "trail_price" in updates:
                     trade.trail_price = updates["trail_price"]
                 if "stop_loss" in updates:
                     trade.stop_loss = updates["stop_loss"]
+            if price is not None:
+                self._maybe_partial_tp(trade, price, timestamp)
             reason = self._exit_reason(trade, price, timestamp)
             if reason:
                 close_price = price if price is not None else trade.entry_price
@@ -509,6 +565,9 @@ class BacktestPortfolio:
         trade.closed_at = timestamp
         trade.pnl = pnl
         trade.exit_reason = reason
+        trade.mfe_pct, trade.mfe_capture = exits.mfe_capture(
+            trade.direction, trade.entry_price, fill_price, trade.trail_price
+        )
         for key, value in hedge_fields.items():
             setattr(trade, key, value)
         # Release both legs' reserved notional; pnl already nets out both
@@ -1060,6 +1119,8 @@ class BacktestEngine:
                     "strategy": getattr(t, "strategy", None),
                     "exit_reason": getattr(t, "exit_reason", None),
                     "atr_pct": getattr(t, "atr_pct", None),
+                    "mfe_pct": getattr(t, "mfe_pct", None),
+                    "mfe_capture": getattr(t, "mfe_capture", None),
                     "pnl": round(float(t.pnl or 0.0), 6),
                     "fees": round(float(getattr(t, "fees", 0.0) or 0.0), 6),
                     "slippage_cost": round(float(getattr(t, "slippage_cost", 0.0) or 0.0), 6),

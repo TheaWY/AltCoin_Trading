@@ -155,6 +155,14 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
     fees = sum(w["total_fees"] for w in windows)
     slippage_cost = sum(w.get("total_slippage_cost", 0.0) for w in windows)
     gross = sum(w["gross_pnl"] for w in windows)
+    # Pooled MFE-capture distribution across all windows' trades -- the
+    # standing exit-geometry metric (how much of each trade's favorable
+    # move the exit captured).
+    captures = sorted(
+        t["mfe_capture"]
+        for w in windows for t in (w.get("trade_detail") or [])
+        if t.get("mfe_capture") is not None
+    )
     category_checks = sum(int(w.get("category_checks") or 0) for w in windows)
     category_present = sum(int(w.get("category_present") or 0) for w in windows)
     wins = sum(w["total_pnl"] for w in windows if w["total_pnl"] > 0)
@@ -165,6 +173,16 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
         "gross_pnl": round(gross, 4),
         "total_fees": round(fees, 4),
         "total_slippage_cost": round(slippage_cost, 4),
+        "mfe_capture_median": (
+            round(captures[len(captures) // 2], 4) if captures else None
+        ),
+        "mfe_capture_p25": (
+            round(captures[len(captures) // 4], 4) if captures else None
+        ),
+        "mfe_capture_p75": (
+            round(captures[3 * len(captures) // 4], 4) if captures else None
+        ),
+        "mfe_capture_n": len(captures),
         "expectancy": round(total / trades, 6) if trades else 0.0,
         "profit_factor": round(wins / abs(losses), 4) if losses else (999.0 if wins else 0.0),
         "positive_windows": sum(1 for w in windows if w["total_pnl"] > 0),

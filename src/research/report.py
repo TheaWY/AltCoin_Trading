@@ -140,6 +140,12 @@ def _experiment_item(row: dict[str, Any]) -> dict[str, Any]:
         # window config). A strategy that can't beat random entries with
         # identical risk management isn't a strategy.
         "benchmark_percentile": agg.get("benchmark_percentile"),
+        # Exit-geometry judgment metric: fraction of each trade's maximum
+        # favorable excursion the exit captured (median over trades that
+        # were ever in profit). Low capture with positive expectancy means
+        # the geometry, not the signal, is the bottleneck.
+        "mfe_capture_median": agg.get("mfe_capture_median"),
+        "mfe_capture_n": agg.get("mfe_capture_n"),
     }
 
 

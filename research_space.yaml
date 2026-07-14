@@ -66,6 +66,17 @@ axes:
   TOTAL_RISK_BUDGET_PCT: [0.03, 0.05, 0.08]
   MAX_NET_BETA_EXPOSURE: [0.5, 1.0, 999]
 
+  # Exit geometry (2026-07-14, the DEXE capture-window finding: with
+  # stop 1.5 / arm 1.0 / trail 2.0 / TP 2.5, any peak in [1.0, 2.5) ATR
+  # that reverses exits at ~breakeven -- DEXE went +2.17 ATR and closed
+  # -0.31%). PARTIAL_TP_AT_R attacks that case directly: half banked at 1R
+  # means a full reversal still leaves a profit. Judged by expectancy, PF,
+  # positive windows AND mfe_capture_median (% of favorable move captured).
+  TRAIL_ARM_ATR: [0.5, 1.0, 1.5]
+  TRAIL_ATR_MULT: [1.0, 1.5, 2.0]
+  ATR_TP_MULT: [2.0, 2.5, 3.5]
+  PARTIAL_TP_AT_R: [0, 1.0]
+
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).
 priority_families:
