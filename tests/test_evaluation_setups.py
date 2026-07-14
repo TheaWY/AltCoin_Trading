@@ -8,18 +8,33 @@ from __future__ import annotations
 
 import os
 import unittest
-
-# Make sure the dynamic setup is enabled for these tests even if the shell has a
-# different research override.
-os.environ.setdefault("SETUP_FAILED_PUMP_ENABLED", "true")
+from contextlib import contextmanager
 
 from src.engine.evaluation import (  # noqa: E402
+    STYLE_FAILED_PUMP_LONG,
     STYLE_SCALP,
+    _failed_pump_long_setup,
     _failed_pump_short_setup,
     _filter_setups_by_category,
     _funding_setup,
 )
 from src import config  # noqa: E402
+
+
+@contextmanager
+def _env(**kv):
+    """Force env vars for a dynamically-read flag, robust to import order
+    (unlike setdefault, which loses to a prior dotenv load)."""
+    saved = {k: os.environ.get(k) for k in kv}
+    os.environ.update({k: str(v) for k, v in kv.items()})
+    try:
+        yield
+    finally:
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def base_metrics(**overrides):
@@ -52,25 +67,35 @@ def base_metrics(**overrides):
 
 
 class EvaluationSetupTests(unittest.TestCase):
-    def test_failed_pump_short_detects_skl_like_rollover(self):
-        """A +7d pump that rolls over intraday should be seen as a short setup."""
-        metrics = base_metrics(
-            pct_7d=29.54,
-            pct_24h=-6.99,
-            rsi_14=42.0,
-            last_price=0.004787,
-            sma_20=0.0052,
-            sma_50=0.0042,
-            macd={"hist": -0.0001, "hist_pct": -0.2, "hist_rising": False},
-            btc_correlation=0.43,
-        )
-        setup = _failed_pump_short_setup(metrics)
+    SKL_ROLLOVER = dict(
+        pct_7d=29.54, pct_24h=-6.99, rsi_14=42.0, last_price=0.004787,
+        sma_20=0.0052, sma_50=0.0042,
+        macd={"hist": -0.0001, "hist_pct": -0.2, "hist_rising": False},
+        btc_correlation=0.43,
+    )
+
+    def test_failed_pump_short_disabled_by_default(self):
+        """failed_pump_short is permanently disabled (anti-predictive at
+        n=1660). It must return None regardless of the SKL-like pattern."""
+        with _env(SETUP_FAILED_PUMP_ENABLED="false"):
+            self.assertIsNone(_failed_pump_short_setup(base_metrics(**self.SKL_ROLLOVER)))
+
+    def test_failed_pump_long_detects_skl_like_rollover(self):
+        """The SAME detection now fires as a LONG (oversold bounce) -- the
+        validated inversion. Same condition, opposite direction."""
+        with _env(SETUP_FAILED_PUMP_LONG_ENABLED="true"):
+            setup = _failed_pump_long_setup(base_metrics(**self.SKL_ROLLOVER))
         self.assertIsNotNone(setup)
-        self.assertEqual(setup["style"], STYLE_SCALP)
-        self.assertEqual(setup["strategy"], "failed_pump_short")
-        self.assertEqual(setup["direction"], "SHORT")
+        self.assertEqual(setup["style"], STYLE_FAILED_PUMP_LONG)
+        self.assertEqual(setup["strategy"], "failed_pump_long")
+        self.assertEqual(setup["direction"], "LONG")
         self.assertGreaterEqual(setup["score"], 0.70)
-        self.assertIn("펌프 실패 숏", setup["reason"])
+        self.assertIn("과매도 반등 롱", setup["reason"])
+
+    def test_failed_pump_long_disabled_by_default(self):
+        """Default OFF -- earns its place through the walk-forward gate."""
+        with _env(SETUP_FAILED_PUMP_LONG_ENABLED="false"):
+            self.assertIsNone(_failed_pump_long_setup(base_metrics(**self.SKL_ROLLOVER)))
 
     def test_pump_with_negative_funding_is_not_failed_pump_short(self):
         """A live pump with extreme negative funding is an upside/squeeze case, not a short."""

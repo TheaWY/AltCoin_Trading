@@ -261,6 +261,8 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "volume_zscore_breakout"
     if raw in ("pump24_continuation", "펌프24h"):
         return "pump24_continuation"
+    if raw in ("failed_pump_long", "펌프반등"):
+        return "failed_pump_long"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
         return "long_term_hold"
     return None
@@ -271,6 +273,7 @@ def holding_style_allowed(style: str | None) -> bool:
     if normalized in (
         "scalp", "swing", "rel_strength_neutral",
         "capitulation_bounce", "volume_zscore_breakout", "pump24_continuation",
+        "failed_pump_long",
     ):
         return True
     if normalized == "long_term_hold":
@@ -292,6 +295,8 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return VOLUME_ZSCORE_HOLD_HOURS
     if normalized == "pump24_continuation":
         return PUMP24_EXTREME_HOLD_HOURS
+    if normalized == "failed_pump_long":
+        return FAILED_PUMP_LONG_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
         return SWING_MAX_HOLD_HOURS
     return 0.0
@@ -355,6 +360,10 @@ REL_STRENGTH_NEUTRAL_HOLD_HOURS = float(os.getenv("REL_STRENGTH_NEUTRAL_HOLD_HOU
 CAPITULATION_BOUNCE_HOLD_HOURS = float(os.getenv("CAPITULATION_BOUNCE_HOLD_HOURS", "72"))
 VOLUME_ZSCORE_HOLD_HOURS = float(os.getenv("VOLUME_ZSCORE_HOLD_HOURS", "72"))
 PUMP24_EXTREME_HOLD_HOURS = float(os.getenv("PUMP24_EXTREME_HOLD_HOURS", "24"))
+# failed_pump_long (the validated inversion of the disabled short): hold
+# horizon is a research axis -- the event study effect is measurable at both
+# 24h (+0.67%) and 72h (+0.82%), so the walk-forward picks.
+FAILED_PUMP_LONG_HOLD_HOURS = float(os.getenv("FAILED_PUMP_LONG_HOLD_HOURS", "72"))
 # Trailing stop for swing trades: once price moves 1 ATR in favor, trail the
 # stop TRAIL_ATR_MULT x ATR behind the best price seen.
 TRAILING_STOP_ENABLED = _env_bool("TRAILING_STOP_ENABLED", default=True)
@@ -429,6 +438,16 @@ SETUP_REL_STRENGTH_ENABLED = _env_bool("SETUP_REL_STRENGTH_ENABLED", default=Fal
 SETUP_CAPITULATION_BAR_ENABLED = _env_bool("SETUP_CAPITULATION_BAR_ENABLED", default=False)
 SETUP_VOLUME_ZSCORE_ENABLED = _env_bool("SETUP_VOLUME_ZSCORE_ENABLED", default=False)
 SETUP_PUMP24_EXTREME_ENABLED = _env_bool("SETUP_PUMP24_EXTREME_ENABLED", default=False)
+# failed_pump_long: the validated LONG inversion of the permanently-disabled
+# failed_pump_short. Default OFF; read dynamically in evaluation.py so the
+# walk-forward subprocess can toggle it. failed_pump_short (SETUP_FAILED_PUMP_
+# ENABLED) is now default-False in code -- permanently disabled, evidence
+# settled (anti-predictive at n=1660).
+SETUP_FAILED_PUMP_LONG_ENABLED = _env_bool("SETUP_FAILED_PUMP_LONG_ENABLED", default=False)
+# pump24_early: fire during the pump's DECELERATION rather than after the
+# 99th-pctl bar completes. Research axis on pump24_extreme (bigger winners,
+# more false positives -- the walk-forward decides if it nets out).
+PUMP24_EARLY_ENTRY = _env_bool("PUMP24_EARLY_ENTRY", default=False)
 # 2026-07-13: funding_carry's execution_mode="delta_neutral" P&L math computes
 # returns for a spot-long hedge leg that has never been implemented in either
 # path -- it has simply never fired (funding never crossed CARRY_ENTRY_RATE),

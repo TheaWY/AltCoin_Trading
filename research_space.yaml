@@ -7,7 +7,7 @@
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
 
 axes:
-  ACTIVE_STRATEGY: [rel_strength_rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme, momentum, volume_spike, mean_reversion, funding_rate]
+  ACTIVE_STRATEGY: [rel_strength_rotation, capitulation_bar, volume_zscore_3plus, pump24_extreme, failed_pump_long, momentum, volume_spike, mean_reversion, funding_rate]
   ALLOW_LONG: [true, false]
   CATEGORY_STRATEGY_MODE: ["off", "matched"]
 
@@ -91,6 +91,16 @@ axes:
   # just strips out most of these volatility-event strategies' trades.
   MAX_ENTRY_ATR_PCT: [3, 5, 999]
   MAX_STOP_GAP_TOLERANCE: [1.5, 2.5, 999]
+
+  # failed_pump_long (research_decisions subject='failed_pump_as_long'): the
+  # validated LONG inversion of the disabled short. Single-value enable (no-op
+  # for other strategies, same pattern as the other SETUP_* eval-engine flags);
+  # hold horizon is the real axis -- effect measurable at both 24h and 72h.
+  SETUP_FAILED_PUMP_LONG_ENABLED: [true]
+  FAILED_PUMP_LONG_HOLD_HOURS: [24, 72]
+  # pump24 early-entry (fire during deceleration, not after reversal): bigger
+  # winners, more false positives -- the walk-forward decides if it nets out.
+  PUMP24_EARLY_ENTRY: [true, false]
 
 # Hypothesis families to prioritize first (partial configs; generator boosts
 # priority of any combo matching all listed key/values).

@@ -40,6 +40,7 @@ STRATEGY_CATEGORY_MAP = {
     "funding_carry": {"crowded_funding"},
     "positioning_short": {"crowded_funding"},
     "failed_pump_short": {"liquid_trend", "volume_surge"},
+    "failed_pump_long": {"liquid_trend", "volume_surge"},
     # rel_strength_rotation, capitulation_bar, volume_zscore_3plus,
     # pump24_extreme deliberately absent: none of their event studies were
     # run per-category, so in CATEGORY_STRATEGY_MODE="matched" each is
@@ -58,6 +59,7 @@ STYLE_REL_STRENGTH_NEUTRAL = "시장중립72h"
 STYLE_CAPITULATION_BOUNCE = "반등72h"
 STYLE_VOLUME_ZSCORE = "거래량72h"
 STYLE_PUMP24_EXTREME = "펌프24h"
+STYLE_FAILED_PUMP_LONG = "펌프반등"
 
 
 def _direction_label(direction: str | None) -> str:
@@ -226,17 +228,13 @@ def _meanrev_setup(metrics: dict[str, Any], funding_rate: float | None) -> dict[
     return None
 
 
-def _failed_pump_short_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
-    """단타: failed-pump / trend exhaustion short.
-
-    This catches the case the old engine missed: a coin has already run hard
-    over the past week, then starts dumping intraday while the short-term trend
-    structure breaks. It is not the same as mean reversion: mean reversion fades
-    an overbought extension immediately, while this waits for failure evidence.
+def _failed_pump_detect(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """Shared detection for the failed-pump pattern: >=15% 7d pump, >=3%
+    24h pullback, SMA20 break or MACD down, RSI not overheated. The
+    CONDITION was validated (event study n=1660); only the DIRECTION is
+    contested between the two variants that wrap this. Returns score +
+    evidence + the two headline moves, or None when the pattern is absent.
     """
-    if not _env_bool_dynamic("SETUP_FAILED_PUMP_ENABLED", True):
-        return None
-
     pct_7d = metrics.get("pct_7d")
     pct_24h = metrics.get("pct_24h")
     last = metrics.get("last_price")
@@ -280,11 +278,55 @@ def _failed_pump_short_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
         evidence.append(f"RSI {rsi:.0f}")
 
     return {
+        "score": round(min(0.82, max(0.05, score)), 2),
+        "evidence": evidence,
+        "pct_7d": pct_7d,
+        "pct_24h": pct_24h,
+    }
+
+
+def _failed_pump_short_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """PERMANENTLY DISABLED (default False), 2026-07-14: the exact same
+    detection traded as a SHORT is ANTI-PREDICTIVE -- event study forward
+    return +0.75%/24h, +1.07%/72h (price RISES after we short), n=1660,
+    settled. See research_decisions subject='failed_pump_short_disabled'.
+    The pattern is an oversold BOUNCE (see _failed_pump_long_setup), not a
+    failing pump. Kept only so history/config references resolve."""
+    if not _env_bool_dynamic("SETUP_FAILED_PUMP_ENABLED", False):
+        return None
+    d = _failed_pump_detect(metrics)
+    if d is None:
+        return None
+    return {
         "style": STYLE_SCALP,
         "strategy": "failed_pump_short",
         "direction": "SHORT",
-        "score": round(min(0.82, max(0.05, score)), 2),
-        "reason": f"7d +{pct_7d:.1f}% 급등 후 24h {pct_24h:.1f}% 되밀림 + {', '.join(evidence)} — 펌프 실패 숏",
+        "score": d["score"],
+        "reason": f"7d +{d['pct_7d']:.1f}% 급등 후 24h {d['pct_24h']:.1f}% 되밀림 + "
+                  f"{', '.join(d['evidence'])} — 펌프 실패 숏",
+    }
+
+
+def _failed_pump_long_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
+    """The inversion (research_decisions subject='failed_pump_as_long',
+    pre-registered): the EXACT same detection as failed_pump_short, traded
+    LONG. Economic story: a >=15% 7d pump already down >=3% with RSI 30-41
+    is an oversold bounce, not a failing pump. Event study effect vs
+    baseline +0.67%/24h [CI +0.33,+1.19], +0.82%/72h [CI +0.26,+2.00],
+    positive across all regimes (strongest when BTC falls). Default OFF --
+    earns its place only through the walk-forward gate net of costs."""
+    if not _env_bool_dynamic("SETUP_FAILED_PUMP_LONG_ENABLED", False):
+        return None
+    d = _failed_pump_detect(metrics)
+    if d is None:
+        return None
+    return {
+        "style": STYLE_FAILED_PUMP_LONG,
+        "strategy": "failed_pump_long",
+        "direction": "LONG",
+        "score": d["score"],
+        "reason": f"7d +{d['pct_7d']:.1f}% 급등 후 24h {d['pct_24h']:.1f}% 눌림 + "
+                  f"{', '.join(d['evidence'])} — 과매도 반등 롱",
     }
 
 
@@ -589,6 +631,28 @@ def _pump24_extreme_setup(
     if current is None or len(history) < _CANDLE_MIN_HISTORY:
         return None
 
+    if config.PUMP24_EARLY_ENTRY:
+        # Deceleration variant (research axis): fire while the 24h pump is
+        # still strong (>=15%) but the LAST 6h momentum has rolled over to
+        # under half the prior 6h -- i.e. during the deceleration, before the
+        # 99th-pctl bar completes. Latency study: catches more of the 72h
+        # continuation (+2.59% vs +1.64%) at a higher false-positive rate --
+        # the walk-forward decides if bigger-winners-more-losers nets out.
+        if len(closes) < 13:
+            return None
+        c1, c7, c13 = closes[-1], closes[-7], closes[-13]
+        r6 = (c1 - c7) / c7 if c7 > 0 else 0.0
+        r6_prev = (c7 - c13) / c13 if c13 > 0 else 0.0
+        if not (current >= 0.15 and r6 > 0 and r6 < 0.5 * r6_prev):
+            return None
+        return {
+            "style": STYLE_PUMP24_EXTREME,
+            "strategy": "pump24_extreme",
+            "direction": "LONG",
+            "score": 0.58,
+            "reason": f"24h {current:+.1%} 가속 둔화 (조기 진입) — 24h 지속 롱",
+        }
+
     rank = percentile_rank(current, history)
     if rank < PUMP24_PCTL:
         return None
@@ -848,6 +912,7 @@ def evaluate_symbol(
             _volume_setup(metrics),
             _meanrev_setup(metrics, funding_rate),
             _failed_pump_short_setup(metrics),
+            _failed_pump_long_setup(metrics),
             _swing_setup(metrics),
             _breakout_setup(metrics, funding_rate),
             _tsmom28_setup(metrics),

@@ -61,3 +61,21 @@ class Pump24ExtremeStrategy(BaseStrategy):
             reason="pump24_extreme is validated via evaluate_symbol() only -- see module docstring",
             symbol=data.get("symbol", ""),
         )
+
+
+class FailedPumpLongStrategy(BaseStrategy):
+    """Registry placeholder for the validated LONG inversion of the disabled
+    failed_pump_short -- same as the three above, validated via
+    evaluate_symbol() (_failed_pump_long_setup) only."""
+
+    name = "failed_pump_long"
+
+    def get_required_data(self) -> list[str]:
+        return ["latest_price"]
+
+    def generate_signal(self, data: dict[str, Any]) -> Signal:
+        return Signal(
+            direction=SignalDirection.NONE,
+            reason="failed_pump_long is validated via evaluate_symbol() only -- see module docstring",
+            symbol=data.get("symbol", ""),
+        )
