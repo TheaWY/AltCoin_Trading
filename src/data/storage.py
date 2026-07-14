@@ -287,6 +287,11 @@ ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS funding_pnl DOUBLE PRECISION;
 ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS realized_beta DOUBLE PRECISION;
 ALTER TABLE paper_trades ADD COLUMN IF NOT EXISTS realized_correlation DOUBLE PRECISION;
 
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS quote_volume DOUBLE PRECISION;
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS num_trades BIGINT;
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS taker_buy_base DOUBLE PRECISION;
+ALTER TABLE prices ADD COLUMN IF NOT EXISTS taker_buy_quote DOUBLE PRECISION;
+
 CREATE TABLE IF NOT EXISTS market_metrics (
     id BIGSERIAL PRIMARY KEY,
     symbol TEXT NOT NULL,
@@ -457,6 +462,7 @@ class Storage:
         with self._connect() as conn:
             conn.raw.executescript(SCHEMA)
             self._migrate_prices_timeframe(conn.raw)
+            self._migrate_prices_orderflow_columns(conn.raw)
             self._migrate_paper_trades_columns(conn.raw)
             conn.raw.execute("DROP INDEX IF EXISTS idx_prices_symbol_ts")
             conn.raw.execute(
@@ -491,6 +497,26 @@ class Storage:
         for column, column_type in self._PAPER_TRADE_NEW_COLUMNS.items():
             if column not in existing:
                 conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {column} {column_type}")
+
+    # Order-flow fields carried by every Binance kline (fields 8-10) but dropped
+    # by ccxt.fetch_ohlcv. Captured now from the same fetch — one source of
+    # truth — so OFI, trade count, and avg trade size come free at feature time.
+    # Nullable: rows written before this migration (and by backfill scripts that
+    # still use fetch_ohlcv) simply carry NULL until backfilled.
+    _PRICES_ORDERFLOW_COLUMNS = {
+        "quote_volume": "REAL",     # dollar volume (kline field 7)
+        "num_trades": "INTEGER",    # trade count in the bar (field 8)
+        "taker_buy_base": "REAL",   # taker BUY base volume (field 9) -> OFI
+        "taker_buy_quote": "REAL",  # taker BUY quote volume (field 10)
+    }
+
+    def _migrate_prices_orderflow_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {
+            row["name"] for row in conn.execute("PRAGMA table_info(prices)").fetchall()
+        }
+        for column, column_type in self._PRICES_ORDERFLOW_COLUMNS.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE prices ADD COLUMN {column} {column_type}")
 
     def _migrate_prices_timeframe(self, conn: sqlite3.Connection) -> None:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(prices)").fetchall()]
@@ -548,20 +574,31 @@ class Storage:
         for row in rows:
             prepared = dict(row)
             prepared.setdefault("timeframe", timeframe)
+            # Order-flow fields are optional (backfill scripts using fetch_ohlcv
+            # don't supply them). Default to None; the upsert below preserves any
+            # existing non-null value rather than clobbering it with NULL.
+            for col in ("quote_volume", "num_trades", "taker_buy_base", "taker_buy_quote"):
+                prepared.setdefault(col, None)
             prepared_rows.append(prepared)
         if not prepared_rows:
             return 0
         sql = """
             INSERT INTO prices
-                (symbol, timestamp, timeframe, open, high, low, close, volume)
+                (symbol, timestamp, timeframe, open, high, low, close, volume,
+                 quote_volume, num_trades, taker_buy_base, taker_buy_quote)
             VALUES
-                (:symbol, :timestamp, :timeframe, :open, :high, :low, :close, :volume)
+                (:symbol, :timestamp, :timeframe, :open, :high, :low, :close, :volume,
+                 :quote_volume, :num_trades, :taker_buy_base, :taker_buy_quote)
             ON CONFLICT(symbol, timestamp, timeframe) DO UPDATE SET
                 open = excluded.open,
                 high = excluded.high,
                 low = excluded.low,
                 close = excluded.close,
                 volume = excluded.volume,
+                quote_volume = COALESCE(excluded.quote_volume, prices.quote_volume),
+                num_trades = COALESCE(excluded.num_trades, prices.num_trades),
+                taker_buy_base = COALESCE(excluded.taker_buy_base, prices.taker_buy_base),
+                taker_buy_quote = COALESCE(excluded.taker_buy_quote, prices.taker_buy_quote),
                 created_at = datetime('now')
         """
         with self._connect() as conn:

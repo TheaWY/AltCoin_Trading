@@ -115,10 +115,7 @@ class BinanceCollector:
             limit = self._incremental_limit(timeframe, config.OHLCV_LIMIT)
         # Explicit limit (e.g. backfill) is honored as-is.
 
-        candles = self.exchange.fetch_ohlcv(
-            self.futures_symbol, timeframe=timeframe, limit=limit
-        )
-        rows = [_candle_to_price_row(self.symbol, candle, timeframe) for candle in candles]
+        rows = self._fetch_ohlcv_rows(timeframe, limit)
         inserted = self.storage.insert_prices(rows, timeframe=timeframe)
         logger.info(
             "OHLCV collected for %s %s: %d candles fetched, %d new rows",
@@ -128,6 +125,39 @@ class BinanceCollector:
             inserted,
         )
         return rows
+
+    def _fetch_ohlcv_rows(self, timeframe: str, limit: int) -> list[dict[str, Any]]:
+        """Fetch candles and map to price rows, capturing the order-flow fields
+        (taker-buy volume, trade count, quote volume) that ccxt.fetch_ohlcv
+        drops. One fetch, one source of truth for OHLCV + order flow.
+
+        Uses the raw futures klines endpoint (12 fields). If that call fails for
+        any reason, falls back to ccxt.fetch_ohlcv (6 fields, order-flow NULL) so
+        the core OHLCV path never degrades below its prior behaviour.
+        """
+        try:
+            klines = self._fetch_klines_raw(timeframe, limit)
+            return [_kline_to_price_row(self.symbol, k, timeframe) for k in klines]
+        except Exception:
+            logger.warning(
+                "Raw klines fetch failed for %s %s; falling back to fetch_ohlcv "
+                "(order-flow fields will be NULL for these bars)",
+                self.symbol, timeframe, exc_info=True,
+            )
+            candles = self.exchange.fetch_ohlcv(
+                self.futures_symbol, timeframe=timeframe, limit=limit
+            )
+            return [_candle_to_price_row(self.symbol, candle, timeframe) for candle in candles]
+
+    def _fetch_klines_raw(self, timeframe: str, limit: int) -> list[list[Any]]:
+        """Raw Binance futures klines (12 fields incl taker-buy volume + trade
+        count). Requires the market id, so markets are loaded once (ccxt caches)."""
+        if not getattr(self.exchange, "markets", None):
+            self.exchange.load_markets()
+        market_id = self.exchange.market(self.futures_symbol)["id"]
+        return self.exchange.fapiPublicGetKlines(
+            {"symbol": market_id, "interval": timeframe, "limit": limit}
+        )
 
     def _incremental_limit(self, timeframe: str, max_limit: int) -> int:
         """Only request the candles missing since the newest stored one."""
@@ -185,6 +215,32 @@ def _candle_to_price_row(symbol: str, candle: list, timeframe: str) -> dict[str,
         "low": float(low),
         "close": float(close),
         "volume": float(volume),
+    }
+
+
+def _kline_to_price_row(symbol: str, kline: list, timeframe: str) -> dict[str, Any]:
+    """Raw Binance futures kline -> price row, including the order-flow fields.
+
+    Binance kline layout:
+      [0]openTime [1]open [2]high [3]low [4]close [5]volume [6]closeTime
+      [7]quoteVolume [8]numTrades [9]takerBuyBase [10]takerBuyQuote [11]ignore
+
+    The OHLCV mapping is byte-for-byte identical to _candle_to_price_row (same
+    endpoint ccxt.fetch_ohlcv calls under the hood) — verified by parity test.
+    """
+    return {
+        "symbol": symbol,
+        "timestamp": int(int(kline[0]) // 1000),
+        "timeframe": timeframe,
+        "open": float(kline[1]),
+        "high": float(kline[2]),
+        "low": float(kline[3]),
+        "close": float(kline[4]),
+        "volume": float(kline[5]),
+        "quote_volume": float(kline[7]),
+        "num_trades": int(kline[8]),
+        "taker_buy_base": float(kline[9]),
+        "taker_buy_quote": float(kline[10]),
     }
 
 
