@@ -471,10 +471,14 @@ class BacktestPortfolio:
         still_open = []
         for trade in self.open_trades:
             price = prices.get(trade.symbol)
+            # No-stop / time-exit-only mode: skip the entire price-trigger block
+            # (trailing, partial-TP, stop/TP) so ONLY the time-stop can close the
+            # trade. Same guard mirrored in PaperTrader (rule #2). Default off.
+            time_exit_only = config.time_exit_only(trade.strategy)
             # Trailing ratchet BEFORE the exit check, same order as live's
             # check_open_trades_for_symbol (_update_trailing_stop then
             # _check_exit), through the same shared function.
-            if price is not None and config.TRAILING_STOP_ENABLED:
+            if not time_exit_only and price is not None and config.TRAILING_STOP_ENABLED:
                 updates = exits.trailing_stop_update(
                     trade.direction, trade.entry_price, price,
                     trade.trail_price or trade.entry_price, trade.stop_loss,
@@ -485,7 +489,7 @@ class BacktestPortfolio:
                     trade.trail_price = updates["trail_price"]
                 if "stop_loss" in updates:
                     trade.stop_loss = updates["stop_loss"]
-            if price is not None:
+            if not time_exit_only and price is not None:
                 self._maybe_partial_tp(trade, price, timestamp)
 
             # funding_carry delta-neutral guard (raise), preserved from
@@ -504,7 +508,7 @@ class BacktestPortfolio:
             # = live's tick) when no stored bar exists, which keeps the
             # cross-engine parity tests exact.
             exit_result = None
-            if price is not None:
+            if not time_exit_only and price is not None:
                 bar = self._current_bar(trade.symbol, timestamp)
                 o, h, l, c = bar if bar else (price, price, price, price)
                 exit_result = exits.evaluate_stop_exit(

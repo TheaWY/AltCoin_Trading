@@ -200,8 +200,12 @@ class PaperTrader:
     ) -> list[dict[str, Any]]:
         closed = []
         for trade in self.storage.get_open_trades(symbol):
-            self._update_trailing_stop(trade, current_price)
-            self._maybe_partial_tp(trade, current_price)
+            # No-stop / time-exit-only: skip trailing + partial-TP (the stop
+            # itself is skipped inside _check_exit). Mirrors backtest.check_exits
+            # (rule #2). Default off, so unchanged for every existing strategy.
+            if not config.time_exit_only(trade.get("strategy")):
+                self._update_trailing_stop(trade, current_price)
+                self._maybe_partial_tp(trade, current_price)
             exit_reason = self._check_exit(trade, current_price)
             if exit_reason:
                 closed.append(self._close_trade(trade, current_price, exit_reason))
@@ -801,12 +805,15 @@ class PaperTrader:
         # to the point check live has always done (behavior-preserving). The
         # fidelity lever for live is POLL CADENCE (the faster exit-check job),
         # not this function: more frequent ticks catch the level sooner.
-        result = exits.evaluate_stop_exit(
-            trade["direction"], float(trade["stop_loss"]), float(trade["take_profit"]),
-            price, price, price, price,
-        )
-        if result is not None:
-            return result[0]
+        # No-stop / time-exit-only strategies skip this entirely -- only the
+        # time-stop below can close them (mirrors backtest; rule #2).
+        if not config.time_exit_only(trade.get("strategy")):
+            result = exits.evaluate_stop_exit(
+                trade["direction"], float(trade["stop_loss"]), float(trade["take_profit"]),
+                price, price, price, price,
+            )
+            if result is not None:
+                return result[0]
 
         max_hours = config.max_hold_hours_for_style(trade.get("style"))
         opened_at = trade.get("opened_at")

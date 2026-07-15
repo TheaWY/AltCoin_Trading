@@ -320,6 +320,29 @@ def max_hold_hours_for_style(style: str | None) -> float:
     return 0.0
 
 
+def time_exit_only(strategy: str | None) -> bool:
+    """Strategies that trade with NO price stop -- they exit ONLY at the
+    time-stop (max_hold_hours). Risk is managed by small hedged/fixed size, not
+    by a stop level. Rationale (2026-07-15 execution-model study): for
+    buy-weakness / mean-reversion entries a price stop is hit by the
+    continuation that PRECEDES the reversion -- the stop, not the signal, was
+    the killer of every gate failure (a 1.5-ATR stop reproduced 13/40; no-stop
+    at 96h reached 29/40 in the event-study sim). This gates that no-stop mode.
+
+    Read dynamically from TIME_EXIT_ONLY_STRATEGIES (comma-separated strategy
+    names) so a walk-forward subprocess can set it. Default empty -> False for
+    every strategy, so existing behavior is unchanged (parity preserved).
+    Applies in BOTH engines (rule #2): when True, the price-trigger block
+    (stop / trailing / partial-TP) is skipped and only the time-stop fires.
+    """
+    if not strategy:
+        return False
+    raw = os.getenv("TIME_EXIT_ONLY_STRATEGIES", "")
+    if not raw:
+        return False
+    return strategy in {s.strip() for s in raw.split(",") if s.strip()}
+
+
 # --- Paper trading ---
 LIVE_TRADING = os.getenv("LIVE_TRADING", "false").lower() in ("true", "1", "yes")
 # Research default is the actual target account size; override in .env for demos.
