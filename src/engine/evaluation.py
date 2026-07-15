@@ -721,6 +721,15 @@ def _mean_reversion_long_setup(
     if rank > config.MEAN_REVERSION_LONG_PCTL:
         return None
 
+    # Cross-sectional dispersion gate (opt-in, EXP2 2026-07-15): only buy
+    # weakness when the universe is DISPERSED (idiosyncratic dislocation, which
+    # reverts) — not when everything falls together (systematic, which doesn't
+    # and can't be beta-hedged out). Point-in-time via xsec_features.
+    if _env_bool_dynamic("MEAN_REVERSION_LONG_REQUIRE_HIGH_DISPERSION", False):
+        from src.research.xsec_features import is_high_dispersion
+        if not is_high_dispersion(storage, latest_ts):
+            return None
+
     # Drawdown-from-90d-high exclusion (corpses the evidence doesn't cover).
     lookback = min(len(highs), 90 * 24)
     hi_90d = max(highs[-lookback:])
