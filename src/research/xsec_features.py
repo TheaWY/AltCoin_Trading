@@ -91,8 +91,14 @@ _CACHE: tuple[list[int], list[int]] | None = None  # (sorted timestamps, high_fl
 def _load(storage: Any) -> tuple[list[int], list[int]]:
     global _CACHE
     if _CACHE is None:
+        # Unwrap a SnapshotStorage (backtest) to the real Storage for the raw
+        # table read -- the snapshot proxies get_prices but not _connect. This
+        # is NOT a lookahead hole: is_high_dispersion() only ever indexes the
+        # flag AT OR BEFORE the entry ts, and each flag was itself computed from
+        # data <= its own hour, so nothing future can influence a past entry.
+        base = getattr(storage, "storage", None) or storage
         try:
-            with storage._connect() as conn:  # noqa: SLF001
+            with base._connect() as conn:  # noqa: SLF001
                 rows = conn.execute(
                     "SELECT timestamp, high_flag FROM xsec_dispersion ORDER BY timestamp"
                 ).fetchall()

@@ -50,6 +50,23 @@ class DispersionLookupTests(unittest.TestCase):
         st = _storage()  # never computed -> no rows / lazy table
         self.assertFalse(xf.is_high_dispersion(st, 1_700_000_000))
 
+    def test_reads_through_snapshot_wrapper_without_connect(self):
+        # regression: the backtest passes a SnapshotStorage that proxies
+        # get_prices but NOT _connect. is_high_dispersion must unwrap to the
+        # real storage instead of failing closed (which silently zeroed the
+        # dispersion-gated gate -- 0 trades across 40 windows).
+        st = _storage()
+        H = 3600
+        self._seed(st, [{"timestamp": 200 * H, "dispersion": 0.05,
+                         "n_symbols": 30, "high_flag": 1}])
+
+        class _Snap:  # mimics SnapshotStorage: has .storage, no _connect
+            def __init__(self, real):
+                self.storage = real
+        snap = _Snap(st)
+        self.assertFalse(hasattr(snap, "_connect"))
+        self.assertTrue(xf.is_high_dispersion(snap, 200 * H + 500))
+
 
 class DispersionComputeTests(unittest.TestCase):
     def setUp(self):
