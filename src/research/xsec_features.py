@@ -38,6 +38,18 @@ def ensure_schema(storage: Any) -> None:
                 high_flag INTEGER NOT NULL DEFAULT 0
             )
         """)
+        # Market BREADTH: fraction of the universe with a positive return over
+        # each window -- a market-regime feature the inventory found we never
+        # computed, and regime is exactly where the six strategies died.
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS xsec_breadth (
+                timestamp INTEGER PRIMARY KEY,
+                breadth_24h REAL NOT NULL,
+                breadth_72h REAL NOT NULL,
+                breadth_7d REAL NOT NULL,
+                n_symbols INTEGER NOT NULL
+            )
+        """)
 
 
 def compute_and_store(storage: Any, symbols: list[str]) -> int:
@@ -84,6 +96,77 @@ def compute_and_store(storage: Any, symbols: list[str]) -> int:
     return len(rows_out)
 
 
+def compute_breadth_and_store(storage: Any, symbols: list[str]) -> int:
+    """Per-hour market breadth: fraction of the universe with a positive return
+    over 24h / 72h / 7d. Point-in-time (each hour's breadth uses only returns
+    ending at or before that hour). Upsert; returns rows written."""
+    ensure_schema(storage)
+    from collections import defaultdict
+    WINDOWS = {"24h": 24, "72h": 72, "7d": 168}
+    # buckets[hour] = {"24h": [signs...], ...}
+    up: dict[int, dict[str, list[int]]] = defaultdict(lambda: {w: [] for w in WINDOWS})
+    for sym in symbols:
+        rows = storage.get_prices(sym, limit=200000, timeframe="1h")
+        if len(rows) < 200:
+            continue
+        cl = np.array([float(r["close"]) for r in rows])
+        ts = np.array([int(r["timestamp"]) for r in rows])
+        for wname, wbars in WINDOWS.items():
+            r = np.full(len(cl), np.nan)
+            r[wbars:] = (cl[wbars:] - cl[:-wbars]) / cl[:-wbars]
+            for t, v in zip(ts[wbars:], r[wbars:]):
+                if np.isfinite(v):
+                    up[(int(t) // HOUR) * HOUR][wname].append(1 if v > 0 else 0)
+
+    rows_out = []
+    for hour, w in up.items():
+        if len(w["24h"]) < 5:
+            continue
+        rows_out.append({
+            "timestamp": int(hour),
+            "breadth_24h": float(np.mean(w["24h"])) if w["24h"] else 0.5,
+            "breadth_72h": float(np.mean(w["72h"])) if w["72h"] else 0.5,
+            "breadth_7d": float(np.mean(w["7d"])) if w["7d"] else 0.5,
+            "n_symbols": len(w["24h"]),
+        })
+    with storage._connect() as conn:  # noqa: SLF001
+        conn.executemany(
+            "INSERT OR IGNORE INTO xsec_breadth "
+            "(timestamp,breadth_24h,breadth_72h,breadth_7d,n_symbols) VALUES "
+            "(:timestamp,:breadth_24h,:breadth_72h,:breadth_7d,:n_symbols)",
+            rows_out,
+        )
+    return len(rows_out)
+
+
+_BREADTH_CACHE: tuple[list[int], dict[str, list[float]]] | None = None
+
+
+def breadth_at(storage: Any, ts: int, window: str = "24h") -> float | None:
+    """Fraction of the universe up over `window` (24h/72h/7d) as of the hour of
+    `ts` (point-in-time: most recent bucket at or before ts). None if unknown."""
+    global _BREADTH_CACHE
+    if _BREADTH_CACHE is None:
+        base = getattr(storage, "storage", None) or storage
+        try:
+            with base._connect() as conn:  # noqa: SLF001
+                rr = conn.execute(
+                    "SELECT timestamp,breadth_24h,breadth_72h,breadth_7d "
+                    "FROM xsec_breadth ORDER BY timestamp"
+                ).fetchall()
+            tss = [int(dict(r)["timestamp"]) for r in rr]
+            cols = {w: [float(dict(r)[f"breadth_{w}"]) for r in rr] for w in ("24h", "72h", "7d")}
+            _BREADTH_CACHE = (tss, cols)
+        except Exception:
+            _BREADTH_CACHE = ([], {})
+    tss, cols = _BREADTH_CACHE
+    if not tss or window not in cols:
+        return None
+    bucket = (int(ts) // HOUR) * HOUR
+    i = bisect.bisect_right(tss, bucket) - 1
+    return cols[window][i] if i >= 0 else None
+
+
 # --- read path (cached; used by the setup, called per-symbol-per-timestep) ---
 _CACHE: tuple[list[int], list[int]] | None = None  # (sorted timestamps, high_flag)
 
@@ -111,8 +194,9 @@ def _load(storage: Any) -> tuple[list[int], list[int]]:
 
 
 def reset_cache() -> None:
-    global _CACHE
+    global _CACHE, _BREADTH_CACHE
     _CACHE = None
+    _BREADTH_CACHE = None
 
 
 def is_high_dispersion(storage: Any, ts: int) -> bool:

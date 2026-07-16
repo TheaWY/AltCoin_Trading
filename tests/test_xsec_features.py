@@ -104,5 +104,40 @@ class DispersionComputeTests(unittest.TestCase):
         self.assertGreaterEqual(r["hi"], 0)
 
 
+class BreadthTests(unittest.TestCase):
+    def setUp(self):
+        xf.reset_cache()
+
+    def tearDown(self):
+        xf.reset_cache()
+
+    def test_breadth_pit_lookup_and_fail_closed(self):
+        st = _storage()
+        H = 3600
+        xf.ensure_schema(st)
+        with st._connect() as c:
+            c.executemany(
+                "INSERT OR IGNORE INTO xsec_breadth "
+                "(timestamp,breadth_24h,breadth_72h,breadth_7d,n_symbols) VALUES "
+                "(:timestamp,:breadth_24h,:breadth_72h,:breadth_7d,:n_symbols)",
+                [{"timestamp": 100 * H, "breadth_24h": 0.7, "breadth_72h": 0.6,
+                  "breadth_7d": 0.5, "n_symbols": 30}])
+        self.assertAlmostEqual(xf.breadth_at(st, 100 * H + 500, "24h"), 0.7)
+        self.assertAlmostEqual(xf.breadth_at(st, 150 * H, "72h"), 0.6)  # most recent <= ts
+        self.assertIsNone(xf.breadth_at(st, 50 * H))                    # before data -> None
+
+    def test_breadth_reads_through_snapshot_wrapper(self):
+        st = _storage()
+        xf.ensure_schema(st)
+        with st._connect() as c:
+            c.execute("INSERT OR IGNORE INTO xsec_breadth VALUES (?,?,?,?,?)",
+                      (200 * 3600, 0.4, 0.4, 0.4, 30))
+
+        class _Snap:
+            def __init__(self, real):
+                self.storage = real
+        self.assertAlmostEqual(xf.breadth_at(_Snap(st), 200 * 3600 + 100, "24h"), 0.4)
+
+
 if __name__ == "__main__":
     unittest.main()
