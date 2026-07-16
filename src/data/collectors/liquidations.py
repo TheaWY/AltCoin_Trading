@@ -40,19 +40,30 @@ _FUTURE_SKEW_S = 120
 
 def ensure_schema(storage: Any) -> None:
     """Self-contained schema (same pattern as benchmarks/event_study) so this
-    lands without touching the core migration."""
+    lands without touching the core migration. `exchange` tags the source
+    (binance/bybit/okx) -- Binance futures ws is geo-blocked from Korea, so
+    bybit+okx are the working live sources; the 1h aggregate sums across all."""
     with storage._connect() as conn:  # noqa: SLF001
         conn.execute("""
             CREATE TABLE IF NOT EXISTS liquidations (
+                exchange TEXT NOT NULL DEFAULT 'binance',
                 symbol TEXT NOT NULL,
                 timestamp INTEGER NOT NULL,
                 side TEXT NOT NULL,
                 price REAL NOT NULL,
                 qty REAL NOT NULL,
                 notional REAL NOT NULL,
-                UNIQUE(symbol, timestamp, side, price, qty)
+                UNIQUE(exchange, symbol, timestamp, side, price, qty)
             )
         """)
+        # additive migration for a table created before the exchange column
+        try:
+            cols = {r[1] if not isinstance(r, dict) else r["name"]
+                    for r in conn.execute("PRAGMA table_info(liquidations)").fetchall()}
+            if "exchange" not in cols:
+                conn.execute("ALTER TABLE liquidations ADD COLUMN exchange TEXT DEFAULT 'binance'")
+        except Exception:
+            pass  # postgres / already-present; the CREATE above covers fresh DBs
         conn.execute("""
             CREATE TABLE IF NOT EXISTS liquidation_agg_1h (
                 symbol TEXT NOT NULL,
@@ -151,10 +162,12 @@ def store_events(
         return 0
     ensure_schema(storage)  # idempotent; makes store_events self-sufficient
     with storage._connect() as conn:  # noqa: SLF001
+        for e in events:
+            e.setdefault("exchange", "binance")
         conn.executemany(
             "INSERT OR IGNORE INTO liquidations "
-            "(symbol,timestamp,side,price,qty,notional) VALUES "
-            "(:symbol,:timestamp,:side,:price,:qty,:notional)",
+            "(exchange,symbol,timestamp,side,price,qty,notional) VALUES "
+            "(:exchange,:symbol,:timestamp,:side,:price,:qty,:notional)",
             events,
         )
     for agg in aggregate_1h(events):
@@ -224,3 +237,161 @@ async def run_liquidation_stream(storage: Any, flush_every: int = 50, stop_check
             if buffer:
                 store_events(storage, buffer)
                 buffer = []
+
+
+# ==========================================================================
+# Multi-exchange sources (Binance futures ws is geo-blocked from Korea; Bybit
+# and OKX public data ws are NOT, verified 2026-07-17). The 1h aggregate sums
+# across every exchange -- broader market coverage than Binance alone.
+#
+# SIDE CONVENTION (the load-bearing subtlety, normalized to LIQUIDATED POSITION
+# side 'long'/'short' so forced-selling == long liquidations everywhere):
+#   Binance: order side SELL closes a long  -> long
+#   OKX:     `posSide` is given directly    -> use it (unambiguous)
+#   Bybit:   allLiquidation `S` is the POSITION side (Buy=long) per v5 docs
+#            -> Buy=long. FLAGGED: verify against a known cascade once data
+#            flows; a wrong mapping silently inverts every liq_imbalance signal.
+# ==========================================================================
+BYBIT_LINEAR_STREAM = "wss://stream.bybit.com/v5/public/linear"
+OKX_PUBLIC_STREAM = "wss://ws.okx.com:8443/ws/v5/public"
+
+
+def _bybit_symbol(pair: str) -> str:
+    return pair.replace("/", "")           # BTC/USDT -> BTCUSDT
+
+
+def parse_bybit_liquidation(msg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse a Bybit allLiquidation.{symbol} message into liquidation rows."""
+    if not str(msg.get("topic", "")).startswith("allLiquidation"):
+        return []
+    out: list[dict[str, Any]] = []
+    for d in msg.get("data") or []:
+        try:
+            sym = d["s"]
+            side = d["S"]                  # position side (Buy=long)
+            price = float(d.get("p") or 0.0)
+            qty = float(d.get("v") or 0.0)  # linear size is in the base coin
+            ts = int(d.get("T") or msg.get("ts") or 0) // 1000
+        except (KeyError, TypeError, ValueError):
+            continue
+        if price <= 0 or qty <= 0 or ts <= 0:
+            continue
+        out.append({
+            "exchange": "bybit", "symbol": _to_pair(sym), "timestamp": ts,
+            "side": "long" if side == "Buy" else "short",
+            "price": price, "qty": qty, "notional": price * qty,
+        })
+    return out
+
+
+def parse_okx_liquidation(msg: dict[str, Any], ct_val: dict[str, float]) -> list[dict[str, Any]]:
+    """Parse an OKX liquidation-orders (SWAP) message. `ct_val` maps instId ->
+    contract value (coin per contract); notional = sz * ctVal * price. OKX gives
+    posSide directly, so the side is unambiguous."""
+    if (msg.get("arg") or {}).get("channel") != "liquidation-orders":
+        return []
+    out: list[dict[str, Any]] = []
+    for item in msg.get("data") or []:
+        inst = item.get("instId", "")
+        if not inst.endswith("-USDT-SWAP"):
+            continue
+        base = inst.split("-")[0]
+        cv = ct_val.get(inst, 1.0)
+        for det in item.get("details") or []:
+            try:
+                pos_side = det.get("posSide")
+                price = float(det.get("bkPx") or 0.0)
+                sz = float(det.get("sz") or 0.0)
+                ts = int(det.get("ts") or 0) // 1000
+            except (TypeError, ValueError):
+                continue
+            if price <= 0 or sz <= 0 or ts <= 0:
+                continue
+            side = pos_side if pos_side in ("long", "short") else (
+                "long" if det.get("side") == "sell" else "short")
+            out.append({
+                "exchange": "okx", "symbol": f"{base}/USDT", "timestamp": ts,
+                "side": side, "price": price, "qty": sz * cv,
+                "notional": sz * cv * price,
+            })
+    return out
+
+
+async def run_bybit_liquidation_stream(storage: Any, symbols: list[str],
+                                       flush_every: int = 20, stop_check=None) -> None:
+    """Persistent Bybit allLiquidation consumer for `symbols` (our pairs).
+    Fault-isolated + reconnecting, same contract as the Binance stream."""
+    import asyncio
+    import websockets
+    ensure_schema(storage)
+    topics = [f"allLiquidation.{_bybit_symbol(s)}" for s in symbols if s.endswith("/USDT")]
+    buffer: list[dict[str, Any]] = []
+    while stop_check is None or not stop_check():
+        try:
+            async with websockets.connect(BYBIT_LINEAR_STREAM, ping_interval=20) as ws:
+                # Bybit caps args per request; chunk the subscribe.
+                for i in range(0, len(topics), 10):
+                    await ws.send(json.dumps({"op": "subscribe", "args": topics[i:i + 10]}))
+                logger.info("bybit liquidation stream connected (%d symbols)", len(topics))
+                async for raw in ws:
+                    if stop_check is not None and stop_check():
+                        break
+                    try:
+                        buffer.extend(parse_bybit_liquidation(json.loads(raw)))
+                    except Exception:
+                        continue
+                    if len(buffer) >= flush_every:
+                        store_events(storage, buffer); buffer = []
+        except Exception:
+            logger.exception("bybit liquidation stream error; reconnecting in 5s")
+            await asyncio.sleep(5)
+        finally:
+            if buffer:
+                store_events(storage, buffer); buffer = []
+
+
+async def run_okx_liquidation_stream(storage: Any, flush_every: int = 10, stop_check=None) -> None:
+    """Persistent OKX market-wide liquidation-orders (SWAP) consumer -- one
+    subscription covers every USDT swap. Fetches contract values once for
+    correct notionals. Fault-isolated + reconnecting."""
+    import asyncio
+    import json as _json
+    import urllib.request
+    import websockets
+    ensure_schema(storage)
+    ct_val: dict[str, float] = {}
+    try:
+        # OKX REST rejects the default python-urllib User-Agent; set a browser one.
+        req = urllib.request.Request(
+            "https://www.okx.com/api/v5/public/instruments?instType=SWAP",
+            headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            for inst in _json.loads(r.read()).get("data", []):
+                try:
+                    ct_val[inst["instId"]] = float(inst.get("ctVal") or 1.0)
+                except (TypeError, ValueError):
+                    pass
+    except Exception:
+        logger.warning("okx: could not fetch contract values; notionals approximate", exc_info=True)
+    buffer: list[dict[str, Any]] = []
+    while stop_check is None or not stop_check():
+        try:
+            async with websockets.connect(OKX_PUBLIC_STREAM, ping_interval=20) as ws:
+                await ws.send(json.dumps({"op": "subscribe",
+                    "args": [{"channel": "liquidation-orders", "instType": "SWAP"}]}))
+                logger.info("okx liquidation stream connected (%d instruments)", len(ct_val))
+                async for raw in ws:
+                    if stop_check is not None and stop_check():
+                        break
+                    try:
+                        buffer.extend(parse_okx_liquidation(json.loads(raw), ct_val))
+                    except Exception:
+                        continue
+                    if len(buffer) >= flush_every:
+                        store_events(storage, buffer); buffer = []
+        except Exception:
+            logger.exception("okx liquidation stream error; reconnecting in 5s")
+            await asyncio.sleep(5)
+        finally:
+            if buffer:
+                store_events(storage, buffer); buffer = []

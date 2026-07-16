@@ -68,19 +68,31 @@ def start_liquidation_stream() -> threading.Thread | None:
 
     def _run() -> None:
         try:
-            from src.data.collectors.liquidations import run_liquidation_stream
+            from src.data.collectors.liquidations import (
+                run_bybit_liquidation_stream, run_okx_liquidation_stream)
             from src.data.storage import get_storage
+            from src.symbols import trading_symbols
+
+            storage = get_storage()
+            # Bybit subscribes per-symbol -> use the top liquid slice of the
+            # universe; OKX's market-wide channel covers every swap in one sub.
+            symbols = trading_symbols()[:60]
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            loop.run_until_complete(run_liquidation_stream(get_storage()))
+            # Both sources run concurrently; each is independently fault-isolated
+            # and reconnecting, so one exchange dropping never stops the other.
+            loop.run_until_complete(asyncio.gather(
+                run_okx_liquidation_stream(storage),
+                run_bybit_liquidation_stream(storage, symbols),
+            ))
         except Exception:
-            logger.exception("liquidation stream thread exited (trading unaffected)")
+            logger.exception("liquidation streams thread exited (trading unaffected)")
 
     try:
-        thread = threading.Thread(target=_run, name="liquidation-stream", daemon=True)
+        thread = threading.Thread(target=_run, name="liquidation-streams", daemon=True)
         thread.start()
-        logger.info("Liquidation stream started (forward-only; clock running)")
+        logger.info("Liquidation streams started (bybit + okx; forward-only, clock running)")
         return thread
     except Exception:
         logger.exception("could not start liquidation stream (trading unaffected)")

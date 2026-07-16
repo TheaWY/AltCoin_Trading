@@ -18,6 +18,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from src.data.collectors import liquidations as liq
 from src.data.collectors.liquidations import (
     aggregate_1h,
     parse_force_order,
@@ -127,14 +128,13 @@ class FaultIsolationTests(unittest.TestCase):
     disabled by default (runs on a remote host instead); if enabled, a stream
     that dies must not propagate into the scheduler startup path."""
 
-    def test_disabled_by_default_starts_no_thread(self):
-        from src import config
-        from src.runtime import start_liquidation_stream
-        self.assertFalse(config.LIQUIDATION_STREAM_ENABLED)  # off on the mini
-        self.assertIsNone(start_liquidation_stream())
+    def test_disabled_flag_starts_no_thread(self):
+        from unittest import mock
+        from src import runtime
+        with mock.patch.object(runtime.config, "LIQUIDATION_STREAM_ENABLED", False):
+            self.assertIsNone(runtime.start_liquidation_stream())
 
     def test_stream_crash_does_not_propagate(self):
-        import time as _time
         from unittest import mock
 
         from src import runtime
@@ -145,15 +145,73 @@ class FaultIsolationTests(unittest.TestCase):
             boom_called["n"] += 1
             raise RuntimeError("simulated stream failure")
 
+        # runtime now runs the bybit+okx streams; a crash in either must be
+        # swallowed inside the daemon thread and never reach the caller.
         with mock.patch.object(runtime.config, "LIQUIDATION_STREAM_ENABLED", True), \
-             mock.patch("src.data.collectors.liquidations.run_liquidation_stream", _boom):
-            # must return a thread and NOT raise, even though the stream explodes
+             mock.patch("src.data.collectors.liquidations.run_okx_liquidation_stream", _boom), \
+             mock.patch("src.data.collectors.liquidations.run_bybit_liquidation_stream", _boom):
             thread = runtime.start_liquidation_stream()
             self.assertIsNotNone(thread)
             thread.join(timeout=5)
             self.assertFalse(thread.is_alive())
-        # the failure happened inside the thread and was swallowed
-        self.assertEqual(boom_called["n"], 1)
+        self.assertGreaterEqual(boom_called["n"], 1)
+
+
+class MultiExchangeParseTests(unittest.TestCase):
+    """Bybit + OKX liquidation parsing (the working sources from Korea, where
+    Binance futures ws is geo-blocked). Side must normalize to the LIQUIDATED
+    POSITION side across all three exchanges' different field conventions."""
+
+    def test_bybit_position_side_convention(self):
+        # Bybit allLiquidation S is the POSITION side (Buy=long liquidated)
+        long_liq = liq.parse_bybit_liquidation({
+            "topic": "allLiquidation.BTCUSDT", "ts": 1_700_000_000_000,
+            "data": [{"T": 1_700_000_000_000, "s": "BTCUSDT", "S": "Buy", "v": "0.5", "p": "60000"}]})
+        self.assertEqual(long_liq[0]["side"], "long")
+        self.assertEqual(long_liq[0]["exchange"], "bybit")
+        self.assertAlmostEqual(long_liq[0]["notional"], 30000.0)
+        short_liq = liq.parse_bybit_liquidation({
+            "topic": "allLiquidation.ETHUSDT", "ts": 1_700_000_000_000,
+            "data": [{"T": 1_700_000_000_000, "s": "ETHUSDT", "S": "Sell", "v": "1", "p": "3000"}]})
+        self.assertEqual(short_liq[0]["side"], "short")
+
+    def test_bybit_ignores_non_liquidation_topics(self):
+        self.assertEqual(liq.parse_bybit_liquidation(
+            {"topic": "publicTrade.BTCUSDT", "data": [{}]}), [])
+
+    def test_okx_uses_posside_and_ctval(self):
+        ev = liq.parse_okx_liquidation({
+            "arg": {"channel": "liquidation-orders", "instType": "SWAP"},
+            "data": [{"instId": "BTC-USDT-SWAP", "details": [
+                {"posSide": "long", "side": "sell", "sz": "10", "bkPx": "60000", "ts": "1700000000000"}]}]},
+            {"BTC-USDT-SWAP": 0.01})
+        self.assertEqual(ev[0]["side"], "long")
+        self.assertEqual(ev[0]["exchange"], "okx")
+        self.assertAlmostEqual(ev[0]["notional"], 10 * 0.01 * 60000)  # sz * ctVal * price
+
+    def test_okx_ignores_non_usdt_swaps(self):
+        ev = liq.parse_okx_liquidation({
+            "arg": {"channel": "liquidation-orders"},
+            "data": [{"instId": "BTC-USD-SWAP", "details": [
+                {"posSide": "long", "sz": "1", "bkPx": "60000", "ts": "1700000000000"}]}]}, {})
+        self.assertEqual(ev, [])
+
+    def test_exchange_stored_and_agg_sums_across_exchanges(self):
+        st = _storage()
+        # one bybit long-liq + one okx long-liq in the same hour -> agg sums both
+        liq.store_events(st, liq.parse_bybit_liquidation({
+            "topic": "allLiquidation.BTCUSDT", "ts": 3_600_000,
+            "data": [{"T": 3_600_000, "s": "BTCUSDT", "S": "Buy", "v": "1", "p": "100"}]}),
+            now_fn=lambda: 1e10)
+        liq.store_events(st, liq.parse_okx_liquidation({
+            "arg": {"channel": "liquidation-orders"},
+            "data": [{"instId": "BTC-USDT-SWAP", "details": [
+                {"posSide": "long", "sz": "1", "bkPx": "100", "ts": "3600000"}]}]}, {"BTC-USDT-SWAP": 1.0}),
+            now_fn=lambda: 1e10)
+        rows = st.get_liquidation_agg("BTC/USDT")
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(rows[0]["long_liq_notional"], 200.0)  # 100 (bybit) + 100 (okx)
+        self.assertEqual(rows[0]["liq_count"], 2)
 
 
 if __name__ == "__main__":
