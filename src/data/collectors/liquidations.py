@@ -56,14 +56,20 @@ def ensure_schema(storage: Any) -> None:
                 UNIQUE(exchange, symbol, timestamp, side, price, qty)
             )
         """)
-        # additive migration for a table created before the exchange column
+        # additive migration for a table created before the exchange column --
+        # backend-aware: Postgres has ADD COLUMN IF NOT EXISTS; SQLite doesn't,
+        # so it needs a PRAGMA existence check first.
         try:
-            cols = {r[1] if not isinstance(r, dict) else r["name"]
-                    for r in conn.execute("PRAGMA table_info(liquidations)").fetchall()}
-            if "exchange" not in cols:
-                conn.execute("ALTER TABLE liquidations ADD COLUMN exchange TEXT DEFAULT 'binance'")
+            if getattr(storage, "is_postgres", False):
+                conn.execute("ALTER TABLE liquidations ADD COLUMN IF NOT EXISTS "
+                             "exchange TEXT DEFAULT 'binance'")
+            else:
+                cols = {r[1] if not isinstance(r, dict) else r["name"]
+                        for r in conn.execute("PRAGMA table_info(liquidations)").fetchall()}
+                if "exchange" not in cols:
+                    conn.execute("ALTER TABLE liquidations ADD COLUMN exchange TEXT DEFAULT 'binance'")
         except Exception:
-            pass  # postgres / already-present; the CREATE above covers fresh DBs
+            logger.warning("liquidations: exchange-column migration skipped", exc_info=True)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS liquidation_agg_1h (
                 symbol TEXT NOT NULL,
