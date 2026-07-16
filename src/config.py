@@ -279,6 +279,8 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "failed_pump_long"
     if raw in ("mean_reversion_long", "약세반등"):
         return "mean_reversion_long"
+    if raw in ("volatility_expansion", "변동성확대"):
+        return "volatility_expansion"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
         return "long_term_hold"
     return None
@@ -289,7 +291,7 @@ def holding_style_allowed(style: str | None) -> bool:
     if normalized in (
         "scalp", "swing", "rel_strength_neutral",
         "capitulation_bounce", "volume_zscore_breakout", "pump24_continuation",
-        "failed_pump_long", "mean_reversion_long",
+        "failed_pump_long", "mean_reversion_long", "volatility_expansion",
     ):
         return True
     if normalized == "long_term_hold":
@@ -315,6 +317,8 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return FAILED_PUMP_LONG_HOLD_HOURS
     if normalized == "mean_reversion_long":
         return MEAN_REVERSION_LONG_HOLD_HOURS
+    if normalized == "volatility_expansion":
+        return VOLATILITY_EXPANSION_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
         return SWING_MAX_HOLD_HOURS
     return 0.0
@@ -506,6 +510,16 @@ MEAN_REVERSION_LONG_MAX_DD_PCT = float(os.getenv("MEAN_REVERSION_LONG_MAX_DD_PCT
 # Weakness percentile: fire when 24h return is at/below this percentile of its
 # own expanding history (0.05 = the event-study 5th-pctl definition).
 MEAN_REVERSION_LONG_PCTL = float(os.getenv("MEAN_REVERSION_LONG_PCTL", "0.05"))
+# volatility_expansion: the first Phase-3 discovery survivor to clear the
+# window-consistency wall in a screen (range_pct high, +1.50%/72h neutralized,
+# 29/40 windows over 138 symbols, p<0.0001, direction-clean -- discovery run
+# 2026-07-17). Fire market-neutral LONG when the latest 1h bar's range%
+# ((high-low)/close) is at/above VOLATILITY_EXPANSION_PCTL of its own expanding
+# history (0.90 = the event-study top-decile definition). Default OFF; earns
+# its place ONLY through the real walk-forward gate net of costs (rule #4).
+SETUP_VOLATILITY_EXPANSION_ENABLED = _env_bool("SETUP_VOLATILITY_EXPANSION_ENABLED", default=False)
+VOLATILITY_EXPANSION_HOLD_HOURS = float(os.getenv("VOLATILITY_EXPANSION_HOLD_HOURS", "72"))
+VOLATILITY_EXPANSION_PCTL = float(os.getenv("VOLATILITY_EXPANSION_PCTL", "0.90"))
 # pump24_early: fire during the pump's DECELERATION rather than after the
 # 99th-pctl bar completes. Research axis on pump24_extreme (bigger winners,
 # more false positives -- the walk-forward decides if it nets out).

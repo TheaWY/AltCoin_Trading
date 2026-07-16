@@ -78,6 +78,22 @@ class MeanReversionLongStrategy(BaseStrategy):
                       symbol=data.get("symbol", ""))
 
 
+class VolatilityExpansionStrategy(BaseStrategy):
+    """Registry placeholder -- validated via evaluate_symbol()
+    (_volatility_expansion_setup) only. Phase-3 discovery survivor #1: buy
+    top-decile range% expansion, market-neutral (BTC-hedged)."""
+
+    name = "volatility_expansion"
+
+    def get_required_data(self) -> list[str]:
+        return ["latest_price"]
+
+    def generate_signal(self, data):
+        return Signal(direction=SignalDirection.NONE,
+                      reason="volatility_expansion is validated via evaluate_symbol() only",
+                      symbol=data.get("symbol", ""))
+
+
 class FailedPumpLongStrategy(BaseStrategy):
     """Registry placeholder for the validated LONG inversion of the disabled
     failed_pump_short -- same as the three above, validated via

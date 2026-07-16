@@ -62,6 +62,7 @@ STYLE_VOLUME_ZSCORE = "거래량72h"
 STYLE_PUMP24_EXTREME = "펌프24h"
 STYLE_FAILED_PUMP_LONG = "펌프반등"
 STYLE_MEAN_REVERSION_LONG = "약세반등"
+STYLE_VOLATILITY_EXPANSION = "변동성확대"
 
 
 def _direction_label(direction: str | None) -> str:
@@ -773,6 +774,92 @@ def _mean_reversion_long_setup(
     }
 
 
+def _volatility_expansion_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Phase-3 discovery survivor #1 (discovery run 2026-07-17): buy VOLATILITY
+    EXPANSION. Fire market-neutral LONG when the latest 1h bar's range%
+    ((high-low)/close*100) is at/above VOLATILITY_EXPANSION_PCTL (top decile) of
+    its OWN expanding history -- the exact event-study definition (range_pct in
+    the 90th percentile of its trailing distribution -> +1.50%/72h neutralized,
+    29/40 windows, p<0.0001, direction-clean across 138 symbols). Long the
+    expanding alt, short beta-matched BTC, because the effect was measured
+    MARKET-NEUTRALIZED; an unhedged version is not what the evidence covers.
+
+    Direction is NOT conditioned on the bar's close (the study fired on raw range
+    width, agnostic to up/down close, and the LOW-range bucket was NOT also
+    positive -- so this is a real directional edge, not a volatility artifact).
+    Adding a close-direction filter would be an untested new hypothesis; the
+    setup mirrors the validated signal exactly and lets the REAL walk-forward
+    gate decide if it survives execution net of costs. Default OFF (rule #4).
+    """
+    if not _env_bool_dynamic("SETUP_VOLATILITY_EXPANSION_ENABLED", False):
+        return None
+    if symbol == config.SYMBOL:
+        return None
+    latest_ts = _latest_bar_ts(storage, symbol)
+    if latest_ts is None:
+        return None
+    rows = storage.get_prices(
+        symbol, limit=REL_STRENGTH_LOOKBACK_BARS + 48, timeframe="1h"
+    )
+    if not rows or int(rows[-1]["timestamp"]) != latest_ts:
+        return None
+    closes = [float(r["close"]) for r in rows]
+    highs = [float(r["high"]) for r in rows]
+    lows = [float(r["low"]) for r in rows]
+    ts_list = [int(r["timestamp"]) for r in rows]
+
+    # Expanding-history range% percentile (expansion = top pctl). Same helper and
+    # <t-only construction as _mean_reversion_long_setup, mirroring the study's
+    # trailing-window decile as closely as the live single-pass path allows.
+    history: list[float] = []
+    current: float | None = None
+    for i in range(len(closes)):
+        if closes[i] <= 0 or highs[i] < lows[i]:
+            continue
+        value = (highs[i] - lows[i]) / closes[i] * 100.0
+        if ts_list[i] == latest_ts:
+            current = value
+            break
+        history.append(value)
+    if current is None or len(history) < _CANDLE_MIN_HISTORY:
+        return None
+    rank = percentile_rank(current, history)
+    if rank < config.VOLATILITY_EXPANSION_PCTL:
+        return None
+
+    btc_rows = storage.get_prices(config.SYMBOL, limit=REL_STRENGTH_LOOKBACK_BARS, timeframe="1h")
+    beta = hedge_engine.ex_ante_beta(
+        rows, btc_rows, config.HEDGE_BETA_LOOKBACK_H, config.HEDGE_BETA_MIN_POINTS
+    )
+    if beta is None:
+        return None
+
+    return {
+        "style": STYLE_VOLATILITY_EXPANSION,
+        "strategy": "volatility_expansion",
+        "direction": "LONG",
+        "score": 0.58,
+        "reason": (
+            f"1h 변동폭 {current:.1f}% (상위 {(1 - rank) * 100:.1f}%) — "
+            f"BTC 숏 헤지(β={beta:.2f}) 시장중립 변동성 확대 롱"
+        ),
+        "execution_mode": "market_neutral",
+        "beta": beta,
+        "hedge_symbol": config.SYMBOL,
+        # Standalone: like _mean_reversion_long_setup, this is a self-hedged,
+        # market-neutral setup whose OWN pre-registered criteria (top-decile
+        # range% expansion, computable beta -- the exact definition the +1.50%/72h
+        # discovery event study validated) ARE the entry gate. It fires on a
+        # volatility spike and structurally never earns confluence from the
+        # momentum/mean-reversion setups; subjecting it to the confluence-based
+        # ENTRY_MIN_CONFIDENCE gate would block it entirely. NOT a lowered
+        # threshold -- its own criteria replace, not relax, the gate (rule #4).
+        "standalone_entry": True,
+    }
+
+
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
     if not config.SETUP_SWING_ENABLED:
@@ -1028,6 +1115,7 @@ def evaluate_symbol(
             _volume_zscore_setup(storage, symbol, metrics),
             _pump24_extreme_setup(storage, symbol, metrics),
             _mean_reversion_long_setup(storage, symbol, metrics),
+            _volatility_expansion_setup(storage, symbol, metrics),
         ):
             if setup is None:
                 continue
