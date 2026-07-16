@@ -600,7 +600,15 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     confidence,
                 )
                 continue
-            if confidence < config.ENTRY_MIN_CONFIDENCE:
+            # Use evaluate_symbol's `tradable` verdict as the single source of
+            # truth (rule #2) -- NOT a second raw-confidence gate. For a normal
+            # setup tradable == (confidence >= ENTRY_MIN_CONFIDENCE), so behavior
+            # is unchanged; for a STANDALONE setup (e.g. market-neutral
+            # mean_reversion_long) tradable is True at sub-threshold confidence
+            # because its own criteria replace the confluence gate -- and this
+            # loop must honor that exactly as the backtest's _evaluation_engine_
+            # signal does, or live silently never trades the standalone family.
+            if not candidate.get("tradable"):
                 entry_funnel["below_min_confidence"] += 1
                 _insert_shadow_entry(
                     storage,
@@ -613,7 +621,8 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                     entry_funnel,
                     symbol,
                     "below_min_confidence",
-                    f"confidence {confidence:.2f} < entry_min {config.ENTRY_MIN_CONFIDENCE:.2f}",
+                    f"not tradable (confidence {confidence:.2f} < entry_min "
+                    f"{config.ENTRY_MIN_CONFIDENCE:.2f}, not a standalone setup)",
                     confidence,
                 )
                 continue
@@ -650,7 +659,13 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 "direction": verdict.get("direction"),
                 "reason": verdict.get("reason"),
                 "entry_price": float(price_row["close"]),
-                "style": config.normalize_holding_style(STYLE_MAP.get(verdict.get("style"))),
+                # Pass the RAW verdict style straight to normalize_holding_style
+                # (which recognizes every setup's Korean label directly), exactly
+                # as the backtest's _evaluation_engine_signal does. The STYLE_MAP
+                # indirection silently dropped styles it lacked (mean_reversion_long,
+                # failed_pump_long) to None -> "holding style disabled", so live
+                # never opened the standalone family even though backtest did (rule #2).
+                "style": config.normalize_holding_style(verdict.get("style")),
                 "metadata": {
                     "decision_engine": "evaluation",
                     "confidence": candidate.get("confidence"),
