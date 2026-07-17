@@ -171,16 +171,49 @@ class BacktestForcedCloseClosesHedgeTests(unittest.TestCase):
         self.assertIsNotNone(closed.realized_correlation)
 
 
-class BacktestFundingCarryStillRaisesTests(unittest.TestCase):
-    def test_funding_carry_delta_neutral_still_raises(self) -> None:
-        portfolio = BacktestPortfolio(cash=1000.0, storage=_storage())
+class BacktestFundingCarryDeltaNeutralTests(unittest.TestCase):
+    """funding_carry delta-neutral is now IMPLEMENTED (was FakeDeltaNeutralError).
+    primary = LONG spot ('1h'), hedge = SHORT perp ('1h_perp'); the short leg
+    collects funding = the carry. Verify it opens both legs, collects funding,
+    and closes cleanly with no naked leg."""
+
+    def test_delta_neutral_collects_funding_and_closes_cleanly(self) -> None:
+        storage = _storage()
+        opened_at = 1_700_000_000
+        spot_rows, perp_rows = [], []
+        sp, pp = 1.0, 1.002                      # perp at a small premium (basis)
+        for h in range(400):                     # cover the hold + funding window
+            ts = opened_at + h * HOUR
+            spot_rows.append({"symbol": "AAA/USDT", "timestamp": ts, "timeframe": "1h",
+                              "open": sp, "high": sp, "low": sp, "close": sp, "volume": 1.0})
+            perp_rows.append({"symbol": "AAA/USDT", "timestamp": ts, "timeframe": "1h_perp",
+                              "open": pp, "high": pp, "low": pp, "close": pp, "volume": 1.0})
+            sp *= 1.0005; pp *= 1.0005            # both legs move together -> price P&L cancels
+        storage.insert_prices(spot_rows, timeframe="1h")
+        storage.insert_prices(perp_rows, timeframe="1h_perp")
+        # persistent positive funding -> the SHORT perp leg RECEIVES it
+        storage.insert_funding_rates([
+            {"symbol": "AAA/USDT", "timestamp": opened_at + i * 8 * HOUR, "funding_rate": 0.001}
+            for i in range(1, 45)])
+
+        portfolio = BacktestPortfolio(cash=1000.0, storage=storage)
         trade = portfolio.open_trade(
-            "AAA/USDT", "SHORT", 1.0, 1_700_000_000,
-            strategy="funding_carry", metadata={"execution_mode": "delta_neutral"},
+            "AAA/USDT", "LONG", 1.0, opened_at, strategy="funding_carry",
+            metadata={"execution_mode": "delta_neutral", "hedge_symbol": "AAA/USDT",
+                      "style": "funding_carry"},
+            prices={"AAA/USDT": 1.0},
         )
         self.assertIsNotNone(trade)
-        with self.assertRaises(FakeDeltaNeutralError):
-            portfolio.check_exits({"AAA/USDT": 0.90}, 1_700_000_100)
+        self.assertEqual(trade.hedge_symbol, "AAA/USDT")          # short perp of same symbol
+        self.assertEqual(trade.hedge_direction, "SHORT")
+
+        closed_ts = opened_at + 300 * HOUR
+        portfolio.close_all({"AAA/USDT": spot_rows[300]["close"]}, closed_ts)
+        self.assertEqual(len(portfolio.open_trades), 0)
+        closed = portfolio.closed_trades[0]
+        self.assertGreater(closed.funding_pnl, 0.0)               # carry collected on the short
+        self.assertIsNotNone(closed.hedge_pnl)
+        self.assertAlmostEqual(portfolio.value({}, closed_ts), portfolio.cash)  # no naked leg
 
 
 if __name__ == "__main__":
