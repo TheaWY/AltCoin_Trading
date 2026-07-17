@@ -78,6 +78,35 @@ def fund_signal(fund: tuple, t: float, look_d: int) -> float | None:
     return float(fr[lo:hi].mean()) if hi > lo else None
 
 
+def funding_stat(fund: tuple, t: float, mode: str, look_d: int = 3,
+                 base_d: int = 30) -> float | None:
+    """Funding signal in one of several modes. 'level' = raw trailing mean (decays
+    as absolute funding falls over time). 'zscore'/'pctl' = current funding vs the
+    coin's OWN trailing distribution (stationary -> should decay less). 'accel' =
+    recent funding minus older funding (is crowding building?)."""
+    fts, fr = fund
+    hi = np.searchsorted(fts, t, "left")
+    lo = np.searchsorted(fts, t - look_d * 86400, "left")
+    if hi <= lo:
+        return None
+    recent = float(fr[lo:hi].mean())
+    if mode == "level":
+        return recent
+    blo = np.searchsorted(fts, t - base_d * 86400, "left")
+    base = fr[blo:hi]
+    if len(base) < 8:
+        return None
+    if mode == "zscore":
+        sd = base.std()
+        return (recent - base.mean()) / sd if sd > 0 else None
+    if mode == "pctl":
+        return float((base < recent).mean())
+    if mode == "accel":
+        older = fr[blo:lo]
+        return recent - float(older.mean()) if len(older) else None
+    return recent
+
+
 def _liquid_funding_symbols(storage, max_names: int) -> list[str]:
     ph = "%s" if storage.is_postgres else "?"
     with storage._connect() as c:

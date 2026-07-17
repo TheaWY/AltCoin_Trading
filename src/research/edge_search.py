@@ -60,6 +60,16 @@ def _funding_carry_configs():
                "fund_look_d": look, "min_funding": minf, "universe_n": N, "cost_leg": cost}
 
 
+def _funding_signal_configs():
+    # stationary funding signals (vs the coin's own history) -- decay hypothesis
+    for hold_h, top, mode, look, N, cost in itertools.product(
+        (336, 504), (0.25, 0.5), ("zscore", "pctl", "accel"), (3, 7),
+        (70, 100), (0.0010, 0.0020)):
+        yield {"family": "funding_signal", "hold_h": hold_h, "top_frac": top,
+               "sig_mode": mode, "fund_look_d": look, "min_funding": 0.0,
+               "universe_n": N, "cost_leg": cost}
+
+
 def _funding_momentum_configs():
     for hold_h, top, mom_d, N, cost in itertools.product(
         (168, 336), (0.2, 0.4), (3, 7, 14), (60, 100), (0.0010, 0.0020)):
@@ -83,6 +93,7 @@ def _basis_configs():
 
 FAMILIES: dict[str, Callable[[], Any]] = {
     "funding_carry": _funding_carry_configs,
+    "funding_signal": _funding_signal_configs,
     "funding_momentum": _funding_momentum_configs,
     "price_xsec": _price_xsec_configs,
     "basis": _basis_configs,
@@ -228,6 +239,46 @@ def bt_funding_carry(P, cfg, n_trials):
     return _metrics(rets, np.array(ds), H, n_trials, gross)
 
 
+def bt_funding_signal(P, cfg, n_trials):
+    """Delta-neutral carry, but rank by a STATIONARY funding stat (zscore/pctl/
+    accel vs the coin's own history) among names actually paying positive funding.
+    Tests whether a stationary signal decays less than the raw funding level."""
+    perp, spot, fund = P["perp"], P["spot"], P["fund"]
+    pool = P["by_liquidity"][:cfg["universe_n"]]
+    H, mode = cfg["hold_h"], cfg["sig_mode"]
+    rets, gross, ds, prev = [], [], [], set()
+    for g in _grid(H):
+        gh = int((g + H * HOUR) // HOUR * HOUR)
+        cand = []
+        for s in pool:
+            if s not in perp:
+                continue
+            if g in perp[s] and gh in perp[s] and g in spot[s] and gh in spot[s] and perp[s][g] > 0 and spot[s][g] > 0:
+                lvl = perp_cache.fund_signal(fund[s], g, cfg["fund_look_d"])
+                if lvl is None or lvl <= 0:          # must actually be paying carry
+                    continue
+                sig = perp_cache.funding_stat(fund[s], g, mode, cfg["fund_look_d"])
+                if sig is not None:
+                    cand.append((sig, s, g, gh))
+        if len(cand) < 6:
+            continue
+        cand.sort(reverse=True)
+        k = max(2, int(len(cand) * cfg["top_frac"]))
+        held = cand[:k]
+        pnl, names = [], set()
+        for _, s, g_, gh_ in held:
+            names.add(s)
+            pr = (perp[s][gh_] - perp[s][g_]) / perp[s][g_]
+            sr = (spot[s][gh_] - spot[s][g_]) / spot[s][g_]
+            pnl.append(perp_cache.fund_sum(fund[s], g_, gh_) - (pr - sr))
+        turn = 1.0 if not prev else 1 - len(names & prev) / len(names)
+        prev = names
+        gross.append(float(np.mean(pnl)))
+        rets.append(float(np.mean(pnl)) - 2 * cfg["cost_leg"] * turn)
+        ds.append(g)
+    return _metrics(rets, np.array(ds), H, n_trials, gross)
+
+
 def bt_funding_momentum(P, cfg, n_trials):
     """Short high-funding AND recent-winner (pump-and-dump short), delta-neutral."""
     perp, spot, fund = P["perp"], P["spot"], P["fund"]
@@ -335,7 +386,8 @@ def bt_price_xsec(P, cfg, n_trials):
 
 
 BACKTESTS = {
-    "funding_carry": bt_funding_carry, "funding_momentum": bt_funding_momentum,
+    "funding_carry": bt_funding_carry, "funding_signal": bt_funding_signal,
+    "funding_momentum": bt_funding_momentum,
     "basis": bt_basis, "price_xsec": bt_price_xsec,
 }
 
