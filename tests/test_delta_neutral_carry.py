@@ -17,7 +17,11 @@ from __future__ import annotations
 
 import unittest
 
-from src.engine.hedge import combined_trade_pnl, funding_pnl_for_leg
+from src.engine.hedge import (
+    combined_trade_pnl,
+    delta_neutral_hedge_leg,
+    funding_pnl_for_leg,
+)
 from src.strategies.base import SignalDirection
 
 N = 1000.0
@@ -78,6 +82,38 @@ class DeltaNeutralCarryPnL(unittest.TestCase):
         total = combined_trade_pnl(primary, 0.0, hedge, 0.0, funding)
         self.assertAlmostEqual(primary + hedge, 0.0)  # market move fully hedged
         self.assertAlmostEqual(total, funding)         # pure carry
+
+
+class DeltaNeutralLegSizing(unittest.TestCase):
+    """The shared sizing primitive: primary LONG spot + hedge SHORT perp, same
+    symbol, EQUAL notional (beta=1, dollar+delta neutral), hedge priced off perp."""
+
+    def test_equal_notional_short_perp_hedge(self):
+        leg = delta_neutral_hedge_leg(
+            "KAITO/USDT", SignalDirection.LONG.value, spot_price=1.00, perp_price=1.02,
+            cash=1000.0, portfolio_value=1000.0, max_position_pct=0.03)
+        self.assertIsNotNone(leg)
+        self.assertEqual(leg["hedge_symbol"], "KAITO/USDT")          # SAME symbol
+        self.assertEqual(leg["hedge_direction"], SignalDirection.SHORT.value)  # short the perp
+        self.assertEqual(leg["hedge_entry_price"], 1.02)              # priced off PERP
+        self.assertEqual(leg["hedge_beta"], 1.0)
+        self.assertAlmostEqual(leg["primary_notional"], leg["hedge_notional"])  # EQUAL
+        # one 3% slot split across two beta=1 legs -> each = 1.5% of portfolio
+        self.assertAlmostEqual(leg["primary_notional"], 1000.0 * 0.03 / 2)
+        self.assertAlmostEqual(leg["hedge_quantity"], leg["hedge_notional"] / 1.02)
+
+    def test_none_when_no_perp_price(self):
+        self.assertIsNone(delta_neutral_hedge_leg(
+            "X/USDT", SignalDirection.LONG.value, spot_price=1.0, perp_price=None,
+            cash=1000, portfolio_value=1000, max_position_pct=0.03))
+        self.assertIsNone(delta_neutral_hedge_leg(
+            "X/USDT", SignalDirection.LONG.value, spot_price=1.0, perp_price=0.0,
+            cash=1000, portfolio_value=1000, max_position_pct=0.03))
+
+    def test_none_when_no_cash(self):
+        self.assertIsNone(delta_neutral_hedge_leg(
+            "X/USDT", SignalDirection.LONG.value, spot_price=1.0, perp_price=1.0,
+            cash=0.0, portfolio_value=1000, max_position_pct=0.03))
 
 
 if __name__ == "__main__":

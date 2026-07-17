@@ -63,6 +63,44 @@ def position_caps(
     return primary_cap, hedge_cap
 
 
+def delta_neutral_hedge_leg(
+    symbol: str,
+    primary_direction: str,
+    spot_price: float | None,
+    perp_price: float | None,
+    cash: float,
+    portfolio_value: float,
+    max_position_pct: float,
+) -> dict[str, Any] | None:
+    """Sizing for the delta-neutral funding-carry pair (short perp + long spot,
+    SAME symbol). Unlike the market-neutral hedge (alt vs BTC, ex-ante beta), the
+    two legs are the SAME asset so beta=1 and the notionals are EQUAL (dollar +
+    delta neutral). The hedge leg is priced off the PERP series -- its funding
+    accrual (funding_pnl_for_leg on a SHORT) IS the carry. Returns a hedge-leg
+    dict with the SAME shape the market-neutral path produces (so open/close
+    machinery is unchanged), or None if it can't be sized.
+
+    Convention: primary leg = LONG SPOT (priced off '1h', the natural feed),
+    hedge leg = SHORT PERP (priced off '1h_perp'). Net exposure ~0; P&L =
+    N*(spot_ret - perp_ret) + funding - fees (see test_delta_neutral_carry)."""
+    if not perp_price or perp_price <= 0 or not spot_price or spot_price <= 0:
+        return None
+    primary_cap, hedge_cap = position_caps(portfolio_value, max_position_pct, 1.0)
+    available = min(primary_cap + hedge_cap, cash)
+    leg_notional = available / 2.0
+    if leg_notional <= 0:
+        return None
+    return {
+        "hedge_symbol": symbol,
+        "hedge_direction": hedge_direction_for(primary_direction),
+        "hedge_entry_price": float(perp_price),
+        "hedge_quantity": leg_notional / float(perp_price),
+        "hedge_beta": 1.0,
+        "primary_notional": leg_notional,
+        "hedge_notional": leg_notional,
+    }
+
+
 def leg_pnl(direction: str, entry_price: float, exit_price: float, quantity: float) -> float:
     if direction == SignalDirection.LONG.value:
         return (exit_price - entry_price) * quantity
