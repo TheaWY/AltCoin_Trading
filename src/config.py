@@ -279,6 +279,8 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "failed_pump_long"
     if raw in ("mean_reversion_long", "약세반등"):
         return "mean_reversion_long"
+    if raw in ("mean_reversion_short", "강세반전"):
+        return "mean_reversion_short"
     if raw in ("volatility_expansion", "변동성확대"):
         return "volatility_expansion"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
@@ -291,7 +293,8 @@ def holding_style_allowed(style: str | None) -> bool:
     if normalized in (
         "scalp", "swing", "rel_strength_neutral",
         "capitulation_bounce", "volume_zscore_breakout", "pump24_continuation",
-        "failed_pump_long", "mean_reversion_long", "volatility_expansion",
+        "failed_pump_long", "mean_reversion_long", "mean_reversion_short",
+        "volatility_expansion",
     ):
         return True
     if normalized == "long_term_hold":
@@ -317,6 +320,8 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return FAILED_PUMP_LONG_HOLD_HOURS
     if normalized == "mean_reversion_long":
         return MEAN_REVERSION_LONG_HOLD_HOURS
+    if normalized == "mean_reversion_short":
+        return MEAN_REVERSION_SHORT_HOLD_HOURS
     if normalized == "volatility_expansion":
         return VOLATILITY_EXPANSION_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
@@ -510,6 +515,19 @@ MEAN_REVERSION_LONG_MAX_DD_PCT = float(os.getenv("MEAN_REVERSION_LONG_MAX_DD_PCT
 # Weakness percentile: fire when 24h return is at/below this percentile of its
 # own expanding history (0.05 = the event-study 5th-pctl definition).
 MEAN_REVERSION_LONG_PCTL = float(os.getenv("MEAN_REVERSION_LONG_PCTL", "0.05"))
+# mean_reversion_short: the SELL-STRENGTH mirror of mean_reversion_long (user
+# 2026-07-18, "include downside betting / 하락장"). Fire market-neutral SHORT when
+# 24h return is at/ABOVE MEAN_REVERSION_SHORT_PCTL (95th) of its own expanding
+# history (overbought) -- short the alt + long beta-matched BTC. CRITICAL: unlike
+# mrl this KEEPS a price stop (NOT in TIME_EXIT_ONLY_STRATEGIES) -- a no-stop
+# SHORT has UNBOUNDED loss on a squeeze. UNVALIDATED eyes-open arm; the validated
+# downside edge is funding_carry (short crowded-long perps). Default OFF.
+SETUP_MEAN_REVERSION_SHORT_ENABLED = _env_bool("SETUP_MEAN_REVERSION_SHORT_ENABLED", default=False)
+MEAN_REVERSION_SHORT_HOLD_HOURS = float(os.getenv("MEAN_REVERSION_SHORT_HOLD_HOURS", "72"))
+MEAN_REVERSION_SHORT_PCTL = float(os.getenv("MEAN_REVERSION_SHORT_PCTL", "0.95"))
+# Don't short parabolic rockets (up >= this % from 90d low) -- they keep running
+# (mirror of the mrl corpse exclusion; the reversion evidence doesn't cover them).
+MEAN_REVERSION_SHORT_MAX_GAIN_PCT = float(os.getenv("MEAN_REVERSION_SHORT_MAX_GAIN_PCT", "300"))
 # volatility_expansion: the first Phase-3 discovery survivor to clear the
 # window-consistency wall in a screen (range_pct high, +1.50%/72h neutralized,
 # 29/40 windows over 138 symbols, p<0.0001, direction-clean -- discovery run

@@ -62,6 +62,7 @@ STYLE_VOLUME_ZSCORE = "거래량72h"
 STYLE_PUMP24_EXTREME = "펌프24h"
 STYLE_FAILED_PUMP_LONG = "펌프반등"
 STYLE_MEAN_REVERSION_LONG = "약세반등"
+STYLE_MEAN_REVERSION_SHORT = "강세반전"
 STYLE_VOLATILITY_EXPANSION = "변동성확대"
 
 
@@ -774,6 +775,90 @@ def _mean_reversion_long_setup(
     }
 
 
+def _mean_reversion_short_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """SELL-STRENGTH mirror of _mean_reversion_long_setup (user 2026-07-18,
+    "include downside / 하락장 betting"). Market-neutral SHORT on 24h STRENGTH:
+    fire when the 24h return is at/ABOVE MEAN_REVERSION_SHORT_PCTL (95th) of its
+    own expanding history (overbought). Short the extended alt, LONG beta-matched
+    BTC. Excludes parabolic rockets (up >= MAX_GAIN_PCT from 90d low) -- they keep
+    running, mirror of the mrl corpse exclusion.
+
+    CRITICAL DIFFERENCE from mrl: this is NOT time_exit_only -- a no-stop SHORT
+    has UNBOUNDED loss on a squeeze, so it keeps a price stop. UNVALIDATED
+    eyes-open arm (cross-sectional shorts didn't clear the gate this session);
+    the validated downside edge is funding_carry. Default OFF.
+    """
+    if not _env_bool_dynamic("SETUP_MEAN_REVERSION_SHORT_ENABLED", False):
+        return None
+    if symbol == config.SYMBOL:
+        return None
+    latest_ts = _latest_bar_ts(storage, symbol)
+    if latest_ts is None:
+        return None
+    rows = storage.get_prices(symbol, limit=REL_STRENGTH_LOOKBACK_BARS + 48, timeframe="1h")
+    if not rows or int(rows[-1]["timestamp"]) != latest_ts:
+        return None
+    closes = [float(r["close"]) for r in rows]
+    lows = [float(r["low"]) for r in rows]
+    ts_list = [int(r["timestamp"]) for r in rows]
+
+    # Expanding-history 24h-return percentile (strength = TOP pctl).
+    history: list[float] = []
+    current: float | None = None
+    for i in range(24, len(closes)):
+        prev = closes[i - 24]
+        if prev <= 0:
+            continue
+        value = (closes[i] - prev) / prev
+        if ts_list[i] == latest_ts:
+            current = value
+            break
+        history.append(value)
+    if current is None or len(history) < _CANDLE_MIN_HISTORY:
+        return None
+    rank = percentile_rank(current, history)
+    if rank < config.MEAN_REVERSION_SHORT_PCTL:
+        return None
+
+    # Dispersion gate (same rationale as mrl: only trade idiosyncratic dislocation).
+    if _env_bool_dynamic("MEAN_REVERSION_SHORT_REQUIRE_HIGH_DISPERSION", False):
+        from src.research.xsec_features import is_high_dispersion
+        if not is_high_dispersion(storage, latest_ts):
+            return None
+
+    # Runaway exclusion: don't short a parabolic rocket (up >= MAX_GAIN from 90d low).
+    lookback = min(len(lows), 90 * 24)
+    lo_90d = min(lows[-lookback:])
+    if lo_90d > 0:
+        gain_pct = (closes[-1] - lo_90d) / lo_90d * 100.0
+        if gain_pct >= config.MEAN_REVERSION_SHORT_MAX_GAIN_PCT:
+            return None
+
+    btc_rows = storage.get_prices(config.SYMBOL, limit=REL_STRENGTH_LOOKBACK_BARS, timeframe="1h")
+    beta = hedge_engine.ex_ante_beta(
+        rows, btc_rows, config.HEDGE_BETA_LOOKBACK_H, config.HEDGE_BETA_MIN_POINTS
+    )
+    if beta is None:
+        return None
+
+    return {
+        "style": STYLE_MEAN_REVERSION_SHORT,
+        "strategy": "mean_reversion_short",
+        "direction": "SHORT",
+        "score": 0.58,
+        "reason": (
+            f"24h 수익률 {current:+.1%} (상위 {(1 - rank) * 100:.1f}%) — "
+            f"BTC 롱 헤지(β={beta:.2f}) 시장중립 강세 반전 숏"
+        ),
+        "execution_mode": "market_neutral",
+        "beta": beta,
+        "hedge_symbol": config.SYMBOL,
+        "standalone_entry": True,
+    }
+
+
 def _volatility_expansion_setup(
     storage: Storage, symbol: str, metrics: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -1115,6 +1200,7 @@ def evaluate_symbol(
             _volume_zscore_setup(storage, symbol, metrics),
             _pump24_extreme_setup(storage, symbol, metrics),
             _mean_reversion_long_setup(storage, symbol, metrics),
+            _mean_reversion_short_setup(storage, symbol, metrics),
             _volatility_expansion_setup(storage, symbol, metrics),
         ):
             if setup is None:
