@@ -722,6 +722,10 @@ def _mean_reversion_long_setup(
     rank = percentile_rank(current, history)
     if rank > config.MEAN_REVERSION_LONG_PCTL:
         return None
+    # Conviction sizing (user 2026-07-18 "확신있는만큼 넣어"): the deeper into the
+    # tail, the bigger the bet. rank->0 (most extreme weakness) = full conviction.
+    pctl = config.MEAN_REVERSION_LONG_PCTL
+    conviction = max(0.0, min(1.0, (pctl - rank) / pctl)) if pctl > 0 else 0.5
 
     # Cross-sectional dispersion gate (opt-in, EXP2 2026-07-15): only buy
     # weakness when the universe is DISPERSED (idiosyncratic dislocation, which
@@ -759,6 +763,9 @@ def _mean_reversion_long_setup(
         "execution_mode": "market_neutral",
         "beta": beta,
         "hedge_symbol": config.SYMBOL,
+        # conviction-scaled sizing: 0.7x (marginal) .. 1.4x (most extreme) of the
+        # base MAX_POSITION_PCT, applied in _hedge_leg_for_open (both paths).
+        "size_mult": round(0.7 + 0.7 * conviction, 3),
         # Standalone entry: this setup is a self-hedged, market-neutral setup
         # whose OWN pre-registered criteria (bottom-MEAN_REVERSION_LONG_PCTL 24h
         # weakness, >MAX_DD exclusion, computable beta — the exact definition the
@@ -821,6 +828,9 @@ def _mean_reversion_short_setup(
     rank = percentile_rank(current, history)
     if rank < config.MEAN_REVERSION_SHORT_PCTL:
         return None
+    # Conviction sizing: rank->1.0 (most extreme overbought) = full conviction.
+    denom = 1.0 - config.MEAN_REVERSION_SHORT_PCTL
+    conviction = max(0.0, min(1.0, (rank - config.MEAN_REVERSION_SHORT_PCTL) / denom)) if denom > 0 else 0.5
 
     # Dispersion gate (same rationale as mrl: only trade idiosyncratic dislocation).
     if _env_bool_dynamic("MEAN_REVERSION_SHORT_REQUIRE_HIGH_DISPERSION", False):
@@ -855,6 +865,7 @@ def _mean_reversion_short_setup(
         "execution_mode": "market_neutral",
         "beta": beta,
         "hedge_symbol": config.SYMBOL,
+        "size_mult": round(0.7 + 0.7 * conviction, 3),
         "standalone_entry": True,
     }
 

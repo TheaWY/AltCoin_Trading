@@ -543,7 +543,8 @@ class PaperTrader:
             return None
         hedge_price = float(hedge_row["close"])
 
-        primary_cap, hedge_cap = hedge_engine.position_caps(portfolio, config.MAX_POSITION_PCT, beta)
+        size_mult = float(metadata.get("size_mult", 1.0) or 1.0)  # conviction-scaled
+        primary_cap, hedge_cap = hedge_engine.position_caps(portfolio, config.MAX_POSITION_PCT * size_mult, beta)
         available = min(primary_cap + hedge_cap, cash)
         primary_notional = available / (1.0 + beta)
         hedge_notional = primary_notional * beta
