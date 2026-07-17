@@ -78,6 +78,22 @@ class MeanReversionLongStrategy(BaseStrategy):
                       symbol=data.get("symbol", ""))
 
 
+class MeanReversionShortStrategy(BaseStrategy):
+    """Registry placeholder -- validated via evaluate_symbol()
+    (_mean_reversion_short_setup) only. Sell-strength mirror of
+    mean_reversion_long: short top-percentile 24h overbought, market-neutral."""
+
+    name = "mean_reversion_short"
+
+    def get_required_data(self) -> list[str]:
+        return ["latest_price"]
+
+    def generate_signal(self, data):
+        return Signal(direction=SignalDirection.NONE,
+                      reason="mean_reversion_short is validated via evaluate_symbol() only",
+                      symbol=data.get("symbol", ""))
+
+
 class VolatilityExpansionStrategy(BaseStrategy):
     """Registry placeholder -- validated via evaluate_symbol()
     (_volatility_expansion_setup) only. Phase-3 discovery survivor #1: buy
