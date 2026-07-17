@@ -64,6 +64,7 @@ STYLE_FAILED_PUMP_LONG = "펌프반등"
 STYLE_MEAN_REVERSION_LONG = "약세반등"
 STYLE_MEAN_REVERSION_SHORT = "강세반전"
 STYLE_VOLATILITY_EXPANSION = "변동성확대"
+STYLE_FUNDING_CARRY = "펀딩캐리"
 
 
 def _direction_label(direction: str | None) -> str:
@@ -959,6 +960,50 @@ def _volatility_expansion_setup(
     }
 
 
+def _funding_carry_setup(
+    storage: Storage, symbol: str, metrics: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Delta-neutral funding carry — THE validated edge (preview DSR 0.997 @20bps,
+    [[funding-carry-edge]]). Short the perp + long the spot on names paying
+    persistent positive funding (crowded longs): collect the funding with ~zero
+    price exposure. primary = LONG spot ('1h'), hedge = SHORT perp ('1h_perp',
+    delta_neutral_hedge_leg); funding accrues on the short leg = the carry. No
+    stop (delta-neutral), exit at FUNDING_CARRY_HOLD_HOURS. Fires when funding has
+    been >= CARRY_ENTRY_RATE for CARRY_ENTRY_CONSECUTIVE consecutive 8h
+    settlements. Default OFF -- earns its place through the real gate."""
+    if not _env_bool_dynamic("SETUP_FUNDING_CARRY_ENABLED", False):
+        return None
+    if symbol == config.SYMBOL:
+        return None
+    # the SHORT leg is a perp -- it must exist in the '1h_perp' series
+    perp = storage.get_latest_price(symbol, timeframe="1h_perp")
+    if not perp:
+        return None
+    from src.strategies.funding_carry import settlement_rates
+    funding_rows = storage.get_funding_rates(symbol, limit=200)
+    rates = settlement_rates(funding_rows)          # per-8h settlement, ascending
+    need = config.CARRY_ENTRY_CONSECUTIVE
+    if len(rates) < need:
+        return None
+    recent = rates[-need:]
+    if not all(r >= config.CARRY_ENTRY_RATE for r in recent):
+        return None
+    avg = sum(recent) / len(recent)
+    return {
+        "style": STYLE_FUNDING_CARRY,
+        "strategy": "funding_carry",
+        "direction": "LONG",                        # primary leg = long spot
+        "score": 0.58,
+        "reason": (
+            f"펀딩비 {avg * 100:.3f}% × {need}회 지속(크라우드 롱) — "
+            f"델타중립 캐리(스팟 롱 + 퍼프 숏, 펀딩 수취)"
+        ),
+        "execution_mode": "delta_neutral",
+        "hedge_symbol": symbol,                     # hedge leg = short perp of same symbol
+        "standalone_entry": True,
+    }
+
+
 def _swing_setup(metrics: dict[str, Any]) -> dict[str, Any] | None:
     """스윙: 7d time-series momentum with trend structure confirmation."""
     if not config.SETUP_SWING_ENABLED:
@@ -1216,6 +1261,7 @@ def evaluate_symbol(
             _mean_reversion_long_setup(storage, symbol, metrics),
             _mean_reversion_short_setup(storage, symbol, metrics),
             _volatility_expansion_setup(storage, symbol, metrics),
+            _funding_carry_setup(storage, symbol, metrics),
         ):
             if setup is None:
                 continue

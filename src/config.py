@@ -281,6 +281,8 @@ def normalize_holding_style(style: str | None) -> str | None:
         return "mean_reversion_long"
     if raw in ("mean_reversion_short", "강세반전"):
         return "mean_reversion_short"
+    if raw in ("funding_carry", "펀딩캐리"):
+        return "funding_carry"
     if raw in ("volatility_expansion", "변동성확대"):
         return "volatility_expansion"
     if raw in ("long_term_hold", "long-term-hold", "long_term", "장투", "hold"):
@@ -294,7 +296,7 @@ def holding_style_allowed(style: str | None) -> bool:
         "scalp", "swing", "rel_strength_neutral",
         "capitulation_bounce", "volume_zscore_breakout", "pump24_continuation",
         "failed_pump_long", "mean_reversion_long", "mean_reversion_short",
-        "volatility_expansion",
+        "volatility_expansion", "funding_carry",
     ):
         return True
     if normalized == "long_term_hold":
@@ -324,6 +326,8 @@ def max_hold_hours_for_style(style: str | None) -> float:
         return MEAN_REVERSION_SHORT_HOLD_HOURS
     if normalized == "volatility_expansion":
         return VOLATILITY_EXPANSION_HOLD_HOURS
+    if normalized == "funding_carry":
+        return FUNDING_CARRY_HOLD_HOURS
     if normalized == "long_term_hold" and LONG_TERM_HOLD_ENABLED:
         return SWING_MAX_HOLD_HOURS
     return 0.0
@@ -549,6 +553,11 @@ PUMP24_EARLY_ENTRY = _env_bool("PUMP24_EARLY_ENTRY", default=False)
 # until a real hedge leg exists. See research_decisions,
 # subject='funding_carry_disabled'.
 SETUP_FUNDING_CARRY_ENABLED = _env_bool("SETUP_FUNDING_CARRY_ENABLED", default=False)
+# The real delta-neutral hedge leg now EXISTS (2026-07-18: short perp '1h_perp' +
+# long spot '1h', src/engine/hedge.delta_neutral_hedge_leg). Hold ~14d to
+# accumulate funding (the validated preview: 336h/504h best). No stop needed --
+# delta-neutral has ~zero price exposure; exit at the time hold.
+FUNDING_CARRY_HOLD_HOURS = float(os.getenv("FUNDING_CARRY_HOLD_HOURS", "336"))
 
 # --- Market-neutral hedge sizing (src/engine/hedge.py) ---
 # Ex-ante beta lookback for hedge sizing -- matches the weekly beta window

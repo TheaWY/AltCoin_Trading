@@ -136,6 +136,17 @@ class BacktestPortfolio:
         Mirrors src.engine.paper_trader.PaperTrader._hedge_leg_for_open so
         live and backtest can never size a hedge differently."""
         metadata = metadata or {}
+        if metadata.get("execution_mode") == "delta_neutral":
+            # funding carry: primary=LONG spot, hedge=SHORT perp, SAME symbol.
+            symbol = metadata.get("hedge_symbol")   # == trade symbol for delta_neutral
+            spot_price = prices.get(symbol)
+            perp_rows = (self.storage.get_prices(symbol, limit=1, before=timestamp, timeframe="1h_perp")
+                         if self.storage else None)
+            if not spot_price or not perp_rows:
+                return None
+            return hedge_engine.delta_neutral_hedge_leg(
+                symbol, direction, spot_price, float(perp_rows[-1]["close"]),
+                self.cash, self.value(prices, timestamp), config.MAX_POSITION_PCT)
         if metadata.get("execution_mode") != "market_neutral":
             return None
         hedge_symbol = metadata.get("hedge_symbol") or config.SYMBOL
@@ -493,11 +504,6 @@ class BacktestPortfolio:
             if not time_exit_only and price is not None:
                 self._maybe_partial_tp(trade, price, timestamp)
 
-            # funding_carry delta-neutral guard (raise), preserved from
-            # _exit_reason.
-            if (trade.strategy == "funding_carry"
-                    and (trade.metadata or {}).get("execution_mode") == "delta_neutral"):
-                raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
 
             # INTRA-BAR stop/TP via the shared exits.evaluate_stop_exit: uses
             # this bar's high/low, not just the close, so a touch the close
@@ -575,7 +581,13 @@ class BacktestPortfolio:
         entry = float(trade.hedge_entry_price)
         qty = float(trade.hedge_quantity)
         notional = entry * qty
-        exit_price = prices.get(trade.hedge_symbol, entry)
+        if (trade.metadata or {}).get("execution_mode") == "delta_neutral":
+            # hedge leg is the PERP (same symbol), priced off '1h_perp'.
+            perp_rows = (self.storage.get_prices(trade.hedge_symbol, limit=1, before=closed_at,
+                                                 timeframe="1h_perp") if self.storage else None)
+            exit_price = float(perp_rows[-1]["close"]) if perp_rows else entry
+        else:
+            exit_price = prices.get(trade.hedge_symbol, entry)
 
         hedge_pnl = hedge_engine.leg_pnl(direction, entry, exit_price, qty)
         hedge_fees = hedge_engine.leg_fees(notional, config.round_trip_cost_pct())
@@ -619,11 +631,6 @@ class BacktestPortfolio:
         reason: str,
         prices: dict[str, float] | None = None,
     ) -> None:
-        if (
-            trade.strategy == "funding_carry"
-            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
-        ):
-            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
         fees = trade.notional * config.round_trip_cost_pct()
         # `price` here is already the observed market price at this timestamp
         # (the hourly close BacktestEngine passed in) -- this only adds
@@ -720,11 +727,6 @@ class BacktestPortfolio:
     def _exit_reason(
         self, trade: BacktestTrade, price: float | None, timestamp: int
     ) -> str | None:
-        if (
-            trade.strategy == "funding_carry"
-            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
-        ):
-            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
 
         if price is None:
             return None
@@ -753,11 +755,6 @@ class BacktestPortfolio:
     def _realized_pnl(
         self, trade: BacktestTrade, price: float, timestamp: int | None
     ) -> float:
-        if (
-            trade.strategy == "funding_carry"
-            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
-        ):
-            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
         if trade.direction == SignalDirection.LONG.value:
             return (price - trade.entry_price) * trade.quantity
         return (trade.entry_price - price) * trade.quantity
@@ -765,11 +762,6 @@ class BacktestPortfolio:
     def _position_value(
         self, trade: BacktestTrade, price: float, timestamp: int | None
     ) -> float:
-        if (
-            trade.strategy == "funding_carry"
-            and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
-        ):
-            raise FakeDeltaNeutralError(f"trade symbol={trade.symbol} opened_at={trade.opened_at}")
         if trade.direction == SignalDirection.LONG.value:
             return trade.quantity * price
         return trade.notional + (trade.entry_price - price) * trade.quantity
@@ -928,6 +920,7 @@ _EVALUATION_ENGINE_STRATEGY_OWN_FLAG = {
     "mean_reversion_long": "SETUP_MEAN_REVERSION_LONG_ENABLED",
     "mean_reversion_short": "SETUP_MEAN_REVERSION_SHORT_ENABLED",
     "volatility_expansion": "SETUP_VOLATILITY_EXPANSION_ENABLED",
+    "funding_carry": "SETUP_FUNDING_CARRY_ENABLED",
 }
 EVALUATION_ENGINE_STRATEGIES = frozenset(_EVALUATION_ENGINE_STRATEGY_OWN_FLAG)
 

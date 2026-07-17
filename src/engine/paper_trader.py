@@ -532,6 +532,15 @@ class PaperTrader:
         recording the hedge, or vice versa.
         """
         metadata = signal_result.get("metadata") or {}
+        if metadata.get("execution_mode") == "delta_neutral":
+            # funding carry: primary=LONG spot, hedge=SHORT perp, SAME symbol.
+            symbol = signal_result.get("symbol", config.SYMBOL)
+            perp_row = self.storage.get_latest_price(symbol, timeframe="1h_perp")
+            if not perp_row:
+                return None
+            return hedge_engine.delta_neutral_hedge_leg(
+                symbol, direction, primary_price, float(perp_row["close"]),
+                cash, portfolio, config.MAX_POSITION_PCT)
         if metadata.get("execution_mode") != "market_neutral":
             return None
         hedge_symbol = metadata.get("hedge_symbol") or config.SYMBOL
@@ -695,7 +704,10 @@ class PaperTrader:
         qty = float(trade["hedge_quantity"])
         notional = entry * qty
 
-        row = self.storage.get_latest_price(hedge_symbol)
+        # delta_neutral (funding carry): hedge leg is the PERP (same symbol).
+        _tf = "1h_perp" if (trade.get("execution_mode") == "delta_neutral"
+                            or (trade.get("metadata") or {}).get("execution_mode") == "delta_neutral") else "1h"
+        row = self.storage.get_latest_price(hedge_symbol, timeframe=_tf)
         if row:
             exit_price = float(row["close"])
         else:
@@ -737,8 +749,6 @@ class PaperTrader:
     ) -> dict[str, Any]:
         notional = float(trade["quantity"]) * float(trade["entry_price"])
         execution_mode = _execution_mode_from_trade(self.storage, trade)
-        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
         fees = notional * config.round_trip_cost_pct()
 
         now_ts = int(datetime.now(timezone.utc).timestamp())
@@ -798,8 +808,6 @@ class PaperTrader:
 
     def _check_exit(self, trade: dict[str, Any], price: float) -> str | None:
         execution_mode = _execution_mode_from_trade(self.storage, trade)
-        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
 
         # Stop/TP via the SAME shared function backtest uses -- here with a
         # degenerate one-tick bar (open=high=low=close=price), which reduces
@@ -831,8 +839,6 @@ class PaperTrader:
         entry = float(trade["entry_price"])
         notional = qty * entry
         execution_mode = _execution_mode_from_trade(self.storage, trade)
-        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
         if trade["direction"] == SignalDirection.LONG.value:
             return qty * price
         return notional + (entry - price) * qty
@@ -877,8 +883,6 @@ class PaperTrader:
         qty = float(trade["quantity"])
         entry = float(trade["entry_price"])
         execution_mode = _execution_mode_from_trade(self.storage, trade)
-        if trade.get("strategy") == "funding_carry" and execution_mode == "delta_neutral":
-            raise FakeDeltaNeutralError(f"trade id={trade.get('id')} symbol={trade.get('symbol')}")
         if trade["direction"] == SignalDirection.LONG.value:
             return (exit_price - entry) * qty
         return (entry - exit_price) * qty
