@@ -136,15 +136,30 @@ def trial_count(storage) -> int:
 
 def record(storage, cfg, metrics, passed, now_ts) -> None:
     ph = "%s" if storage.is_postgres else "?"
+    upd = ("ON CONFLICT (config_hash) DO UPDATE SET metrics_json=EXCLUDED.metrics_json, "
+           "sharpe=EXCLUDED.sharpe, dsr=EXCLUDED.dsr, window_frac=EXCLUDED.window_frac, "
+           "passed=EXCLUDED.passed, created_at=EXCLUDED.created_at" if storage.is_postgres else
+           "ON CONFLICT(config_hash) DO UPDATE SET metrics_json=excluded.metrics_json, "
+           "sharpe=excluded.sharpe, dsr=excluded.dsr, window_frac=excluded.window_frac, "
+           "passed=excluded.passed, created_at=excluded.created_at")
     q = (f"INSERT INTO edge_search_results (config_hash, family, config_json, "
          f"metrics_json, sharpe, dsr, window_frac, passed, created_at) "
-         f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph}) "
-         + ("ON CONFLICT (config_hash) DO NOTHING" if storage.is_postgres
-            else "ON CONFLICT(config_hash) DO NOTHING"))
+         f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph}) " + upd)
     with storage._connect() as c:
         c.execute(q, (config_hash(cfg), cfg["family"], json.dumps(cfg),
                       json.dumps(metrics), metrics.get("sharpe"), metrics.get("dsr"),
                       metrics.get("window_frac"), 1 if passed else 0, int(now_ts)))
+
+
+def stalest_passers(storage, k):
+    """Highest-DSR previously-scored configs, oldest-refreshed first — for
+    continuous re-validation on fresh data (decay monitor)."""
+    with storage._connect() as c:
+        rows = [dict(r) for r in c.execute(
+            "SELECT config_json, passed FROM edge_search_results "
+            "WHERE dsr IS NOT NULL AND dsr >= 0.5 ORDER BY created_at ASC LIMIT "
+            + str(int(k))).fetchall()]
+    return [(json.loads(r["config_json"]), int(r["passed"] or 0)) for r in rows]
 
 
 # ---------------------------------------------------------------- backtest core
@@ -408,13 +423,16 @@ def run_batch(n=8, log=print) -> list[dict]:
     todo = [c for c in all_configs() if config_hash(c) not in done]
     random.shuffle(todo)                      # explore breadth, don't grind one family
     todo = todo[:n]
-    if not todo:
-        log("edge_search: all configs tested — nothing new")
+    retests: list[tuple[dict, int]] = []
+    if len(todo) < n:                         # space left -> re-validate stale passers on fresh data
+        retests = stalest_passers(storage, n - len(todo))
+    if not todo and not retests:
+        log("edge_search: nothing to do")
         return []
     P = perp_cache.load_panel(max_names=100, log=log)
     now = perp_cache.now_ts()
     results = []
-    for cfg in todo:
+    for cfg, was_passing in [(c, None) for c in todo] + [(c, wp) for c, wp in retests]:
         nt = max(30, trial_count(storage))    # honest cumulative trial count for DSR
         try:
             m = BACKTESTS[cfg["family"]](P, cfg, nt)
@@ -423,9 +441,15 @@ def run_batch(n=8, log=print) -> list[dict]:
             m = None
         passed = passes_gate(m)
         record(storage, cfg, m or {}, passed, now)
-        results.append({"config": cfg, "metrics": m, "passed": passed})
+        results.append({"config": cfg, "metrics": m, "passed": passed, "retest": was_passing is not None})
         if m:
-            flag = "  ***GATE PASS***" if passed else ""
-            log(f"  {cfg['family']:16} sh={m['sharpe']:+.2f} dsr={m['dsr']:.3f} "
+            if was_passing == 1 and not passed:
+                flag = "  !!! DECAY: was PASS, now FAIL !!!"
+            elif passed:
+                flag = "  ***GATE PASS***"
+            else:
+                flag = ""
+            tag = "re-test " if was_passing is not None else ""
+            log(f"  {tag}{cfg['family']:16} sh={m['sharpe']:+.2f} dsr={m['dsr']:.3f} "
                 f"win={m['window_pos']}/{m['window_n']} yr={m['yearly_sharpe']}{flag}")
     return results
