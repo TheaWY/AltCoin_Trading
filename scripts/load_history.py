@@ -140,15 +140,25 @@ def _parse_funding(symbol: str, payload: bytes) -> list[dict[str, Any]]:
     return rows
 
 
-def _insert_chunked(storage: Storage, kind: str, rows: list[dict[str, Any]]) -> int:
+def _insert_chunked(storage: Storage, kind: str, rows: list[dict[str, Any]],
+                    timeframe: str = "1h") -> int:
     total = 0
     for i in range(0, len(rows), CHUNK):
         chunk = rows[i : i + CHUNK]
         if kind == "prices":
-            total += storage.insert_prices(chunk, timeframe="1h")
+            total += storage.insert_prices(chunk, timeframe=timeframe)
         else:
             total += storage.insert_funding_rates(chunk)
     return total
+
+
+def _perp_kline_url(symbol: str, year: int, month: int) -> str:
+    """Perpetual (USDT-M futures) 1h klines — the SHORT leg's price series for
+    the delta-neutral funding carry. Stored under timeframe='1h_perp', additive
+    to the spot '1h' series (the long leg)."""
+    code = _spot_code(symbol)
+    ym = f"{year}-{month:02d}"
+    return f"{VISION_BASE}/futures/um/monthly/klines/{code}/1h/{code}-1h-{ym}.zip"
 
 
 def load_symbol(
@@ -159,9 +169,17 @@ def load_symbol(
     *,
     klines: bool = True,
     funding: bool = True,
+    perp: bool = False,
 ) -> dict[str, int]:
-    stats = {"klines_inserted": 0, "funding_inserted": 0, "months_skipped": 0}
+    stats = {"klines_inserted": 0, "funding_inserted": 0, "perp_inserted": 0, "months_skipped": 0}
     for year, month in _iter_months(start, end):
+        if perp:
+            url = _perp_kline_url(symbol, year, month)
+            payload = _download_zip(url)
+            if payload is not None:
+                rows = _parse_klines(symbol, payload)
+                stats["perp_inserted"] += _insert_chunked(storage, "prices", rows, timeframe="1h_perp")
+                print(f"[perp] {symbol} {year}-{month:02d}: {len(rows)} rows")
         if klines:
             url = _kline_url(symbol, year, month)
             payload = _download_zip(url)
@@ -194,6 +212,9 @@ def main() -> int:
     )
     parser.add_argument("--no-klines", action="store_true")
     parser.add_argument("--no-funding", action="store_true")
+    parser.add_argument("--perp", action="store_true",
+                        help="Also load USDT-M perp 1h klines as timeframe='1h_perp' "
+                             "(the short-leg price series for the delta-neutral funding carry)")
     args = parser.parse_args()
 
     start = datetime.strptime(args.start, "%Y-%m").replace(tzinfo=timezone.utc)
@@ -215,6 +236,7 @@ def main() -> int:
             end,
             klines=not args.no_klines,
             funding=not args.no_funding,
+            perp=args.perp,
         )
     summary["finished_at"] = int(time.time())
     print(summary)
