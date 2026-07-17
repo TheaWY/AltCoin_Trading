@@ -722,10 +722,6 @@ def _mean_reversion_long_setup(
     rank = percentile_rank(current, history)
     if rank > config.MEAN_REVERSION_LONG_PCTL:
         return None
-    # Conviction sizing (user 2026-07-18 "확신있는만큼 넣어"): the deeper into the
-    # tail, the bigger the bet. rank->0 (most extreme weakness) = full conviction.
-    pctl = config.MEAN_REVERSION_LONG_PCTL
-    conviction = max(0.0, min(1.0, (pctl - rank) / pctl)) if pctl > 0 else 0.5
 
     # Cross-sectional dispersion gate (opt-in, EXP2 2026-07-15): only buy
     # weakness when the universe is DISPERSED (idiosyncratic dislocation, which
@@ -763,9 +759,12 @@ def _mean_reversion_long_setup(
         "execution_mode": "market_neutral",
         "beta": beta,
         "hedge_symbol": config.SYMBOL,
-        # conviction-scaled sizing: 0.7x (marginal) .. 1.4x (most extreme) of the
-        # base MAX_POSITION_PCT, applied in _hedge_leg_for_open (both paths).
-        "size_mult": round(0.7 + 0.7 * conviction, 3),
+        # Conviction sizing FLAT for the long side (size_mult=1.0). The extremity
+        # study (2026-07-18) found depth-of-weakness -> forward IC t=-3.78 NEGATIVE
+        # and win-rate FALLING with depth: deeper weakness reverts WORSE (its mean
+        # is only propped up by a few fat-tail lottery reverters). So there is no
+        # reliable conviction signal to size on -- bet every weak name the same.
+        "size_mult": 1.0,
         # Standalone entry: this setup is a self-hedged, market-neutral setup
         # whose OWN pre-registered criteria (bottom-MEAN_REVERSION_LONG_PCTL 24h
         # weakness, >MAX_DD exclusion, computable beta — the exact definition the
@@ -865,6 +864,10 @@ def _mean_reversion_short_setup(
         "execution_mode": "market_neutral",
         "beta": beta,
         "hedge_symbol": config.SYMBOL,
+        # Conviction sizing VALIDATED for the short side (extremity study 2026-07-18):
+        # depth-of-overbought -> short-P&L IC t=+9.46, extreme bucket +1.63% @ 64%
+        # win vs mild -0.06%, monotonic. The more extreme the pump, the harder it
+        # reverts down -> bet more on it. 0.7x (marginal) .. 1.4x (most extreme).
         "size_mult": round(0.7 + 0.7 * conviction, 3),
         "standalone_entry": True,
     }
