@@ -144,21 +144,25 @@ def load_panel(max_names: int = 100, log: Callable[[str], None] = print) -> dict
         return cache
 
     names = _liquid_funding_symbols(storage, max_names)
-    log(f"perp_cache: refreshing panel for {len(names)} liquid funding names")
+    log(f"perp_cache: refreshing panel for {len(names)} liquid funding names (perp from DB 1h_perp)")
     end = dt.datetime.now(dt.timezone.utc)
-    perp = (cache or {}).get("perp", {})
-    # download only missing symbols fully; for existing, refresh the last 2 months
-    to_full = [s for s in names if s not in perp]
-    with cf.ThreadPoolExecutor(max_workers=8) as ex:
-        for sym, o in ex.map(lambda s: _dl_perp(s, START, end), to_full):
-            if len(o) > 3000:
-                perp[sym] = o
-    # incremental refresh of recent months for already-cached symbols
-    recent_start = (end.replace(day=1) - dt.timedelta(days=40))
-    with cf.ThreadPoolExecutor(max_workers=8) as ex:
-        for sym, o in ex.map(lambda s: _dl_perp(s, recent_start, end),
-                             [s for s in names if s in perp and s not in to_full]):
-            perp.get(sym, {}).update(o)
+    # Perp now lives in the DB (timeframe='1h_perp', via load_history --perp) --
+    # one coherent source shared with the eventual execution path. Download only
+    # as a fallback for any name the DB doesn't cover.
+    perp = {}
+    missing = []
+    for s in names:
+        rows = storage.get_prices(s, limit=200000, timeframe="1h_perp")
+        if len(rows) >= 3000:
+            perp[s] = {(int(r["timestamp"]) // HOUR) * HOUR: float(r["close"]) for r in rows}
+        else:
+            missing.append(s)
+    if missing:
+        log(f"perp_cache: {len(missing)} names lack DB perp; downloading fallback")
+        with cf.ThreadPoolExecutor(max_workers=8) as ex:
+            for sym, o in ex.map(lambda s: _dl_perp(s, START, end), missing):
+                if len(o) > 3000:
+                    perp[sym] = o
 
     spot, fund = {}, {}
     ph = "%s" if storage.is_postgres else "?"
