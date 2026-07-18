@@ -20,7 +20,19 @@ def main() -> int:
     from src.research import xsec_features as xf
     from src.symbols import trading_symbols
 
+    import time
     storage = get_storage()
+    # self-report staleness: if the data was already stale when we ran, the job
+    # had been down -- surface it (the freeze-the-gate bug's early warning).
+    try:
+        with storage._connect() as conn:
+            row = conn.execute("SELECT MAX(timestamp) mx FROM xsec_dispersion").fetchone()
+        prev = int(dict(row)["mx"]) if row and dict(row).get("mx") else 0
+        if prev and (time.time() - prev) > 3 * 3600:
+            print(f"WARN: xsec_dispersion was STALE ({(time.time()-prev)/3600:.0f}h) before this "
+                  f"refresh -- the refresh job may have been down.", flush=True)
+    except Exception:
+        pass
     symbols = trading_symbols()
     d = xf.compute_and_store(storage, symbols)
     print(f"xsec dispersion rows written/updated: {d} ({len(symbols)} symbols)", flush=True)
