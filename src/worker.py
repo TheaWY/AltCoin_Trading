@@ -28,6 +28,14 @@ def main() -> None:
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
+    # LIVE GUARD (plan Phase 5): refuse to trade unvalidated strategies unless
+    # they're explicitly acknowledged eyes-open; warn on stale feature data.
+    from src.data.storage import get_storage
+    from src.engine import live_guard
+    _storage = get_storage()
+    live_guard.check_live_strategies(_storage)   # raises -> worker won't start
+    live_guard.check_feature_freshness(_storage)
+
     scheduler = start_scheduler()
     logger.info("Trading worker started")
     try:
