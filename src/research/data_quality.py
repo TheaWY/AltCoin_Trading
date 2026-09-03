@@ -35,18 +35,24 @@ EXPECTED_CADENCE_S = {
 FRESH_FACTOR = 2.0              # stale when age > factor * cadence
 GAP_FACTOR = 2.0
 
+# Timestamp / duration columns must be 64-bit. Postgres INTEGER is int4
+# (±2^31, ~68 years in seconds); a multi-year collection gap or a 2026+
+# unix timestamp written into leftover int4 columns raises
+# NumericValueOutOfRange. SQLite INTEGER is already 64-bit, and BIGINT is
+# accepted as integer affinity, so the same DDL works on both backends.
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS data_gaps (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
     symbol TEXT,
-    gap_start INTEGER NOT NULL,
-    gap_end INTEGER NOT NULL,
-    gap_seconds INTEGER NOT NULL,
-    detected_at INTEGER NOT NULL,
+    gap_start BIGINT NOT NULL,
+    gap_end BIGINT NOT NULL,
+    gap_seconds BIGINT NOT NULL,
+    detected_at BIGINT NOT NULL,
     UNIQUE(source, symbol, gap_start)
 );
 """
+_GAP_INT64_COLUMNS = ("gap_start", "gap_end", "gap_seconds", "detected_at")
 
 
 def _ensure_schema() -> None:
@@ -54,11 +60,19 @@ def _ensure_schema() -> None:
         for stmt in _SCHEMA.split(";"):
             if stmt.strip():
                 conn.execute(stmt)
-        if conn.is_postgres:
-            for column in ("gap_start", "gap_end", "gap_seconds", "detected_at"):
+    # Own connection: a failed ALTER on Postgres poisons the whole
+    # transaction (same lesson as benchmark_equity.deployed_pct).
+    storage = get_storage()
+    if not storage.is_postgres:
+        return
+    for column in _GAP_INT64_COLUMNS:
+        try:
+            with storage._connect() as conn:  # noqa: SLF001
                 conn.execute(
                     f"ALTER TABLE data_gaps ALTER COLUMN {column} TYPE BIGINT"
                 )
+        except Exception:  # noqa: BLE001 -- already bigint, or table just created as bigint
+            pass
 
 
 def _row_value(row: Any, key: str, index: int = 0) -> Any:
