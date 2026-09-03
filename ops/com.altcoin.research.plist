@@ -9,6 +9,13 @@
     <string>__REPO_PATH__/ops/nightly_research.sh</string>
   </array>
   <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__REPO_PATH__/.venv/bin:/usr/bin:/bin</string>
+    <key>PY</key>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+  </dict>
   <key>RunAtLoad</key><true/>
   <key>StartInterval</key><integer>21600</integer>
   <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/research.out.log</string>
