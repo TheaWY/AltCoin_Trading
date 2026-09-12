@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Research Strategy Roadmap</title>
+  <style>
+    :root {
+      --bg: #05070b;
+      --panel: #0f141c;
+      --panel-2: #151b24;
+      --line: #252d3a;
+      --text: #eef3f8;
+      --muted: #8a94a3;
+      --blue: #2878ff;
+      --green: #2fd27d;
+      --amber: #f0b84f;
+      --red: #f04452;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, rgba(40,120,255,.14), transparent 32rem), var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    .app { width: 100%; max-width: 760px; margin: 0 auto; padding: 18px 14px 42px; }
+    .hero { padding: 18px; border: 1px solid var(--line); border-radius: 14px; background: linear-gradient(135deg, rgba(21,27,36,.96), rgba(15,20,28,.96)); }
+    .eyebrow { color: var(--blue); font-size: 12px; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
+    h1 { margin: 6px 0 8px; font-size: 25px; line-height: 1.18; }
+    .hero p { margin: 0; color: var(--muted); }
+    .section { margin-top: 18px; }
+    .section-title { margin: 0 0 9px 2px; color: var(--muted); font-size: 11px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+    .panel { background: rgba(15,20,28,.96); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+    .grid { display: grid; gap: 10px; }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card { padding: 13px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+    .card h3 { margin: 0 0 6px; font-size: 14px; }
+    .card p { margin: 0; color: var(--muted); font-size: 12.5px; }
+    .badge { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 11px; font-weight: 900; margin-bottom: 7px; }
+    .badge.done { color: var(--green); background: rgba(47,210,125,.13); border: 1px solid rgba(47,210,125,.26); }
+    .badge.miss { color: var(--red); background: rgba(240,68,82,.13); border: 1px solid rgba(240,68,82,.26); }
+    .badge.next { color: var(--amber); background: rgba(240,184,79,.13); border: 1px solid rgba(240,184,79,.26); }
+    .badge.low { color: var(--muted); background: rgba(138,148,163,.12); border: 1px solid rgba(138,148,163,.24); }
+    .flow { display: grid; grid-template-columns: 1fr auto 1fr; gap: 9px; align-items: stretch; }
+    .flow-box { padding: 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    .flow-box strong { display: block; margin-bottom: 8px; }
+    .flow-box ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+    .arrow { display: flex; align-items: center; color: var(--blue); font-size: 24px; font-weight: 900; }
+    .timeline { position: relative; padding: 6px 0; }
+    .step { display: grid; grid-template-columns: 68px 1fr; gap: 10px; padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,.06); }
+    .step:last-child { border-bottom: 0; }
+    .phase { color: var(--blue); font-weight: 950; }
+    .step h3 { margin: 0 0 3px; font-size: 14px; }
+    .step p { margin: 0; color: var(--muted); font-size: 12.5px; }
+    .matrix { display: grid; grid-template-columns: 1.1fr .7fr .7fr .9fr; gap: 1px; background: var(--line); }
+    .matrix div { padding: 10px; background: var(--panel); font-size: 12px; }
+    .matrix .head { background: #0a0e14; color: var(--muted); font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+    .priority { font-weight: 950; }
+    .p0, .p1 { color: var(--green); }
+    .p2 { color: var(--amber); }
+    .p3 { color: var(--blue); }
+    .p4 { color: var(--muted); }
+    .diagram { padding: 14px; }
+    .rail { display: grid; grid-template-columns: repeat(5, 1fr); gap: 7px; }
+    .node { min-height: 76px; padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); }
+    .node b { display: block; font-size: 12.5px; }
+    .node span { display: block; margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .note { padding: 12px 14px; color: var(--muted); font-size: 12.5px; border-top: 1px solid rgba(255,255,255,.06); background: rgba(138,148,163,.06); }
+    code { padding: 1px 5px; border-radius: 4px; background: rgba(138,148,163,.13); color: var(--text); font-size: 12px; }
+    @media (max-width: 640px) {
+      .grid.two, .grid.three, .flow, .rail { grid-template-columns: 1fr; }
+      .arrow { justify-content: center; transform: rotate(90deg); }
+      .matrix { grid-template-columns: 1fr; }
+      .matrix .head { display: none; }
+      .step { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="hero">
+      <div class="eyebrow">Research alignment</div>
+      <h1>100만원 리테일 자동매매 전략 구현 로드맵</h1>
+      <p>현재 시스템은 숏 중심 알트 선물 스캐너다. 연구 결론을 반영하려면 1순위는 방향성 숏이 아니라 <b>델타 뉴트럴 펀딩 캐리</b>와 <b>비용·최소주문 현실화</b>다.</p>
+    </section>
+
+    <section class="section">
+      <div class="section-title">현재 vs 목표</div>
+      <div class="flow">
+        <div class="flow-box">
+          <strong>현재 구현</strong>
+          <ul>
+            <li>Funding reversal short</li>
+            <li>Volume spike</li>
+            <li>RSI + Bollinger mean reversion</li>
+            <li>7d / 28d momentum</li>
+            <li>20d Donchian breakout</li>
+            <li>Confluence score + ATR exit</li>
+          </ul>
+        </div>
+        <div class="arrow">→</div>
+        <div class="flow-box">
+          <strong>연구 반영 목표</strong>
+          <ul>
+            <li>Spot long + perp short cash-carry</li>
+            <li>Neutral / short grid bot</li>
+            <li>Liquidation + long/short crowding</li>
+            <li>Pair trading sandbox</li>
+            <li>Listing-event sandbox</li>
+            <li>Small-account EV filter</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">구현 우선순위</div>
+      <div class="panel matrix">
+        <div class="head">Priority</div><div class="head">Module</div><div class="head">Status</div><div class="head">Why</div>
+        <div class="priority p0">P0</div><div>수수료·최소주문·$730 계좌 모델</div><div>부분 구현</div><div>소액에서는 비용이 전략을 이김</div>
+        <div class="priority p1">P1</div><div>Cash-and-carry funding</div><div>없음</div><div>연구상 리스크 대비 1순위</div>
+        <div class="priority p1">P1</div><div>전략 registry 통합</div><div>부분 구현</div><div>대시보드 신호와 백테스트를 일치</div>
+        <div class="priority p2">P2</div><div>Neutral / short grid</div><div>없음</div><div>횡보장에만 제한적으로 유효</div>
+        <div class="priority p2">P2</div><div>Liquidation crowding</div><div>부분 구현</div><div>롱숏비율은 보너스가 아니라 전략화 필요</div>
+        <div class="priority p3">P3</div><div>Pair / listing sandbox</div><div>없음</div><div>실험용, 자본 빠듯</div>
+        <div class="priority p4">P4</div><div>HFT / cross-exchange arb</div><div>제외</div><div>수수료·인프라상 비현실적</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">단계별 실행</div>
+      <div class="panel timeline">
+        <div class="step"><div class="phase">Phase 0</div><div><h3>소액 계좌 현실화</h3><p><code>PAPER_STARTING_CAPITAL=730</code>, 수수료, 슬리피지, 최소주문, 예상 절대수익을 대시보드에 표시.</p></div></div>
+        <div class="step"><div class="phase">Phase 1</div><div><h3>현재 셋업을 전부 백테스트 가능하게</h3><p><code>mean_reversion</code>, <code>breakout</code>, <code>tsmom_28d</code>를 registry 전략으로 승격.</p></div></div>
+        <div class="step"><div class="phase">Phase 2</div><div><h3>델타 뉴트럴 펀딩 캐리</h3><p>현물 롱 + 무기한 숏, 펀딩 현금흐름, 수수료 회수 기간, 청산 버퍼, 리밸런싱 구현.</p></div></div>
+        <div class="step"><div class="phase">Phase 3</div><div><h3>그리드봇은 paper-only</h3><p>ATR 기반 격자폭, 메이커 주문 가정, 추세장 중단 조건, 최소주문 제한 반영.</p></div></div>
+        <div class="step"><div class="phase">Phase 4</div><div><h3>청산·롱숏비율 역추세</h3><p>롱숏비율 + OI + funding + liquidation 조건을 조합한 crowding reversal 전략.</p></div></div>
+        <div class="step"><div class="phase">Phase 5</div><div><h3>실험 전략</h3><p>Pair trading과 listing-event mean reversion은 sandbox로만 추가.</p></div></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-title">최종 구조도</div>
+      <div class="panel diagram">
+        <div class="rail">
+          <div class="node"><b>Data</b><span>OHLCV · funding · OI · L/S · liquidation</span></div>
+          <div class="node"><b>Cost gate</b><span>fees · slippage · min notional · breakeven days</span></div>
+          <div class="node"><b>Strategies</b><span>cash-carry · grid · crowding · meanrev · momentum</span></div>
+          <div class="node"><b>Risk</b><span>delta · liquidation buffer · ATR stop · max loss</span></div>
+          <div class="node"><b>Execution</b><span>paper → testnet → tiny live only after OOS pass</span></div>
+        </div>
+      </div>
+      <div class="note">원칙: 방향성 숏 스캐너를 유지하되, 연구상 1순위인 cash-and-carry를 별도 hedged engine으로 만든다. HFT, 순수 차익거래, 마켓메이킹은 의도적으로 제외한다.</div>
+    </section>
+  </main>
+</body>
+</html>
