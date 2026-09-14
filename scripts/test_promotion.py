@@ -46,6 +46,7 @@ def metrics(windows_pnl: list[float], trades=60, expectancy=1.5, pf=1.5) -> str:
         mu = p / per_w
         windows.append({
             "total_pnl": p,
+            "trade_count": per_w,
             "trade_pnls": [round(rng.gauss(mu, abs(mu) * 0.5 or 0.5), 4) for _ in range(per_w)],
         })
     return json.dumps({
@@ -97,7 +98,7 @@ check("forbidden keys stripped", "DATABASE_URL" in result["rejected_keys"] and "
 
 overrides = json.loads((Path(os.environ["DATA_DIR"]) / "config_overrides.json").read_text())
 check("overrides file written with whitelisted keys only",
-      overrides == {"MEANREV_RSI_HIGH": 68, "CONFLUENCE_ALIGNED_BONUS": 0.06}, str(overrides))
+      overrides == {"MEANREV_RSI_HIGH": 68}, str(overrides))
 check("restart flag touched", (Path(os.environ["DATA_DIR"]) / "restart.flag").exists())
 
 # blocked reasons must be visible for the losers (multiple-testing guard)
@@ -121,5 +122,28 @@ check("rollback restored previous (empty) overrides", restored == {}, str(restor
 with get_storage()._connect() as conn:
     audit = conn.execute("SELECT action FROM promotions ORDER BY id").fetchall()
 check("audit trail has promote then rollback", [a[0] for a in audit] == ["promote", "rollback"], str([a[0] for a in audit]))
+
+# regression: a rollback deactivates the promotion. Repeated health checks must
+# NOT roll back again (each rollback touches restart.flag -> watchdog SIGKILLs
+# the worker every minute, forever).
+(Path(os.environ["DATA_DIR"]) / "restart.flag").unlink()
+health2 = promotion.health_check()
+check("post-rollback health reports no active promotion",
+      health2["status"] == "no promotion active", str(health2))
+check("post-rollback health does not touch restart flag",
+      not (Path(os.environ["DATA_DIR"]) / "restart.flag").exists())
+with get_storage()._connect() as conn:
+    audit2 = conn.execute("SELECT action FROM promotions ORDER BY id").fetchall()
+check("no rollback spam in audit trail",
+      [a[0] for a in audit2] == ["promote", "rollback"], str([a[0] for a in audit2]))
+
+# regression: a config that already failed live must not be re-promoted after
+# the cooldown just because its backtest/fresh gates still pass.
+promotion.PROMOTION_COOLDOWN_HOURS = 0
+result3 = promotion.promote_if_ready()
+check("rolled-back config is not re-promoted", not result3.get("promoted"), str(result3))
+blocked = {b["hash"]: b for b in result3.get("blocked", [])}
+check("rolled-back config blocked by live history gate",
+      blocked.get("cccc3333", {}).get("stage") == "history", str(blocked.get("cccc3333")))
 
 print(f"\nAll {passed} checks passed.")
