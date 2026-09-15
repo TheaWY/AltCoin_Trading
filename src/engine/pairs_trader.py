@@ -48,6 +48,9 @@ PAIR_NOTIONAL_PCT = float(getattr(config, "PAIRS_PAIR_NOTIONAL_PCT", 0.01))
 MAX_GROSS_PCT = float(getattr(config, "PAIRS_MAX_GROSS_PCT", 0.80))
 MARGIN_FRAC = float(getattr(config, "PAIRS_MARGIN_FRAC", 1.0))
 STOP_PCT = float(getattr(config, "PAIRS_STOP_PCT", 0.15))
+Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 0.5))
+NEG_EXPECTANCY_DEPLOY_PCT = float(getattr(config, "PAIRS_NEG_EXPECTANCY_DEPLOY_PCT", 0.40))
+MIN_EXPECTANCY_TRADES = int(getattr(config, "PAIRS_MIN_EXPECTANCY_TRADES", 10))
 MAX_HOLD_HOURS = float(getattr(config, "PAIRS_MAX_HOLD_HOURS", pairs.TRADE_HOURS))
 
 
@@ -109,12 +112,42 @@ def _panel(storage, symbols: list[str], lookback_hours: int, now_ts: int) -> tup
 
 
 def _all_symbols(storage) -> list[str]:
+    min_span = int(getattr(config, "PAIRS_MIN_LISTING_DAYS", 180) * 86400)
     with storage._connect() as c:  # noqa: SLF001
         rows = c.execute(
             "SELECT symbol FROM prices WHERE timeframe='1h' "
-            "GROUP BY symbol HAVING COUNT(*)>=2000"
+            "GROUP BY symbol HAVING COUNT(*)>=2000 "
+            "AND (MAX(timestamp) - MIN(timestamp)) >= ?",
+            (min_span,),
         ).fetchall()
     return [dict(r)["symbol"] for r in rows if dict(r)["symbol"] != config.SYMBOL]
+
+
+def tight_deploy_cap(n_closed: int, expectancy: float | None) -> float | None:
+    """Extra margin/equity cap while live expectancy is negative or unproven.
+
+    None = only PAIRS_MAX_GROSS_PCT applies. 40% is the user cap for the
+    losing book so a burst of |z|>=2 signals cannot refill to ~99% deployed."""
+    if n_closed < MIN_EXPECTANCY_TRADES:
+        return NEG_EXPECTANCY_DEPLOY_PCT
+    if expectancy is not None and expectancy < 0:
+        return NEG_EXPECTANCY_DEPLOY_PCT
+    return None
+
+
+def _live_expectancy(storage) -> tuple[int, float | None]:
+    state = storage.get_portfolio_state() if hasattr(storage, "get_portfolio_state") else None
+    epoch = int(state.get("benchmark_started_at") or 0) if state else 0
+    with storage._connect() as c:  # noqa: SLF001
+        rows = c.execute(
+            "SELECT pnl FROM paper_trades WHERE status='closed' AND strategy=? "
+            "AND closed_at IS NOT NULL AND closed_at >= ?",
+            (STRATEGY, epoch),
+        ).fetchall()
+    pnls = [float(dict(r)["pnl"] or 0) for r in rows]
+    if not pnls:
+        return 0, None
+    return len(pnls), sum(pnls) / len(pnls)
 
 
 def _cap_pairs(specs: list[pairs.PairSpec], k: int, m: int) -> list[pairs.PairSpec]:
@@ -223,6 +256,12 @@ def _open_one(storage, a: str, b: str, beta: float, z: float, now_ts: int) -> bo
     # gross-deployment cap (= leverage): gross exposure ≤ MAX_GROSS_PCT × equity
     if _deployed_notional(storage) + notional + hedge_notional > MAX_GROSS_PCT * equity:
         return False
+    n_closed, exp = _live_expectancy(storage)
+    cap = tight_deploy_cap(n_closed, exp)
+    if cap is not None:
+        deployed_margin = _deployed_notional(storage) * MARGIN_FRAC
+        if equity > 0 and (deployed_margin + margin) / equity > cap:
+            return False
     dir_a = "LONG" if pos > 0 else "SHORT"
     dir_b = "SHORT" if pos > 0 else "LONG"
     # NON-TRIGGERING stop/TP sentinels (belt-and-suspenders with the pairs skip in
@@ -238,7 +277,7 @@ def _open_one(storage, a: str, b: str, beta: float, z: float, now_ts: int) -> bo
         "symbol": a, "direction": dir_a, "entry_price": price_a,
         "quantity": notional / price_a, "stop_loss": stop_loss, "take_profit": take_profit,
         "status": "open", "pnl": None, "opened_at": now_ts, "closed_at": None,
-        "strategy": STRATEGY, "style": STRATEGY, "atr_pct": None,
+        "strategy": STRATEGY, "style": STRATEGY, "atr_pct": float(z),
         "trail_price": price_a, "exit_reason": None, "fees": None,
         "hedge_symbol": b, "hedge_direction": dir_b, "hedge_entry_price": price_b,
         "hedge_quantity": hedge_notional / price_b, "hedge_beta": beta,
@@ -300,7 +339,11 @@ def run_pairs_cycle(storage=None) -> dict[str, Any]:
         # that rugs/delists (e.g. DEXE -52% on 2026-07-22) never reverts — cut it
         # before it bleeds to max-hold. Loss measured vs the primary notional.
         primary_notional = float(t["quantity"]) * float(t["entry_price"])
-        if primary_notional > 0 and _pair_unrealized(storage, t) < -STOP_PCT * primary_notional:
+        entry_z = t.get("atr_pct")
+        entry_z = float(entry_z) if entry_z is not None else None
+        if pairs.should_stop(z, entry_z, Z_STOP_DELTA):
+            _close_one(storage, t, now_ts, "z_stop"); closed += 1
+        elif primary_notional > 0 and _pair_unrealized(storage, t) < -STOP_PCT * primary_notional:
             _close_one(storage, t, now_ts, "stop_loss"); closed += 1
         elif pairs.should_close(z):
             _close_one(storage, t, now_ts, "z_revert"); closed += 1

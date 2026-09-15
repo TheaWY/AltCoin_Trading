@@ -47,9 +47,34 @@ def _load_space(path: Path | None = None) -> dict[str, Any]:
     return yaml.safe_load(p.read_text())
 
 
-def _combos(axes: dict[str, list[Any]]) -> list[dict[str, Any]]:
+def _space_size(axes: dict[str, list[Any]]) -> int:
+    total = 1
+    for values in axes.values():
+        total *= max(len(values), 1)
+    return total
+
+
+def _iter_combos(
+    axes: dict[str, list[Any]],
+    constraints: dict[str, Any] | None = None,
+):
+    """Stream the cartesian product without materializing it.
+
+    research_space.yaml is ~10^9 combos; listing them OOMs the nightly generator.
+    Callers must stop after `max_new` unseen hashes.
+    """
     keys = sorted(axes)
-    return [dict(zip(keys, values)) for values in itertools.product(*(axes[k] for k in keys))]
+    lists: list[list[Any]] = []
+    for k in keys:
+        if constraints and k in constraints:
+            val = constraints[k]
+            if val not in axes[k]:
+                return
+            lists.append([val])
+        else:
+            lists.append(axes[k])
+    for tup in itertools.product(*lists):
+        yield dict(zip(keys, tup))
 
 
 def _priority(combo: dict[str, Any], families: list[dict[str, Any]]) -> int:
@@ -79,39 +104,93 @@ def _champion_config(axes: dict[str, list[Any]]) -> dict[str, Any]:
     return champion
 
 
-def _ordered_candidates(
-    axes: dict[str, list[Any]],
-    families: list[dict[str, Any]],
-    existing: set[str],
-    champ_hash: str,
-) -> list[dict[str, Any]]:
-    candidates = [
-        c
-        for c in _combos(axes)
-        if config_hash(c) not in existing and config_hash(c) != champ_hash
-    ]
-    if "ACTIVE_STRATEGY" not in axes:
-        return sorted(candidates, key=lambda c: _priority(c, families))
-
-    strategy_order = sorted(
+def _strategy_order(axes: dict[str, list[Any]], families: list[dict[str, Any]]) -> list[Any]:
+    return sorted(
         axes["ACTIVE_STRATEGY"],
         key=lambda strategy: (
             _priority({"ACTIVE_STRATEGY": strategy}, families),
             axes["ACTIVE_STRATEGY"].index(strategy),
         ),
     )
-    grouped = {
-        strategy: sorted(
-            (c for c in candidates if c.get("ACTIVE_STRATEGY") == strategy),
-            key=lambda c: (_priority(c, families), json.dumps(c, sort_keys=True)),
-        )
-        for strategy in strategy_order
-    }
+
+
+def _strategy_stream(
+    axes: dict[str, list[Any]],
+    families: list[dict[str, Any]],
+    strategy: Any,
+):
+    """Priority-family combos for `strategy` first, then the rest of that slice."""
+    seen_local: set[str] = set()
+    for family in families:
+        match = dict(family.get("match") or {})
+        if "ACTIVE_STRATEGY" in match and match["ACTIVE_STRATEGY"] != strategy:
+            continue
+        match["ACTIVE_STRATEGY"] = strategy
+        for combo in _iter_combos(axes, match):
+            h = config_hash(combo)
+            if h in seen_local:
+                continue
+            seen_local.add(h)
+            yield combo
+    for combo in _iter_combos(axes, {"ACTIVE_STRATEGY": strategy}):
+        h = config_hash(combo)
+        if h in seen_local:
+            continue
+        seen_local.add(h)
+        yield combo
+
+
+def _ordered_candidates(
+    axes: dict[str, list[Any]],
+    families: list[dict[str, Any]],
+    existing: set[str],
+    champ_hash: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """First `limit` unseen combos, priority-family / strategy round-robin.
+
+    Does not materialize the cartesian product — required because the live
+    research_space is billions of rows.
+    """
+    if limit <= 0:
+        return []
+    seen = set(existing)
     ordered: list[dict[str, Any]] = []
-    while any(grouped.values()):
-        for strategy in strategy_order:
-            if grouped[strategy]:
-                ordered.append(grouped[strategy].pop(0))
+
+    def _accept(combo: dict[str, Any]) -> bool:
+        h = config_hash(combo)
+        if h in seen or h == champ_hash:
+            return False
+        seen.add(h)
+        ordered.append(combo)
+        return True
+
+    if "ACTIVE_STRATEGY" not in axes:
+        for family in families:
+            if len(ordered) >= limit:
+                return ordered
+            for combo in _iter_combos(axes, family.get("match") or {}):
+                _accept(combo)
+                if len(ordered) >= limit:
+                    return ordered
+        for combo in _iter_combos(axes):
+            _accept(combo)
+            if len(ordered) >= limit:
+                return ordered
+        return ordered
+
+    iters = [_strategy_stream(axes, families, s) for s in _strategy_order(axes, families)]
+    while len(ordered) < limit:
+        progressed = False
+        for it in iters:
+            if len(ordered) >= limit:
+                break
+            for combo in it:
+                if _accept(combo):
+                    progressed = True
+                    break
+        if not progressed:
+            break
     return ordered
 
 
@@ -119,9 +198,7 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
     _ensure_schema()
     space = _load_space(space_path)
     axes: dict[str, list[Any]] = space["axes"]
-    total_space = 1
-    for values in axes.values():
-        total_space *= len(values)
+    total_space = _space_size(axes)
     budget = trial_budget_status()
     queued_count = int(budget.get("counts", {}).get("queued", 0))
     remaining_budget = int(budget.get("remaining", 0))
@@ -190,7 +267,7 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
                 (champ_hash,),
             )
 
-    candidates = _ordered_candidates(axes, families, existing, champ_hash)[:max_new]
+    candidates = _ordered_candidates(axes, families, existing, champ_hash, max_new)
 
     for queue_priority, combo in enumerate(candidates):
         if dry_run:

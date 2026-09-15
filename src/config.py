@@ -163,7 +163,8 @@ PAIRS_HL_MIN_HOURS = float(os.getenv("PAIRS_HL_MIN_HOURS", "12"))
 PAIRS_HL_MAX_HOURS = float(os.getenv("PAIRS_HL_MAX_HOURS", str(20 * 24)))
 PAIRS_BETA_LO = float(os.getenv("PAIRS_BETA_LO", "0.2"))
 PAIRS_BETA_HI = float(os.getenv("PAIRS_BETA_HI", "5.0"))
-PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "500000"))  # LIQUID only (2026-07-22: DEXE microcap rugged -52% in the 50k all-coins universe -> -11%; back to validated liquidity)
+PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "8000000"))  # 8M daily median: drops BTW (~1.5M) / PUMP (~5M) memes; 500k still let them through
+PAIRS_MIN_LISTING_DAYS = float(os.getenv("PAIRS_MIN_LISTING_DAYS", "180"))  # exclude names listed <6m (BTW listed 2026-06)
 PAIRS_MIN_COVERAGE = float(os.getenv("PAIRS_MIN_COVERAGE", "0.7"))
 PAIRS_COST_LEG = float(os.getenv("PAIRS_COST_LEG", "0.0010"))       # per execution; 4 per round-trip
 PAIRS_FUND_HR = float(os.getenv("PAIRS_FUND_HR", "0.0000125"))      # short-leg funding/borrow per hour
@@ -179,7 +180,9 @@ PAIRS_PAIR_NOTIONAL_PCT = float(os.getenv("PAIRS_PAIR_NOTIONAL_PCT", "0.09"))  #
 # waiting for spread signals, not a loss. Aggressive setting (user, 2026-07-20).
 PAIRS_MAX_GROSS_PCT = float(os.getenv("PAIRS_MAX_GROSS_PCT", "2.0"))  # 2x leverage (user, 2026-07-20); gross exposure up to 200% of equity
 PAIRS_MARGIN_FRAC = float(os.getenv("PAIRS_MARGIN_FRAC", "0.5"))       # cash margin per unit gross notional; 0.5 => up to 2x gross with full equity
-PAIRS_STOP_PCT = float(os.getenv("PAIRS_STOP_PCT", "0.15"))            # catastrophic stop: close a pair if its loss exceeds this fraction of primary notional (a leg rugging/delisting breaks mean-reversion)
+PAIRS_STOP_PCT = float(os.getenv("PAIRS_STOP_PCT", "0.15"))            # last-resort dollar stop (rugs). Primary stop is PAIRS_Z_STOP_DELTA.
+PAIRS_Z_STOP_DELTA = float(os.getenv("PAIRS_Z_STOP_DELTA", "0.5"))     # close if z moves +0.5 further adverse from entry z
+PAIRS_NEG_EXPECTANCY_DEPLOY_PCT = float(os.getenv("PAIRS_NEG_EXPECTANCY_DEPLOY_PCT", "0.40"))
 PAIRS_MAX_HOLD_HOURS = float(os.getenv("PAIRS_MAX_HOLD_HOURS", str(30 * 24)))
 # Strategy LAB: race pairs config variants in parallel, each an isolated book, so
 # live track records accumulate SEPARATELY for honest comparison (src/engine/pairs_lab.py).

@@ -60,6 +60,19 @@ class EntryExitRule(unittest.TestCase):
         self.assertFalse(pairs.should_close(pairs.Z_OUT + 0.01))
         self.assertFalse(pairs.should_close(None))
 
+    def test_should_stop_adverse_delta_from_entry_z(self):
+        # default delta=0.5: entry 2.2 stops at >= 2.7
+        self.assertTrue(pairs.should_stop(2.7, 2.2))
+        self.assertFalse(pairs.should_stop(2.69, 2.2))
+        self.assertTrue(pairs.should_stop(-2.7, -2.2))
+        self.assertFalse(pairs.should_stop(-2.69, -2.2))
+        self.assertFalse(pairs.should_stop(-2.7, 2.2))  # wrong direction is revert, not stop
+        self.assertFalse(pairs.should_stop(None, 2.2))
+        self.assertFalse(pairs.should_stop(2.7, None))
+        # explicit 1.5 still available for research
+        self.assertTrue(pairs.should_stop(3.7, 2.2, 1.5))
+        self.assertFalse(pairs.should_stop(3.69, 2.2, 1.5))
+
     def test_zscore_none_on_degenerate_window(self):
         flat = np.full(pairs.ZWIN_HOURS, 5.0)
         self.assertIsNone(pairs.zscore(flat, 5.0))
@@ -98,6 +111,22 @@ class Selection(unittest.TestCase):
         self.assertNotIn("THIN/USDT", live)
         self.assertNotIn("GAPPY/USDT", live)
 
+    def test_liquid_universe_drops_recently_listed_when_series_is_long(self):
+        min_h = int(pairs.MIN_LISTING_DAYS * 24)
+        n = min_h + 500
+        sel = slice(n - pairs.SEL_HOURS, n)
+        old = np.zeros(n)
+        young = np.full(n, np.nan)
+        young[-2000:] = 0.0  # ~83 days: enough coverage, short of 180d listing floor
+        logp = {"OLD/USDT": old, "YOUNG/USDT": young}
+        dvol = {
+            "OLD/USDT": np.full(n, pairs.MIN_DVOL * 2),
+            "YOUNG/USDT": np.full(n, pairs.MIN_DVOL * 2),
+        }
+        live = pairs.liquid_universe(logp, dvol, sel)
+        self.assertIn("OLD/USDT", live)
+        self.assertNotIn("YOUNG/USDT", live)
+
     def test_select_pairs_keeps_mean_reverting_and_sorts_by_half_life(self):
         n = pairs.SEL_HOURS
         sel = slice(0, n)
@@ -117,6 +146,17 @@ class Selection(unittest.TestCase):
         # ranked by spread_std / half_life DESCENDING (max-return: wide + fast)
         keys = [s.spread_std / s.half_life for s in specs]
         self.assertEqual(keys, sorted(keys, reverse=True))
+
+
+class DeployCap(unittest.TestCase):
+    def test_tight_cap_while_unproven_or_negative(self):
+        from src.engine.pairs_trader import tight_deploy_cap, NEG_EXPECTANCY_DEPLOY_PCT
+
+        self.assertEqual(tight_deploy_cap(0, None), NEG_EXPECTANCY_DEPLOY_PCT)
+        self.assertEqual(tight_deploy_cap(9, 1.0), NEG_EXPECTANCY_DEPLOY_PCT)
+        self.assertEqual(tight_deploy_cap(23, -1.53), NEG_EXPECTANCY_DEPLOY_PCT)
+        self.assertIsNone(tight_deploy_cap(23, 0.1))
+        self.assertIsNone(tight_deploy_cap(10, 0.0))
 
 
 if __name__ == "__main__":

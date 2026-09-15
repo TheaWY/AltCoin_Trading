@@ -51,6 +51,12 @@ def ensure_schema(storage) -> None:
             f"hedge_beta {dp}, opened_at {bi}, closed_at {bi}, status TEXT, pnl {dp}, exit_reason TEXT)")
         c.execute(f"CREATE TABLE IF NOT EXISTS lab_equity (book TEXT, timestamp {bi}, "
                   f"equity {dp}, deployed_pct {dp}, open_n {bi})")
+        if pg:
+            c.execute(f"ALTER TABLE lab_positions ADD COLUMN IF NOT EXISTS entry_z {dp}")
+        else:
+            existing = {row["name"] for row in c.raw.execute("PRAGMA table_info(lab_positions)").fetchall()}
+            if "entry_z" not in existing:
+                c.execute(f"ALTER TABLE lab_positions ADD COLUMN entry_z {dp}")
 
 
 def _seed(storage, now: int) -> None:
@@ -120,7 +126,11 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
             hold_h = (now - int(t["opened_at"])) / HOUR
             key = (t["symbol"], t["hedge_symbol"])
             reason = None
-            if pairs.should_close(z):
+            entry_z = t.get("entry_z")
+            entry_z = float(entry_z) if entry_z is not None else None
+            if pairs.should_stop(z, entry_z):
+                reason = "z_stop"
+            elif pairs.should_close(z):
                 reason = "z_revert"
             elif key not in sel_keys and hold_h >= pairs.TRADE_HOURS:
                 reason = "deselected"
@@ -167,9 +177,10 @@ def _open_lab(storage, book, p, z, now, notional, hedge_notional, margin, cash) 
     with storage._connect() as c:  # noqa: SLF001
         c.execute(f"INSERT INTO lab_positions (book,symbol,hedge_symbol,direction,hedge_direction,"
                   f"entry_price,hedge_entry_price,quantity,hedge_quantity,hedge_beta,opened_at,"
-                  f"status) VALUES ({','.join([ph]*12)})",
+                  f"status,entry_z) VALUES ({','.join([ph]*13)})",
                   (book, p["a"], p["b"], dir_a, dir_b, price_a, price_b,
-                   notional / price_a, hedge_notional / price_b, p["beta"], now, "open"))
+                   notional / price_a, hedge_notional / price_b, p["beta"], now, "open",
+                   float(z)))
     return cash - margin
 
 

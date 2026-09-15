@@ -38,10 +38,15 @@ HL_MIN_HOURS = float(getattr(config, "PAIRS_HL_MIN_HOURS", 12.0))
 HL_MAX_HOURS = float(getattr(config, "PAIRS_HL_MAX_HOURS", 20 * 24))
 BETA_LO = float(getattr(config, "PAIRS_BETA_LO", 0.2))
 BETA_HI = float(getattr(config, "PAIRS_BETA_HI", 5.0))
-MIN_DVOL = float(getattr(config, "PAIRS_MIN_DVOL", 500_000.0))
+MIN_DVOL = float(getattr(config, "PAIRS_MIN_DVOL", 8_000_000.0))
 COST_LEG = float(getattr(config, "PAIRS_COST_LEG", 0.0010))        # per execution; 4 per round-trip
 FUND_HR = float(getattr(config, "PAIRS_FUND_HR", 0.0000125))       # short-leg funding/borrow per hour
 COVERAGE = float(getattr(config, "PAIRS_MIN_COVERAGE", 0.7))       # min finite fraction in select window
+MIN_LISTING_DAYS = float(getattr(config, "PAIRS_MIN_LISTING_DAYS", 180))
+# 0.5: live book avg win +6.76 vs avg loss -10.59 was driven by a 15% dollar
+# stop that overshoots the z-revert target. Historical K=60 panels: only
+# delta=0.5 has |avg loss| <= avg win. 1.5 still leaves avgL > avgW.
+Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 0.5))
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,16 @@ def spread(la: np.ndarray, lb: np.ndarray, beta: float) -> np.ndarray:
     return la - beta * lb
 
 
+def listing_hours(lp: np.ndarray, asof_index: int) -> int:
+    """Hours of history visible at `asof_index` (no future bars). 0 if none."""
+    if asof_index <= 0:
+        return 0
+    first = np.flatnonzero(np.isfinite(lp[:asof_index]))
+    if len(first) == 0:
+        return 0
+    return int(asof_index - int(first[0]))
+
+
 def liquid_universe(
     logp: dict[str, np.ndarray],
     dvol: dict[str, np.ndarray],
@@ -85,9 +100,12 @@ def liquid_universe(
 ) -> list[str]:
     """POINT-IN-TIME tradeable universe for a rebalance: symbols with enough
     price coverage AND trailing median dollar-volume >= MIN_DVOL over the SELECT
-    window ONLY (never future info). Survivorship-safe: pass in every symbol
-    that existed then, incl. ones that later delisted."""
+    window ONLY (never future info). When the series is long enough to observe
+    it, also require MIN_LISTING_DAYS of history as of sel.stop so newly listed
+    memes (BTW, PUMP, ...) cannot enter. Survivorship-safe: pass in every
+    symbol that existed then, incl. ones that later delisted."""
     sel_len = (sel.stop - sel.start)
+    min_listing_hours = MIN_LISTING_DAYS * 24
     live: list[str] = []
     for s, lp in logp.items():
         seg = lp[sel]
@@ -96,6 +114,10 @@ def liquid_universe(
         dv = dvol[s][sel]
         dv = dv[np.isfinite(dv)]
         if len(dv) == 0 or np.median(dv) < MIN_DVOL:
+            continue
+        # Only enforceable when the array actually spans the listing floor;
+        # a 90d live panel cannot prove 180d of history (caller pre-filters).
+        if len(lp) >= min_listing_hours and listing_hours(lp, sel.stop) < min_listing_hours:
             continue
         live.append(s)
     return live
@@ -154,6 +176,26 @@ def should_open(z: float | None) -> bool:
 
 def should_close(z: float | None) -> bool:
     return z is not None and abs(z) <= Z_OUT
+
+
+def should_stop(z: float | None, entry_z: float | None,
+                delta: float | None = None) -> bool:
+    """Adverse z-stop: the spread moved `delta` further from the mean in the
+    same direction as entry. Default delta=0.5: entry at z=+2.2 (short rich
+    spread) stops at z>=+2.7; entry at z=-2.2 stops at z<=-2.7. Sized so the
+    typical losing spread move is no larger than the z-revert take
+    (Z_IN -> Z_OUT = 1.5 sigma of the *winning* side, but a much tighter
+    cut on the adverse side)."""
+    if z is None or entry_z is None:
+        return False
+    d = Z_STOP_DELTA if delta is None else delta
+    if d <= 0:
+        return False
+    if entry_z > 0:
+        return z >= entry_z + d
+    if entry_z < 0:
+        return z <= entry_z - d
+    return False
 
 
 def round_trip_cost(hold_hours: float) -> float:

@@ -14,12 +14,15 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+from pathlib import Path
 
 import numpy as np
 
-sys.path.insert(0, "/Users/pc/Projects/AltCoin_Trading")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 from src.data.storage import get_storage
 from src.engine import pairs
+from src.engine.pairs_trader import _cap_pairs
 from src.research.robust_stats import deflated_sharpe
 
 HOUR = 3600
@@ -62,37 +65,69 @@ def _load_panel(lo_ts: int, hi_ts: int) -> tuple[np.ndarray, dict, dict]:
     return allt, logp, dvol
 
 
-def _trade_pair(spec: pairs.PairSpec, logp: dict, w0: int, trade_hours: int) -> list[float]:
-    """Trade ONE pair forward over the trade window using the shared core's
-    spread math + entry/exit rule. Force-close on delisting (leg data ends).
-    Returns per-round-trip spread returns, net of realistic cost + funding."""
+def _trade_pair(spec: pairs.PairSpec, logp: dict, w0: int, trade_hours: int,
+                z_stop_delta: float | None = None) -> list[float]:
+    return [r for r, _ in _trade_pair_ex(spec, logp, w0, trade_hours, z_stop_delta)]
+
+
+def _trade_pair_ex(spec: pairs.PairSpec, logp: dict, w0: int, trade_hours: int,
+                   z_stop_delta: float | None = None) -> list[tuple[float, str]]:
+    """Trade ONE pair forward. Returns (spread-return, reason) net of cost."""
     zwin = pairs.ZWIN_HOURS
     fa = logp[spec.a][w0 - zwin:w0 + trade_hours]
     fb = logp[spec.b][w0 - zwin:w0 + trade_hours]
     sp = pairs.spread(fa, fb, spec.beta)
     n = len(sp)
-    out: list[float] = []
+    out: list[tuple[float, str]] = []
     pos = 0
     entry_i = 0
+    entry_z: float | None = None
     last_fin = None
     for i in range(zwin, n):
         if not np.isfinite(sp[i]):
-            # delisting: leg data ended -> force-close at last finite spread
             if pos != 0 and (i + 24 >= n or not np.isfinite(sp[i:]).any()):
                 ret = pos * (last_fin - sp[entry_i]) - pairs.round_trip_cost(i - entry_i)
-                out.append(ret)
+                out.append((ret, "delist"))
                 pos = 0
+                entry_z = None
             continue
         last_fin = sp[i]
         z = pairs.zscore(sp[i - zwin:i], sp[i])
         if pos == 0 and pairs.should_open(z):
             pos = pairs.entry_side(z)
             entry_i = i
+            entry_z = z
+        elif pos != 0 and z_stop_delta and pairs.should_stop(z, entry_z, z_stop_delta):
+            ret = pos * (sp[i] - sp[entry_i]) - pairs.round_trip_cost(i - entry_i)
+            out.append((ret, "z_stop"))
+            pos = 0
+            entry_z = None
         elif pos != 0 and pairs.should_close(z):
             ret = pos * (sp[i] - sp[entry_i]) - pairs.round_trip_cost(i - entry_i)
-            out.append(ret)
+            out.append((ret, "z_revert"))
             pos = 0
+            entry_z = None
     return out
+
+
+def _scorecard(trips: list[tuple[float, str]]) -> dict:
+    pnls = [r for r, _ in trips]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    gw, gl = sum(wins), abs(sum(losses))
+    pf = (gw / gl) if gl else (float("inf") if gw else None)
+    reasons: dict[str, int] = {}
+    for _, reason in trips:
+        reasons[reason] = reasons.get(reason, 0) + 1
+    return {
+        "n": len(pnls),
+        "win_rate": (len(wins) / len(pnls)) if pnls else None,
+        "avg_win": (sum(wins) / len(wins)) if wins else None,
+        "avg_loss": (sum(losses) / len(losses)) if losses else None,
+        "expectancy": (sum(pnls) / len(pnls)) if pnls else None,
+        "profit_factor": pf,
+        "reasons": reasons,
+    }
 
 
 def run(lo_ts: int, hi_ts: int, n_trials: int = 150) -> dict:
@@ -139,11 +174,64 @@ def run(lo_ts: int, hi_ts: int, n_trials: int = 150) -> dict:
     return {"sharpe": sh, "windows": pw / nw, "dsr": d["dsr"], "gate": gate}
 
 
+def compare_stops(lo_ts: int, hi_ts: int, k: int = 60, max_windows: int = 6,
+                  deltas: list[float | None] | None = None) -> dict:
+    """Live-like (K pairs) z-stop scorecards on historical panels.
+
+    `deltas=None` means z-revert only (no z-stop). Default sweep includes the
+    live default (0.5) and the previously suggested 1.5 so |avgL| vs avgW is
+    comparable in one run.
+    """
+    if deltas is None:
+        deltas = [None, 0.5, 0.75, 1.0, 1.25, 1.5]
+    allt, logp, dvol = _load_panel(lo_ts, hi_ts)
+    T = len(allt)
+    sel_h, trade_h = pairs.SEL_HOURS, pairs.TRADE_HOURS
+    starts = list(range(sel_h, T - trade_h, trade_h))[-max_windows:]
+    books: dict[float | None, list[tuple[float, str]]] = {d: [] for d in deltas}
+    print(f"compare-stops windows={len(starts)} universe={len(logp)} K={k} "
+          f"deltas={deltas}", flush=True)
+    for w0 in starts:
+        sel = slice(w0 - sel_h, w0)
+        live = pairs.liquid_universe(logp, dvol, sel)
+        if len(live) < 5:
+            continue
+        specs = _cap_pairs(pairs.select_pairs(live, logp, sel), k, 2)
+        wdate = dt.datetime.fromtimestamp(int(allt[w0]), tz=dt.timezone.utc).date()
+        print(f"  window {wdate} live={len(live)} pairs={len(specs)}", flush=True)
+        for spec in specs:
+            for d in deltas:
+                books[d].extend(_trade_pair_ex(spec, logp, w0, trade_h, d))
+
+    def _fmt(s):
+        pf = s["profit_factor"]
+        pf_s = "inf" if pf == float("inf") else (f"{pf:.3f}" if pf is not None else "n/a")
+        wr = s["win_rate"]
+        aw, al, e = s["avg_win"], s["avg_loss"], s["expectancy"]
+        ok = (aw is not None and al is not None and abs(al) <= aw)
+        return (f"n={s['n']} wr={wr and wr*100:.1f}% "
+                f"avgW={aw and aw*100:+.3f}% "
+                f"avgL={al and al*100:+.3f}% "
+                f"E={e and e*100:+.3f}% PF={pf_s} "
+                f"|L|<=W={'yes' if ok else 'no'} reasons={s['reasons']}")
+
+    print("\n=== STOP COMPARE (spread-return units, live-like K) ===", flush=True)
+    out: dict = {}
+    for d in deltas:
+        card = _scorecard(books[d])
+        label = "z_revert only" if d is None else f"z_stop +{d:g}"
+        print(f"  {label:16s} {_fmt(card)}", flush=True)
+        out[label] = card
+    return out
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--from", dest="frm", default="2021-06")
     ap.add_argument("--to", dest="to", default="2026-07-16")
     ap.add_argument("--trials", type=int, default=150)
+    ap.add_argument("--compare-stops", action="store_true")
+    ap.add_argument("--windows", type=int, default=6)
     a = ap.parse_args()
 
     def _p(s: str) -> int:
@@ -152,4 +240,7 @@ if __name__ == "__main__":
             parts.append(1)
         return int(dt.datetime(*parts, tzinfo=dt.timezone.utc).timestamp())
 
-    run(_p(a.frm), _p(a.to), n_trials=a.trials)
+    if a.compare_stops:
+        compare_stops(_p(a.frm), _p(a.to), max_windows=a.windows)
+    else:
+        run(_p(a.frm), _p(a.to), n_trials=a.trials)
