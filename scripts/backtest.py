@@ -19,6 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
+from src.engine import funding as funding_engine  # noqa: E402
 from src.engine import indicators  # noqa: E402
 from src.engine.evaluation import STRATEGY_CATEGORY_MAP  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
@@ -125,6 +126,7 @@ class BacktestTrade:
     slippage: float = 0.0
     entry_fee: float = 0.0
     exit_fee: float = 0.0
+    funding_pnl: float = 0.0
     ambiguous_exit: bool = False
 
     @property
@@ -358,6 +360,7 @@ class BacktestPortfolio:
         ambiguous_exit: bool = False,
     ) -> None:
         gross_pnl = self._realized_pnl(trade, price, timestamp)
+        trade.funding_pnl = self._funding_pnl(trade, timestamp)
         if (
             trade.strategy == "funding_carry"
             and (trade.metadata or {}).get("execution_mode") == "delta_neutral"
@@ -472,6 +475,17 @@ class BacktestPortfolio:
                 return "take_profit"
         return None
 
+    def _funding_pnl(self, trade: BacktestTrade, timestamp: int | None) -> float:
+        """Accrued perpetual funding, clamped to the simulated clock."""
+        return funding_engine.fetch_funding_pnl(
+            self.storage,
+            trade.symbol,
+            trade.direction,
+            trade.notional,
+            trade.opened_at,
+            before=timestamp,
+        )
+
     def _realized_pnl(
         self, trade: BacktestTrade, price: float, timestamp: int | None
     ) -> float:
@@ -483,23 +497,16 @@ class BacktestPortfolio:
             rows = self.storage.get_funding_rates(
                 trade.symbol, limit=800, since=trade.opened_at, before=timestamp
             ) or []
-            # funding over complete settlements after entry
-            opened_bucket = int(trade.opened_at) // (8 * 3600)
-            buckets: dict[int, float] = {}
-            for row in rows:
-                try:
-                    bucket = int(row["timestamp"]) // (8 * 3600)
-                    buckets[bucket] = float(row["funding_rate"])
-                except Exception:
-                    continue
-            settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
-            complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
-            funding = sum(complete_after_entry) * trade.notional
+            # The carry leg is short the perp, so it receives positive funding.
+            funding = funding_engine.settlement_sum(rows, trade.opened_at) * trade.notional
             basis_drift = 0.0
             return funding - basis_drift
-        if trade.direction == SignalDirection.LONG.value:
-            return (price - trade.entry_price) * trade.quantity
-        return (trade.entry_price - price) * trade.quantity
+        price_pnl = (
+            (price - trade.entry_price) * trade.quantity
+            if trade.direction == SignalDirection.LONG.value
+            else (trade.entry_price - price) * trade.quantity
+        )
+        return price_pnl + self._funding_pnl(trade, timestamp)
 
     def _position_value(
         self, trade: BacktestTrade, price: float, timestamp: int | None
@@ -513,22 +520,13 @@ class BacktestPortfolio:
             rows = self.storage.get_funding_rates(
                 trade.symbol, limit=800, since=trade.opened_at, before=before
             ) or []
-            opened_bucket = int(trade.opened_at) // (8 * 3600)
-            buckets: dict[int, float] = {}
-            for row in rows:
-                try:
-                    bucket = int(row["timestamp"]) // (8 * 3600)
-                    buckets[bucket] = float(row["funding_rate"])
-                except Exception:
-                    continue
-            settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
-            complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
-            funding = sum(complete_after_entry) * trade.notional
+            funding = funding_engine.settlement_sum(rows, trade.opened_at) * trade.notional
             basis_drift = 0.0
             return trade.notional + funding - basis_drift
+        accrued = self._funding_pnl(trade, timestamp)
         if trade.direction == SignalDirection.LONG.value:
-            return trade.quantity * price
-        return trade.notional + (trade.entry_price - price) * trade.quantity
+            return trade.quantity * price + accrued
+        return trade.notional + (trade.entry_price - price) * trade.quantity + accrued
 
 
 class SnapshotStorage:
@@ -857,7 +855,12 @@ class BacktestEngine:
                 "fees": round(sum(float(t.fees or 0.0) for t in portfolio.closed_trades), 2),
                 "spread_cost": round(sum(float(t.spread_cost or 0.0) for t in portfolio.closed_trades), 2),
                 "slippage": round(sum(float(t.slippage or 0.0) for t in portfolio.closed_trades), 2),
-                "funding": 0.0,
+                "funding": round(
+                    sum(float(t.funding_pnl or 0.0) for t in portfolio.closed_trades), 4
+                ),
+                "funding_trades_observed": sum(
+                    1 for t in portfolio.closed_trades if t.funding_pnl
+                ),
                 "net_pnl": round(sum(float(t.pnl or 0.0) for t in portfolio.closed_trades), 2),
                 "cash_benchmark_return_pct": 0.0,
                 "category_checks": category_checks,
@@ -877,6 +880,7 @@ class BacktestEngine:
                     "fees": round(float(getattr(t, "fees", 0.0) or 0.0), 6),
                     "spread_cost": round(float(getattr(t, "spread_cost", 0.0) or 0.0), 6),
                     "slippage": round(float(getattr(t, "slippage", 0.0) or 0.0), 6),
+                    "funding_pnl": round(float(getattr(t, "funding_pnl", 0.0) or 0.0), 6),
                     "opened_at": getattr(t, "opened_at", None),
                     "closed_at": getattr(t, "closed_at", None),
                     "signal_time": getattr(t, "signal_time", None),

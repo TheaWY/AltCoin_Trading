@@ -5,36 +5,90 @@
 #
 # 사람이 하는 일: 여기에 축을 추가/수정하는 것. 나머지는 자동.
 # 새 축을 추가하기 전에 이벤트 스터디(event_study.py) 통과 여부부터 확인할 것.
+#
+# ---------------------------------------------------------------------------
+# THE BUDGET RULE — read this before adding an axis.
+#
+# The trial budget is MinBTL (Bailey, Borwein, López de Prado & Zhu 2014)
+# inverted: how many independent configs this much history can distinguish
+# from luck. It is a LIFETIME count of done+failed experiments, not per-run.
+#
+#   history 6.41 years (RESEARCH_WINDOW_COUNT=39)  ->  budget 100 trials
+#
+# So the enumerated space must fit inside the budget. If it does not, the
+# runner stops partway and the "best" config is the best of an arbitrary
+# prefix of the queue — which is exactly the overfitting this stack exists to
+# prevent. The generator now logs space_exceeds_budget when that happens.
+#
+# This space: 4 x 2 x 2 x 2 x 2 = 64 combos, inside the 100 budget.
+# (It was 9,216 against a budget of 13. Every knob below that is pinned to a
+# single value was removed for that reason, not because it does not matter.)
+#
+# Adding an axis of N values multiplies the space by N. Before you add one:
+#   1. Does event_study.py show the underlying signal has predictive power?
+#   2. Can the question be answered WITHOUT spending budget? (see below)
+#   3. If not, what are you removing to pay for it?
+# ---------------------------------------------------------------------------
 
 axes:
+  # Core hypothesis: which strategy family carries an edge on this universe.
   ACTIVE_STRATEGY: [momentum, volume_spike, mean_reversion, funding_rate]
+
+  # Direction policy. A real question on alt perps: the long and short legs
+  # have different funding and different tail behaviour.
   ALLOW_LONG: [true, false]
+
+  # Does routing strategies by market category beat running one everywhere.
   CATEGORY_STRATEGY_MODE: ["off", "matched"]
 
-  # setup on/off toggles. Defaults now reflect the last backtest weakness:
-  # start with fewer, cleaner hypotheses; re-enable noisy branches only if they
-  # survive walk-forward + fresh-data promotion.
+  # Two setup toggles remain axes. Both are entry setups whose standalone
+  # value is genuinely unknown and cannot be read off observational data.
   SETUP_MEANREV_ENABLED: [true, false]
-  SETUP_BREAKOUT_ENABLED: [false, true]
-  SETUP_TSMOM_ENABLED: [false, true]
-  SETUP_VOLUME_ENABLED: [false, true]
-  SETUP_FUNDING_ENABLED: [true]
   # Failed pump short: catches coins that ran hard over 7d and then roll over
-  # intraday with structure break. Added after dashboard review of SKL-like cases.
+  # intraday with structure break. Added after dashboard review of SKL-like
+  # cases; newest hypothesis in the stack, so it stays under test.
   SETUP_FAILED_PUMP_ENABLED: [true, false]
 
-  # Axes below are proven live in scripts/run_backtest_once.py A/B probes.
-  # Setup/confluence knobs are intentionally absent until a strategy path
-  # demonstrates outcome sensitivity to them.
-  MIN_CONFIDENCE: [0.70, 0.75, 0.80]
-  COOLDOWN_HOURS_PER_SYMBOL: [24, 48, 72]
-
-  # fee model assumption. Maker is only a research scenario until maker-fill
-  # simulation exists; taker remains the conservative default.
-  FEE_MODE: ["taker", "maker"]
+# ---------------------------------------------------------------------------
+# PINNED — not axes. Each of these was an axis and is now fixed, with the
+# reason it does not need to spend trials. Values here are informational:
+# config.py holds the actual defaults. Move one back up into `axes` only by
+# paying for it out of the budget.
+#
+#   SETUP_FUNDING_ENABLED   true   Only one value was ever listed. Funding
+#                                  reversal is the base setup; turning it off
+#                                  is a different system, not a variant.
+#
+#   SETUP_BREAKOUT_ENABLED  false  Gated on event_study.py. The file's own
+#   SETUP_TSMOM_ENABLED     false  standing rule is "re-enable noisy branches
+#   SETUP_VOLUME_ENABLED    false  only if they survive". Until a signal shows
+#                                  predictive power in the event study, a
+#                                  toggle for it is a coin flip that costs
+#                                  half the budget (these three cost x8).
+#
+#   MIN_CONFIDENCE          0.70   Answerable WITHOUT backtests. cycle.py
+#                                  writes every sub-threshold candidate to
+#                                  shadow_entries with its confidence and
+#                                  price; scoring those forward gives the
+#                                  confidence/outcome curve directly from
+#                                  observation. Worth x3 of the budget.
+#
+#   COOLDOWN_HOURS_PER_SYMBOL 48   Same: re-entry clustering is measurable
+#                                  from paper_trades timestamps in
+#                                  paper_analysis.py without a grid. x3.
+#
+#   FEE_MODE                taker  Maker was never a hypothesis, only a
+#                                  scenario — there is no maker-fill
+#                                  simulator, so a "maker" run assumes fills
+#                                  it cannot model. Rerun a promoted config
+#                                  once with FEE_MODE=maker as a post-hoc
+#                                  sensitivity check instead. x2.
+# ---------------------------------------------------------------------------
 
 # Hypothesis families to prioritize first (partial configs; generator boosts
-# priority of any combo matching all listed key/values).
+# priority of any combo matching all listed key/values). With the space now
+# inside budget these set the ORDER the queue is worked, so early results are
+# the informative ones even if a run is interrupted.
 priority_families:
   - name: "category_strategy_momentum"
     match: { CATEGORY_STRATEGY_MODE: "matched", ACTIVE_STRATEGY: momentum }
@@ -48,21 +102,14 @@ priority_families:
     match: { ACTIVE_STRATEGY: mean_reversion }
   - name: "conservative_core"
     match:
-      SETUP_BREAKOUT_ENABLED: false
-      SETUP_TSMOM_ENABLED: false
-      SETUP_VOLUME_ENABLED: false
       SETUP_FAILED_PUMP_ENABLED: true
-      MIN_CONFIDENCE: 0.70
-      COOLDOWN_HOURS_PER_SYMBOL: 48
-      FEE_MODE: "taker"
+      SETUP_MEANREV_ENABLED: false
   - name: "failed_pump_short_check"
-    match: { SETUP_FAILED_PUMP_ENABLED: true, SETUP_VOLUME_ENABLED: false, FEE_MODE: "taker" }
-  - name: "no_breakout_no_tsmom"
-    match: { SETUP_BREAKOUT_ENABLED: false, SETUP_TSMOM_ENABLED: false }
-  - name: "fewer_trades"
-    match: { COOLDOWN_HOURS_PER_SYMBOL: 72, MIN_CONFIDENCE: 0.80 }
-  - name: "maker_fees_sensitivity_only"
-    match: { FEE_MODE: "maker" }
+    match: { SETUP_FAILED_PUMP_ENABLED: true }
+  - name: "short_only"
+    match: { ALLOW_LONG: false }
 
 limits:
-  max_new_per_run: 300     # newly queued combos per generator invocation
+  # Kept under the budget so one run cannot queue more than the history can
+  # support. The runner enforces the hard cap; this is the per-run pace.
+  max_new_per_run: 64

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src import config
 from src.data.storage import get_storage
 from src.research import decisions
 from src.research.promotion import _ensure_schema
@@ -32,9 +33,33 @@ MARKER_END = "===RESULT_JSON_END==="
 # is handled separately by the fresh-evaluation gate.
 HOLDOUT_START = os.getenv("RESEARCH_HOLDOUT_START", "2026-06-01")
 WINDOW_TEST_DAYS = int(os.getenv("RESEARCH_WINDOW_TEST_DAYS", "60"))
-WINDOW_COUNT = int(os.getenv("RESEARCH_WINDOW_COUNT", "18"))
+# 39 windows x 60d step + 60d test = 6.41 years, reaching back to ~2020-01-04 —
+# the earliest month scripts/load_history.py downloads. The trial budget is
+# derived from this length (MinBTL, Bailey et al. 2014), so history depth is
+# what buys search breadth: 18 windows allowed 13 trials, 39 allows 100.
+# Run scripts/load_history.py --start 2020-01 before widening this further;
+# windows without data produce empty results, not free evidence.
+WINDOW_COUNT = int(os.getenv("RESEARCH_WINDOW_COUNT", "39"))
 WINDOW_STEP_DAYS = int(os.getenv("RESEARCH_WINDOW_STEP_DAYS", str(WINDOW_TEST_DAYS)))
-SYMBOLS = os.getenv("RESEARCH_SYMBOLS", "BTC/USDT,ETH/USDT")
+# The research universe MUST match the universe the live cycle trades, or the
+# walk-forward gates validate a strategy on instruments it will never see. The
+# old default (BTC/USDT,ETH/USDT) validated an altcoin system on two majors:
+# setups like failed_pump_short (7d >= +15%) barely fire on BTC/ETH, so their
+# sample never reached the 30-trade promotion gate.
+#
+# Default is now the live trading universe, capped so a run stays tractable.
+RESEARCH_SYMBOLS_LIMIT = int(os.getenv("RESEARCH_SYMBOLS_LIMIT", "20"))
+
+
+def _default_symbols() -> str:
+    """Live trading universe, truncated to RESEARCH_SYMBOLS_LIMIT."""
+    universe = [s for s in config.TRADING_SYMBOLS if s]
+    if RESEARCH_SYMBOLS_LIMIT > 0:
+        universe = universe[:RESEARCH_SYMBOLS_LIMIT]
+    return ",".join(universe) if universe else "BTC/USDT,ETH/USDT"
+
+
+SYMBOLS = os.getenv("RESEARCH_SYMBOLS") or _default_symbols()
 TIMEOUT_S = int(os.getenv("RESEARCH_RUN_TIMEOUT_S", "600"))
 PARALLEL_EXPERIMENTS = max(1, int(os.getenv("RESEARCH_PARALLEL_EXPERIMENTS", "1")))
 
@@ -122,6 +147,8 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
     trades = sum(int(window.get("trade_count", 0)) for window in windows)
     total = sum(float(window.get("total_pnl", 0.0)) for window in windows)
     fees = sum(float(window.get("total_fees", 0.0)) for window in windows)
+    funding = sum(float(window.get("total_funding", 0.0)) for window in windows)
+    funding_observed = sum(int(window.get("funding_trades_observed") or 0) for window in windows)
     gross = sum(float(window.get("gross_pnl", 0.0)) for window in windows)
     trade_pnls = [
         float(pnl)
@@ -147,6 +174,8 @@ def _aggregate(windows: list[dict[str, Any]]) -> dict[str, Any]:
         "positive_windows": sum(1 for window in windows if window.get("total_pnl", 0) > 0),
         "window_count": len(windows),
         "trade_pnl_samples": len(trade_pnls),
+        "total_funding": round(funding, 4),
+        "funding_trades_observed": funding_observed,
         "category_checks": category_checks,
         "category_present": category_present,
         "category_coverage_pct": round(

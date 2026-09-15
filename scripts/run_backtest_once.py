@@ -67,6 +67,11 @@ def main() -> int:
         if losses and sum(losses) != 0 else (999.0 if wins else 0.0),
         "win_rate": round(len(wins) / len(pnls), 4) if pnls else 0.0,
         "total_fees": round(sum(t["fees"] for t in trades), 4),
+        # Perpetual funding paid/received while positions were held. Reported
+        # separately from fees so a zero can be read as "no settlement data"
+        # (funding_trades_observed == 0) rather than "funding was free".
+        "total_funding": round(sum(t.get("funding_pnl", 0.0) for t in trades), 4),
+        "funding_trades_observed": result["summary"].get("funding_trades_observed", 0),
         "gross_pnl": round(sum(pnls) + sum(t["fees"] for t in trades), 4),
         "max_drawdown_pct": result["summary"].get("max_drawdown_pct"),
         "portfolio_return_pct": result["summary"].get("portfolio_return_pct"),

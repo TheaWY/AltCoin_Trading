@@ -147,6 +147,28 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
     budget = trial_budget_status()
     queued_count = int(budget.get("counts", {}).get("queued", 0))
     remaining_budget = int(budget.get("remaining", 0))
+
+    # The enumerated space must fit inside the LIFETIME trial budget. If it does
+    # not, the runner stops partway and the winner is the best of an arbitrary
+    # prefix of the queue — the selection bias the whole stack exists to avoid.
+    # This is not fatal (the priority order still puts the informative combos
+    # first), but it must never be silent: it means the search is incompletable
+    # and the answer to "which config is best" is unanswerable as configured.
+    total_budget = int(budget.get("budget") or 0)
+    space_exceeds_budget = bool(total_budget) and total_space > total_budget
+    if space_exceeds_budget and not dry_run:
+        log_decision(
+            "generator",
+            "space_exceeds_budget",
+            "research_space",
+            {
+                "total_space": total_space,
+                "budget": total_budget,
+                "unreachable": total_space - total_budget,
+                "fix": "remove axes from research_space.yaml, or extend history "
+                       "(RESEARCH_WINDOW_COUNT) after loading it",
+            },
+        )
     if queued_count > remaining_budget:
         detail = {
             "queued": queued_count,
@@ -154,12 +176,14 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
             "budget": budget.get("budget"),
             "tried": budget.get("tried"),
             "total_space": total_space,
+            "space_exceeds_budget": space_exceeds_budget,
         }
         if not dry_run:
             log_decision("generator", "generator_capped", "trial_budget", detail)
         report = build_report(limit=8)
         return {
             "total_space": total_space,
+            "space_exceeds_budget": space_exceeds_budget,
             "already_run_or_queued": budget["counts"]["done"] + queued_count,
             "newly_queued": 0,
             "champion_hash": "",
@@ -172,6 +196,7 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
         report = build_report(limit=8)
         return {
             "total_space": total_space,
+            "space_exceeds_budget": space_exceeds_budget,
             "already_run_or_queued": budget["counts"]["done"] + budget["counts"]["queued"],
             "newly_queued": 0,
             "champion_hash": "",
@@ -237,6 +262,7 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
 
     return {
         "total_space": total_space,
+        "space_exceeds_budget": space_exceeds_budget,
         "already_run_or_queued": len(existing),
         "newly_queued": queued,
         "champion_hash": champ_hash,

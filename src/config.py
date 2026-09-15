@@ -284,6 +284,11 @@ SPREAD_PCT_PER_SIDE = float(os.getenv("SPREAD_PCT_PER_SIDE", "0.0001"))
 # FEE_MODE=taker (default) uses FEE_PCT_PER_SIDE. Use maker only with a maker-fill simulator.
 FEE_MODE = os.getenv("FEE_MODE", "taker").strip().lower()
 FEE_MAKER_PCT_PER_SIDE = float(os.getenv("FEE_MAKER_PCT_PER_SIDE", "0.0002"))
+# Perpetual funding accrual on EVERY open position, not just delta-neutral carry.
+# A directional swing can be held SWING_MAX_HOLD_HOURS (720h); funding settles
+# every 8h, so omitting it biased backtest and paper PnL optimistically.
+# Applies identically to backtest, paper and live (src/engine/funding.py).
+FUNDING_PNL_ENABLED = _env_bool("FUNDING_PNL_ENABLED", default=True)
 
 
 def fee_pct_per_side() -> float:

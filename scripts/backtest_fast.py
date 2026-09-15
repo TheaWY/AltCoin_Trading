@@ -79,6 +79,31 @@ class SeriesCache:
         return self.rows[idx]
 
 
+class FundingCacheStorage:
+    """Funding-only storage for the portfolio's perpetual funding accrual.
+
+    The fast engine previously passed storage=None to BacktestPortfolio, which
+    made every funding lookup silently return 0 — the exact optimistic bias the
+    funding accrual exists to remove. The portfolio always passes the simulated
+    candle timestamp as `before`, so this stays point-in-time correct.
+    """
+
+    def __init__(self, funding_cache: dict[str, "SeriesCache"]) -> None:
+        self.funding_cache = funding_cache
+
+    def get_funding_rates(
+        self,
+        symbol: str,
+        limit: int = 100,
+        since: int | None = None,
+        before: int | None = None,
+    ) -> list[dict[str, Any]]:
+        cache = self.funding_cache.get(symbol)
+        if not cache or before is None:
+            return []
+        return cache.before(before, limit=limit, since=since)
+
+
 class MemorySnapshotStorage:
     """Storage-like adapter backed by preloaded in-memory rows."""
 
@@ -197,7 +222,7 @@ class FastBacktestEngine:
         )
         print(f"Replay timestamps: {len(timeline)}")
 
-        portfolio = BacktestPortfolio(storage=None)
+        portfolio = BacktestPortfolio(storage=FundingCacheStorage(funding_cache))
         signal_count = 0
         opened_count = 0
         skipped_direction = 0

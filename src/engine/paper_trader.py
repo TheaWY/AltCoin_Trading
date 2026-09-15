@@ -10,6 +10,7 @@ from typing import Any
 
 from src import config
 from src.data.storage import Storage, get_storage
+from src.engine import funding as funding_engine
 from src.engine import indicators
 from src.strategies.base import SignalDirection
 from src.strategies.funding_carry import settlement_rates
@@ -17,8 +18,6 @@ from src.strategies.funding_carry import settlement_rates
 logger = logging.getLogger(__name__)
 
 ROUND_TRIP_COST_PCT = config.round_trip_cost_pct()
-
-_SETTLEMENT_SECONDS = 8 * 3600
 
 
 @dataclass(frozen=True)
@@ -55,20 +54,9 @@ def _carry_pnl(storage: Storage, symbol: str, opened_at: int, notional: float) -
     rows = storage.get_funding_rates(symbol, limit=800, since=opened_at) or []
     if not rows:
         return _CarryPnL(funding=0.0, basis_drift=0.0)
-
-    opened_bucket = int(opened_at) // _SETTLEMENT_SECONDS
-    buckets: dict[int, float] = {}
-    for row in rows:
-        try:
-            bucket = int(row["timestamp"]) // _SETTLEMENT_SECONDS
-            buckets[bucket] = float(row["funding_rate"])
-        except Exception:
-            continue
-
-    settlement_list = [(bucket, buckets[bucket]) for bucket in sorted(buckets)]
-    complete_after_entry = [rate for bucket, rate in settlement_list if bucket > opened_bucket]
-    funding = sum(complete_after_entry) * notional
-    return _CarryPnL(funding=funding, basis_drift=0.0)
+    # The carry leg is short the perp, so it receives positive funding.
+    rate_sum = funding_engine.settlement_sum(rows, opened_at)
+    return _CarryPnL(funding=rate_sum * float(notional), basis_drift=0.0)
 
 
 class PaperTrader:
@@ -432,9 +420,10 @@ class PaperTrader:
                 return notional
             carry = _carry_pnl(self.storage, trade["symbol"], int(opened_at), notional)
             return notional + carry.funding - carry.basis_drift
+        accrued = self._funding_pnl(trade)
         if trade["direction"] == SignalDirection.LONG.value:
-            return qty * price
-        return notional + (entry - price) * qty
+            return qty * price + accrued
+        return notional + (entry - price) * qty + accrued
 
     def summary(self, current_price: float | None = None) -> dict[str, Any]:
         state = self.ensure_portfolio(current_price)
@@ -472,6 +461,16 @@ class PaperTrader:
             "total_realized_pnl": self._total_realized_pnl(),
         }
 
+    def _funding_pnl(self, trade: dict[str, Any]) -> float:
+        """Accrued perpetual funding for an open/closing directional position."""
+        return funding_engine.fetch_funding_pnl(
+            self.storage,
+            trade["symbol"],
+            trade.get("direction"),
+            float(trade["quantity"]) * float(trade["entry_price"]),
+            trade.get("opened_at"),
+        )
+
     def _realized_pnl(self, trade: dict[str, Any], exit_price: float) -> float:
         qty = float(trade["quantity"])
         entry = float(trade["entry_price"])
@@ -483,9 +482,12 @@ class PaperTrader:
                 return 0.0
             carry = _carry_pnl(self.storage, trade["symbol"], int(opened_at), notional)
             return carry.funding - carry.basis_drift
-        if trade["direction"] == SignalDirection.LONG.value:
-            return (exit_price - entry) * qty
-        return (entry - exit_price) * qty
+        price_pnl = (
+            (exit_price - entry) * qty
+            if trade["direction"] == SignalDirection.LONG.value
+            else (entry - exit_price) * qty
+        )
+        return price_pnl + self._funding_pnl(trade)
 
     def _total_invested_open(self) -> float:
         total = 0.0
