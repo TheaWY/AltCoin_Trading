@@ -122,6 +122,23 @@ def start_scheduler() -> BackgroundScheduler:
             max_instances=1,
             coalesce=True,
         )
+    if config.SETUP_PAIRS_STATARB_ENABLED:
+        scheduler.add_job(
+            _pairs_job,
+            "interval",
+            minutes=config.COLLECTION_INTERVAL_MINUTES,
+            id="pairs_cycle",
+            replace_existing=True,
+            max_instances=1,
+            coalesce=True,
+        )
+        logger.info("Pairs stat-arb runner ENABLED — running every %s min", config.COLLECTION_INTERVAL_MINUTES)
+    if config.PAIRS_LAB_ENABLED:
+        scheduler.add_job(
+            _lab_job, "interval", minutes=config.COLLECTION_INTERVAL_MINUTES,
+            id="pairs_lab", replace_existing=True, max_instances=1, coalesce=True,
+        )
+        logger.info("Strategy LAB ENABLED — racing pairs variants every %s min", config.COLLECTION_INTERVAL_MINUTES)
     scheduler.start()
     start_liquidation_stream()
     logger.info(
@@ -141,3 +158,31 @@ def _exit_poll_job() -> None:
                         result["closed"], result["symbols"])
     except Exception:
         logger.exception("exit poll job failed")
+
+
+def _pairs_job() -> None:
+    """Pairs stat-arb runner — select/open/close market-neutral pairs via the
+    shared core (src/engine/pairs.py). No-op unless SETUP_PAIRS_STATARB_ENABLED."""
+    try:
+        from src.engine.pairs_trader import run_pairs_cycle
+
+        result = run_pairs_cycle()
+        if result.get("enabled") and (result.get("opened") or result.get("closed")):
+            logger.info("Pairs cycle: opened=%s closed=%s open_now=%s (of %s selected)",
+                        result["opened"], result["closed"], result["open_now"], result["selected"])
+    except Exception:
+        logger.exception("pairs cycle job failed")
+
+
+def _lab_job() -> None:
+    """Strategy LAB — race pairs config variants in parallel isolated books so
+    their live track records accumulate for comparison (src/engine/pairs_lab.py)."""
+    try:
+        from src.engine.pairs_lab import run_lab_cycle
+
+        result = run_lab_cycle()
+        books = result.get("books") or {}
+        if any(b.get("opened") or b.get("closed") for b in books.values()):
+            logger.info("Lab: %s", {k: f"eq{v['equity']} o{v['open']}" for k, v in books.items()})
+    except Exception:
+        logger.exception("lab cycle job failed")
