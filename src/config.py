@@ -290,6 +290,22 @@ FEE_MAKER_PCT_PER_SIDE = float(os.getenv("FEE_MAKER_PCT_PER_SIDE", "0.0002"))
 # Applies identically to backtest, paper and live (src/engine/funding.py).
 FUNDING_PNL_ENABLED = _env_bool("FUNDING_PNL_ENABLED", default=True)
 
+# --- Cross-sectional (relative-value) entry selection ---
+# Alt perps move together: five directional positions at rho=0.8 have an
+# effective breadth of 1.19, so the book is one bet cut into five pieces.
+# funding_rank ranks the cohort by funding and takes the extremes against each
+# other, so market beta appears on both sides and cancels. See
+# src/engine/cross_section.py for why funding and not long/short ratio.
+CROSS_SECTIONAL_MODE = os.getenv("CROSS_SECTIONAL_MODE", "off").strip().lower()
+# Minimum names needed before a ranking means anything.
+CROSS_MIN_COHORT = int(os.getenv("CROSS_MIN_COHORT", "8"))
+# Minimum spread between the highest and lowest funding in the cohort. Below
+# this the ranking is ordering noise, so the cycle takes no cross-sectional
+# entry. 0.0002 = 2bp per settlement between the extremes.
+CROSS_MIN_DISPERSION = float(os.getenv("CROSS_MIN_DISPERSION", "0.0002"))
+# Fraction of the cohort taken per leg, so the "extreme" stays a tail.
+CROSS_LEG_FRACTION = float(os.getenv("CROSS_LEG_FRACTION", "0.2"))
+
 
 def fee_pct_per_side() -> float:
     if FEE_MODE == "maker":

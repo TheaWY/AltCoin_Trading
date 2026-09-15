@@ -8,7 +8,7 @@ import json
 import math
 import os
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -20,6 +20,7 @@ from src import config  # noqa: E402
 from src.data.storage import Storage, get_storage  # noqa: E402
 from src.engine.analyzer import AltAnalyzer  # noqa: E402
 from src.engine import funding as funding_engine  # noqa: E402
+from src.engine import cross_section  # noqa: E402
 from src.engine import indicators  # noqa: E402
 from src.engine.evaluation import STRATEGY_CATEGORY_MAP  # noqa: E402
 from src.engine.signal import gather_strategy_data  # noqa: E402
@@ -674,6 +675,9 @@ class BacktestEngine:
         confidence_pass_count = 0
         opened_count = 0
         orders_queued = 0
+        cohort_bars = 0
+        cohort_skips = 0
+        cohort_one_legged = 0
         orders_filled = 0
         ambiguous_bars = 0
         category_checks = 0
@@ -738,6 +742,29 @@ class BacktestEngine:
                 ts + bars.timeframe_to_seconds("1h"),
             )
 
+            # Cross-sectional legs are decided for the whole cohort at once,
+            # before any per-symbol work, using the same point-in-time snapshot
+            # the strategies see. One ranking per decision bar.
+            cohort_ranking = cross_section.CohortRanking(skipped_reason="mode_off")
+            if config.CROSS_SECTIONAL_MODE != cross_section.MODE_OFF:
+                cohort_symbols = [s for s in self.symbols if s in current_candles]
+                if cohort_symbols:
+                    cohort_close = bars.bar_close_timestamp(
+                        current_candles[cohort_symbols[0]], "1h"
+                    )
+                    cohort_ranking = cross_section.rank_cohort(
+                        cross_section.gather_observations(
+                            SnapshotStorage(self.storage, cohort_close, None),
+                            cohort_symbols,
+                        )
+                    )
+                    if cohort_ranking.is_empty:
+                        cohort_skips += 1
+                    else:
+                        cohort_bars += 1
+                        if not cross_section.beta_cancelling(cohort_ranking):
+                            cohort_one_legged += 1
+
             for symbol in self.symbols:
                 if symbol not in current_candles:
                     continue
@@ -753,6 +780,22 @@ class BacktestEngine:
                     continue
 
                 signal = self.strategy.generate_signal(data)
+                cohort_leg = cohort_ranking.leg_for(symbol)
+                if config.CROSS_SECTIONAL_MODE != cross_section.MODE_OFF:
+                    # Relative value replaces the per-symbol direction: the bet
+                    # is this name against its cohort, not this name on its own.
+                    # A name outside the extremes is not traded this bar.
+                    if cohort_leg is None:
+                        continue
+                    signal = replace(
+                        signal,
+                        direction=SignalDirection(cohort_leg.direction),
+                        reason=(
+                            f"cross_sectional funding rank {cohort_leg.rank}"
+                            f"/{cohort_leg.cohort_size}"
+                        ),
+                        metadata={**(signal.metadata or {}), **cohort_leg.as_metadata()},
+                    )
                 if signal.direction == SignalDirection.NONE:
                     continue
 
@@ -863,6 +906,10 @@ class BacktestEngine:
                 ),
                 "net_pnl": round(sum(float(t.pnl or 0.0) for t in portfolio.closed_trades), 2),
                 "cash_benchmark_return_pct": 0.0,
+                "cross_sectional_mode": config.CROSS_SECTIONAL_MODE,
+                "cohort_bars": cohort_bars,
+                "cohort_skipped_bars": cohort_skips,
+                "cohort_one_legged_bars": cohort_one_legged,
                 "category_checks": category_checks,
                 "category_present": category_present,
                 "category_coverage_pct": round(

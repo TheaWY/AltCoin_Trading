@@ -13,6 +13,7 @@ from src import config
 from src.data.storage import Storage, get_storage
 from src.engine.analyzer import AltAnalyzer
 from src.engine.calibration import build_calibration_map
+from src.engine import cross_section
 from src.engine.evaluation import evaluate_symbol
 from src.engine.market_compare import MarketCompare
 from src.engine.paper_trader import PaperTrader
@@ -56,6 +57,7 @@ def _new_entry_funnel(symbols: list[str]) -> dict[str, Any]:
         "blocked_category": 0,
         "blocked_category_strategy": 0,
         "in_cooldown": 0,
+        "outside_cohort": 0,
         "entered": 0,
         "slots_full": 0,
         "open_rejected": 0,
@@ -485,6 +487,27 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
         available_slots = max(0, config.MAX_OPEN_POSITIONS - storage.count_open_trades())
         entry_funnel["available_slots"] = available_slots
         entry_funnel["open_positions"] = storage.count_open_trades()
+
+        # One ranking for the whole cohort per cycle, before any per-symbol
+        # work. Same function the backtest calls, so the live book and a replay
+        # of it pick the same legs.
+        cohort_ranking = cross_section.CohortRanking(skipped_reason="mode_off")
+        if config.CROSS_SECTIONAL_MODE != cross_section.MODE_OFF:
+            cohort_ranking = cross_section.rank_cohort(
+                cross_section.gather_observations(storage, symbols)
+            )
+            entry_funnel["cohort_size"] = cohort_ranking.cohort_size
+            entry_funnel["cohort_legs"] = len(cohort_ranking.legs)
+            entry_funnel["cohort_skipped_reason"] = cohort_ranking.skipped_reason
+            entry_funnel["cohort_beta_cancelling"] = cross_section.beta_cancelling(
+                cohort_ranking
+            )
+            if cohort_ranking.is_empty:
+                logger.info(
+                    "CROSS_SECTIONAL no legs this cycle — %s",
+                    cohort_ranking.skipped_reason,
+                )
+
         for symbol in symbols:
             if available_slots <= 0:
                 entry_funnel["slots_full"] += 1
@@ -520,6 +543,17 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
                 continue
 
             entry_funnel["symbols_evaluated"] += 1
+            cohort_leg = cohort_ranking.leg_for(symbol)
+            if config.CROSS_SECTIONAL_MODE != cross_section.MODE_OFF and cohort_leg is None:
+                entry_funnel["outside_cohort"] = entry_funnel.get("outside_cohort", 0) + 1
+                _record_candidate_stop(
+                    entry_funnel,
+                    symbol,
+                    "outside_cohort",
+                    cohort_ranking.skipped_reason
+                    or f"not in the extremes of a {cohort_ranking.cohort_size}-name cohort",
+                )
+                continue
             allowed, category, category_reason = _category_allowed(storage, symbol)
             candidate = evaluate_symbol(
                 storage,
@@ -532,6 +566,16 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             candidate["category"] = category
             candidate["category_filter_reason"] = category_reason
             verdict = candidate.get("verdict") or {}
+            if cohort_leg is not None and verdict:
+                # Relative value decides the side: the bet is this name against
+                # its cohort, not the per-symbol setup's own read. The setup
+                # still had to fire, so entry quality gates keep applying.
+                verdict["direction"] = cohort_leg.direction
+                verdict["reason"] = (
+                    f"cross_sectional funding rank {cohort_leg.rank}"
+                    f"/{cohort_leg.cohort_size}: {verdict.get('reason') or ''}"
+                ).strip()
+                verdict["cross_sectional"] = cohort_leg.as_metadata()
             symbol = candidate["symbol"]
             if symbol in entry_blocks:
                 logger.info("Entry blocked for %s — %s", symbol, entry_blocks[symbol])
