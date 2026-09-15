@@ -127,6 +127,7 @@ class PaperTrader:
 
     def open_position_values(self, prices: dict[str, float] | None = None) -> dict[str, float]:
         prices = prices or {}
+        margin_frac = float(getattr(config, "PAIRS_MARGIN_FRAC", 1.0))
         reserved = 0.0
         value = 0.0
         unrealized = 0.0
@@ -138,14 +139,25 @@ class PaperTrader:
                 price = float(row["close"]) if row else float(trade["entry_price"])
             notional = float(trade["quantity"]) * float(trade["entry_price"])
             position_value = self._open_position_value(trade, price)
-            reserved += notional
-            value += position_value
-            unrealized += self._realized_pnl(trade, price)
+            primary_pnl = self._realized_pnl(trade, price)
             hedge_value, hedge_pnl = self._hedge_leg_value_and_pnl(trade, prices)
-            if trade.get("hedge_symbol"):
-                reserved += float(trade["hedge_quantity"]) * float(trade["hedge_entry_price"])
-            value += hedge_value
-            unrealized += hedge_pnl
+            hedge_notional = (
+                float(trade["hedge_quantity"]) * float(trade["hedge_entry_price"])
+                if trade.get("hedge_symbol") else 0.0
+            )
+            pnl = primary_pnl + hedge_pnl
+            if trade.get("strategy") == "pairs_statarb":
+                # MARGIN (leveraged) position: only PAIRS_MARGIN_FRAC of the gross
+                # notional was drawn from cash, so its equity contribution is the
+                # margin posted + P&L -- NOT the full mark-to-market of both legs
+                # (that double-counts the borrowed leverage and inflated equity).
+                margin = (notional + hedge_notional) * margin_frac
+                reserved += margin
+                value += margin + pnl
+            else:
+                reserved += notional + hedge_notional
+                value += position_value + hedge_value
+            unrealized += pnl
         return {
             "reserved_margin": reserved,
             "open_position_value": value,
@@ -200,6 +212,12 @@ class PaperTrader:
     ) -> list[dict[str, Any]]:
         closed = []
         for trade in self.storage.get_open_trades(symbol):
+            # Pairs stat-arb trades are cross-sectional (two legs, z-score exit)
+            # and owned entirely by src/engine/pairs_trader.run_pairs_cycle. The
+            # per-symbol stop/TP path would misfire on them (stop_loss/take_profit
+            # are 0 sentinels), so skip them here.
+            if trade.get("strategy") == "pairs_statarb":
+                continue
             # No-stop / time-exit-only: skip trailing + partial-TP (the stop
             # itself is skipped inside _check_exit). Mirrors backtest.check_exits
             # (rule #2). Default off, so unchanged for every existing strategy.

@@ -149,6 +149,43 @@ MAX_NET_BETA_EXPOSURE = float(os.getenv("MAX_NET_BETA_EXPOSURE", "1.0"))
 # build for this many seconds (a finished trading cycle invalidates it).
 DASHBOARD_CACHE_SECONDS = int(os.getenv("DASHBOARD_CACHE_SECONDS", "45"))
 
+# --- Pairs stat-arb (src/engine/pairs.py) ---------------------------------
+# The first edge to clear the honest gate (DSR 0.997, positive every year
+# 2021-2026, survivorship-controlled). Defaults ARE the gate-passing config;
+# override via env only for research sweeps. See memory pairs-statarb-gate-pass.
+SETUP_PAIRS_STATARB_ENABLED = os.getenv("SETUP_PAIRS_STATARB_ENABLED", "false").lower() == "true"
+PAIRS_SEL_HOURS = int(os.getenv("PAIRS_SEL_HOURS", str(90 * 24)))    # trailing select window
+PAIRS_TRADE_HOURS = int(os.getenv("PAIRS_TRADE_HOURS", str(30 * 24)))  # rebalance / forward window
+PAIRS_ZWIN_HOURS = int(os.getenv("PAIRS_ZWIN_HOURS", str(20 * 24)))  # rolling z-score window
+PAIRS_Z_IN = float(os.getenv("PAIRS_Z_IN", "2.0"))
+PAIRS_Z_OUT = float(os.getenv("PAIRS_Z_OUT", "0.5"))
+PAIRS_HL_MIN_HOURS = float(os.getenv("PAIRS_HL_MIN_HOURS", "12"))
+PAIRS_HL_MAX_HOURS = float(os.getenv("PAIRS_HL_MAX_HOURS", str(20 * 24)))
+PAIRS_BETA_LO = float(os.getenv("PAIRS_BETA_LO", "0.2"))
+PAIRS_BETA_HI = float(os.getenv("PAIRS_BETA_HI", "5.0"))
+PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "500000"))  # LIQUID only (2026-07-22: DEXE microcap rugged -52% in the 50k all-coins universe -> -11%; back to validated liquidity)
+PAIRS_MIN_COVERAGE = float(os.getenv("PAIRS_MIN_COVERAGE", "0.7"))
+PAIRS_COST_LEG = float(os.getenv("PAIRS_COST_LEG", "0.0010"))       # per execution; 4 per round-trip
+PAIRS_FUND_HR = float(os.getenv("PAIRS_FUND_HR", "0.0000125"))      # short-leg funding/borrow per hour
+# Live execution can't hold ~1400 pairs, but a per-symbol-CAPPED non-redundant
+# subset captures the full edge: K=60 pairs w/ <=2 per symbol clears DSR 0.998
+# (better than full breadth) — 1400 pairs from ~50 symbols were mostly redundant.
+# Sweet spot is TIGHT caps, not raw count (K=120/M=3 fell to DSR 0.725).
+PAIRS_MAX_CONCURRENT = int(os.getenv("PAIRS_MAX_CONCURRENT", "60"))  # breadth: trades REGULARLY (top-10 concentration sat empty — few candidates at |z|>=2). +5.92%/cycle but actually deploys
+PAIRS_MAX_PER_SYMBOL = int(os.getenv("PAIRS_MAX_PER_SYMBOL", "2"))
+PAIRS_PAIR_NOTIONAL_PCT = float(os.getenv("PAIRS_PAIR_NOTIONAL_PCT", "0.09"))  # ~10 pairs fill the 2x gross cap = top-10 max-gain-per-cycle profile (DSR 1.0, worst -8%)
+# Cap on TOTAL deployed cash (sum of primary+hedge notionals) / equity, so a burst
+# of |z|>=2 signals can't over-leverage. Idle cash below this is the strategy
+# waiting for spread signals, not a loss. Aggressive setting (user, 2026-07-20).
+PAIRS_MAX_GROSS_PCT = float(os.getenv("PAIRS_MAX_GROSS_PCT", "2.0"))  # 2x leverage (user, 2026-07-20); gross exposure up to 200% of equity
+PAIRS_MARGIN_FRAC = float(os.getenv("PAIRS_MARGIN_FRAC", "0.5"))       # cash margin per unit gross notional; 0.5 => up to 2x gross with full equity
+PAIRS_STOP_PCT = float(os.getenv("PAIRS_STOP_PCT", "0.15"))            # catastrophic stop: close a pair if its loss exceeds this fraction of primary notional (a leg rugging/delisting breaks mean-reversion)
+PAIRS_MAX_HOLD_HOURS = float(os.getenv("PAIRS_MAX_HOLD_HOURS", str(30 * 24)))
+# Strategy LAB: race pairs config variants in parallel, each an isolated book, so
+# live track records accumulate SEPARATELY for honest comparison (src/engine/pairs_lab.py).
+PAIRS_LAB_ENABLED = os.getenv("PAIRS_LAB_ENABLED", "false").lower() == "true"
+PAIRS_LAB_STARTING = float(os.getenv("PAIRS_LAB_STARTING", "714.285714"))
+
 # --- Analysis thresholds (not hardcoded in analyzer) ---
 MOMENTUM_24H_STRONG_PCT = float(os.getenv("MOMENTUM_24H_STRONG_PCT", "3.0"))
 MOMENTUM_7D_STRONG_PCT = float(os.getenv("MOMENTUM_7D_STRONG_PCT", "5.0"))

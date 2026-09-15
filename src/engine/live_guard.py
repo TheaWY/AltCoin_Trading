@@ -38,6 +38,7 @@ SETUP_TO_STRATEGY = {
     "SETUP_MEAN_REVERSION_SHORT_ENABLED": "mean_reversion_short",
     "SETUP_VOLATILITY_EXPANSION_ENABLED": "volatility_expansion",
     "SETUP_FUNDING_CARRY_ENABLED": "funding_carry",
+    "SETUP_PAIRS_STATARB_ENABLED": "pairs_statarb",
 }
 
 
