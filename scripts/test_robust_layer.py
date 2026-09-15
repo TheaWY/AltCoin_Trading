@@ -93,7 +93,8 @@ def metrics_with_pnls(window_pnls, per_window_trades, seed=7, edge=0.9):
     for wp in window_pnls:
         pnls = [r.gauss(wp / per_window_trades, abs(wp) / per_window_trades * edge or 1)
                 for _ in range(per_window_trades)]
-        windows.append({"total_pnl": wp, "trade_pnls": [round(x, 4) for x in pnls]})
+        windows.append({"total_pnl": wp, "trade_count": per_window_trades,
+                        "trade_pnls": [round(x, 4) for x in pnls]})
     trades = per_window_trades * len(window_pnls)
     total = sum(window_pnls)
     return json.dumps({
@@ -135,7 +136,7 @@ import importlib  # noqa: E402
 importlib.reload(promotion)
 lucky_windows = [4, 3, 5, 2]
 r = random.Random(11)
-windows = [{"total_pnl": wp,
+windows = [{"total_pnl": wp, "trade_count": 20,
             "trade_pnls": [round(r.gauss(0.0, 8.0), 4) for _ in range(20)]}
            for wp in lucky_windows]
 lucky_metrics = json.dumps({

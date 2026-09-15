@@ -397,6 +397,54 @@ def _last_promotion() -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def _active_promotion() -> dict[str, Any] | None:
+    """The last promote, unless a rollback superseded it.
+
+    A rollback must deactivate the promotion it reverts. Without this check,
+    health_check() keeps seeing the same promote row, the same (immutable)
+    losing trades since its timestamp, and rolls back again on every run —
+    touching restart.flag each time, which makes the watchdog SIGKILL the
+    worker every minute, forever.
+    """
+    last = _last_promotion()
+    if last is None:
+        return None
+    storage = get_storage()
+    with storage._connect() as conn:  # noqa: SLF001
+        row = conn.execute(
+            "SELECT created_at FROM promotions WHERE action = 'rollback' "
+            "ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    if row and _row_value(row, "created_at") >= last["created_at"]:
+        return None
+    return last
+
+
+def _rolled_back_hashes() -> set[str]:
+    """Config hashes of promotions that were later rolled back.
+
+    A config that already failed live (negative expectancy or drawdown) must
+    not be re-promoted just because its backtest/fresh gates still pass —
+    that would restart the promote -> lose -> rollback churn with the same
+    known loser.
+    """
+    storage = get_storage()
+    with storage._connect() as conn:  # noqa: SLF001
+        rows = conn.execute(
+            "SELECT action, config_hash FROM promotions ORDER BY created_at, id"
+        ).fetchall()
+    failed: set[str] = set()
+    current: str | None = None
+    for row in rows:
+        action = _row_value(row, "action")
+        if action == "promote":
+            current = _row_value(row, "config_hash", 1)
+        elif action == "rollback" and current:
+            failed.add(current)
+            current = None
+    return failed
+
+
 def promote(exp: dict[str, Any], reason: str) -> dict[str, Any]:
     challenger_config = json.loads(exp["config_json"])
     overrides = {k: v for k, v in challenger_config.items() if _is_allowed_key(k)}
@@ -423,11 +471,17 @@ def rollback(reason: str) -> dict[str, Any]:
 def promote_if_ready() -> dict[str, Any]:
     """The single entrypoint a nightly job calls after the experiment runner."""
     _ensure_schema()
-    last = _last_promotion()
-    if last and (_now() - last["created_at"]) < PROMOTION_COOLDOWN_HOURS * 3600:
+    storage = get_storage()
+    # Cooldown counts from the last promote OR rollback: right after a
+    # rollback the book just proved a config wrong, not a moment to churn
+    # straight into the next candidate.
+    with storage._connect() as conn:  # noqa: SLF001
+        row = conn.execute(
+            "SELECT created_at FROM promotions ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    if row and (_now() - _row_value(row, "created_at")) < PROMOTION_COOLDOWN_HOURS * 3600:
         return {"promoted": False, "reason": "promotion cooldown active"}
 
-    storage = get_storage()
     with storage._connect() as conn:  # noqa: SLF001
         champion = conn.execute(
             "SELECT * FROM experiments WHERE is_champion_baseline = 1 AND status = 'done' "
@@ -443,10 +497,16 @@ def promote_if_ready() -> dict[str, Any]:
         ]
 
     report: list[dict[str, Any]] = []
-    active_hash = last["config_hash"] if last else None
+    active = _active_promotion()
+    active_hash = active["config_hash"] if active else None
+    failed_hashes = _rolled_back_hashes()
     for exp in candidates:
         if exp["config_hash"] == active_hash:
             continue  # already the live champion — re-promoting is churn
+        if exp["config_hash"] in failed_hashes:
+            report.append({"hash": exp["config_hash"], "stage": "history",
+                           "why": "previously rolled back live — not re-promotable"})
+            continue
         ok1, why1 = stage1_pass(exp, champion)
         if not ok1:
             report.append({"hash": exp["config_hash"], "stage": 1, "why": why1})
@@ -473,7 +533,7 @@ def promote_if_ready() -> dict[str, Any]:
 def health_check() -> dict[str, Any]:
     """Live degradation watch. Run every cycle or hourly. Auto-rollback."""
     _ensure_schema()
-    last = _last_promotion()
+    last = _active_promotion()
     if last is None:
         return {"status": "no promotion active"}
 

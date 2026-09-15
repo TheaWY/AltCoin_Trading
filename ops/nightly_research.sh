@@ -3,12 +3,21 @@
 set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
-PY=${PY:-"$REPO/.venv/bin/python"}
+# launchd (and some interactive shells) can inherit PY=/usr/bin/python3 or the
+# Command Line Tools interpreter. Those lack the venv packages (yaml, dotenv,
+# psycopg) and silently skip generate/run/promote. Always use the repo venv.
+PY="$REPO/.venv/bin/python"
+if [ ! -x "$PY" ]; then
+  echo "ERROR: repo venv python missing: $PY" >&2
+  exit 1
+fi
 MAX_RUNS=${RESEARCH_MAX_RUNS_PER_NIGHT:-20}
 CATEGORY_DAYS=${CATEGORY_BACKTEST_DAYS:-365}
 
 echo "=== research cycle $(date -u +%FT%TZ) ==="
 echo "repo=$REPO"
+echo "python=$PY"
+"$PY" -c 'import sys; print("python_version", sys.version.split()[0], "executable", sys.executable)'
 echo "max_runs=$MAX_RUNS category_days=$CATEGORY_DAYS"
 
 # Initialize/queue experiments. This creates the experiments schema if missing.
