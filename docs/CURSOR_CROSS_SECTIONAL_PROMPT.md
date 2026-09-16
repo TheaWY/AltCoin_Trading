@@ -67,10 +67,19 @@ git pull origin claude/update-result-reporting-r8tq2a
 
 bash scripts/run_safety_tests.sh
 
-Expect 99 tests. New files are tests/test_funding_accrual.py,
-tests/test_cross_section.py and tests/test_cost_attribution.py. Unlike the
-container this was written in, you have ccxt and .venv, so everything must
-pass. If anything fails, stop and report it. Do not continue on a red suite.
+Expect 105 tests, all passing. New files are tests/test_funding_accrual.py,
+tests/test_cross_section.py, tests/test_cost_attribution.py and
+tests/test_suite_hermetic.py. Unlike the container this was written in, you
+have ccxt and .venv, so everything must pass. If anything fails, stop and
+report it. Do not continue on a red suite.
+
+Run it through scripts/run_safety_tests.sh, not bare `python -m unittest`.
+The script exports CONFIG_SKIP_DOTENV=1, without which config's import-time
+load_dotenv() pulls this machine's live paper-trading .env into the test
+process and the suite ends up asserting against your settings rather than
+against the code. tests/test_suite_hermetic.py fails loudly if that happens,
+so a bare unittest run on a box with a .env is expected to report that one
+failure; the fix is to use the script, never to skip the check.
 
 ## Step 2 — diagnose the -7.8% BEFORE running anything new
 

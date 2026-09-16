@@ -8,10 +8,7 @@ from __future__ import annotations
 
 import os
 import unittest
-
-# Make sure the dynamic setup is enabled for these tests even if the shell has a
-# different research override.
-os.environ.setdefault("SETUP_FAILED_PUMP_ENABLED", "true")
+from unittest import mock
 
 from src.engine.evaluation import (  # noqa: E402
     STYLE_SCALP,
@@ -52,6 +49,28 @@ def base_metrics(**overrides):
 
 
 class EvaluationSetupTests(unittest.TestCase):
+    """Setup flags are pinned per-test, not by the process environment.
+
+    These setups read their toggles two different ways — SETUP_FAILED_PUMP is
+    read from os.environ at call time, SETUP_FUNDING from config at import
+    time — so neither can be fixed by setting an env var at module level. An
+    os.environ.setdefault() here used to be a no-op whenever an earlier test
+    module had already triggered config's load_dotenv(), which meant these
+    tests asserted against whatever the machine's .env happened to say.
+    """
+
+    def setUp(self):
+        # Dynamic flag: read from os.environ each call.
+        env_patch = mock.patch.dict(
+            os.environ, {"SETUP_FAILED_PUMP_ENABLED": "true"}
+        )
+        env_patch.start()
+        self.addCleanup(env_patch.stop)
+        # Import-time flag: pin the already-computed config attribute.
+        cfg_patch = mock.patch.object(config, "SETUP_FUNDING_ENABLED", True)
+        cfg_patch.start()
+        self.addCleanup(cfg_patch.stop)
+
     def test_failed_pump_short_detects_skl_like_rollover(self):
         """A +7d pump that rolls over intraday should be seen as a short setup."""
         metrics = base_metrics(
