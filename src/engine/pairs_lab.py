@@ -128,7 +128,9 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
             reason = None
             entry_z = t.get("entry_z")
             entry_z = float(entry_z) if entry_z is not None else None
-            if pairs.should_stop(z, entry_z):
+            if pairs.is_excluded(t["symbol"]) or pairs.is_excluded(t.get("hedge_symbol")):
+                reason = "excluded"
+            elif pairs.should_stop(z, entry_z):
                 reason = "z_stop"
             elif pairs.should_close(z):
                 reason = "z_revert"

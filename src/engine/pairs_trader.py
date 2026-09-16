@@ -43,7 +43,7 @@ _SELECTION_KEY = "pairs_selection"
 HOUR = 3600
 
 MAX_CONCURRENT = int(getattr(config, "PAIRS_MAX_CONCURRENT", 60))
-MAX_PER_SYMBOL = int(getattr(config, "PAIRS_MAX_PER_SYMBOL", 3))
+MAX_PER_SYMBOL = int(getattr(config, "PAIRS_MAX_PER_SYMBOL", 2))
 PAIR_NOTIONAL_PCT = float(getattr(config, "PAIRS_PAIR_NOTIONAL_PCT", 0.01))
 MAX_GROSS_PCT = float(getattr(config, "PAIRS_MAX_GROSS_PCT", 0.80))
 MARGIN_FRAC = float(getattr(config, "PAIRS_MARGIN_FRAC", 1.0))
@@ -104,7 +104,8 @@ def _panel(storage, symbols: list[str], lookback_hours: int, now_ts: int) -> tup
                 v = float(r.get("volume") or 0)
                 if cl > 0:
                     lc[i] = np.log(cl)
-                    dv[i] = cl * v
+                    qv = r.get("quote_volume")
+                    dv[i] = float(qv) if qv not in (None, 0, 0.0) else cl * v
         if np.isfinite(lc).sum() >= lookback_hours * pairs.COVERAGE:
             logp[s] = lc
             dvol[s] = dv
@@ -120,7 +121,10 @@ def _all_symbols(storage) -> list[str]:
             "AND (MAX(timestamp) - MIN(timestamp)) >= ?",
             (min_span,),
         ).fetchall()
-    return [dict(r)["symbol"] for r in rows if dict(r)["symbol"] != config.SYMBOL]
+    return [
+        dict(r)["symbol"] for r in rows
+        if dict(r)["symbol"] != config.SYMBOL and not pairs.is_excluded(dict(r)["symbol"])
+    ]
 
 
 def tight_deploy_cap(n_closed: int, expectancy: float | None) -> float | None:
@@ -341,7 +345,9 @@ def run_pairs_cycle(storage=None) -> dict[str, Any]:
         primary_notional = float(t["quantity"]) * float(t["entry_price"])
         entry_z = t.get("atr_pct")
         entry_z = float(entry_z) if entry_z is not None else None
-        if pairs.should_stop(z, entry_z, Z_STOP_DELTA):
+        if pairs.is_excluded(t["symbol"]) or pairs.is_excluded(t.get("hedge_symbol")):
+            _close_one(storage, t, now_ts, "excluded"); closed += 1
+        elif pairs.should_stop(z, entry_z, Z_STOP_DELTA):
             _close_one(storage, t, now_ts, "z_stop"); closed += 1
         elif primary_notional > 0 and _pair_unrealized(storage, t) < -STOP_PCT * primary_notional:
             _close_one(storage, t, now_ts, "stop_loss"); closed += 1

@@ -681,7 +681,10 @@ class Storage:
         policies = {
             "15m": 14 * 24 * 60 * 60,
             # Research walk-forward/backfill needs 6.6y+ windows plus warmup.
-            "1h": 8 * 365 * 24 * 60 * 60,
+            # Research walk-forward needs BTC/ETH 1h from Binance spot 2017-08
+            # through holdout 2026-06 (~8.7y of span, plus warmup). 8y retention
+            # was pruning that prefix (cutoff ≈ 2018-09-16).
+            "1h": 10 * 365 * 24 * 60 * 60,
         }
         deleted: dict[str, int] = {}
         with self._connect() as conn:

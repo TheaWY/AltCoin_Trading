@@ -163,8 +163,13 @@ PAIRS_HL_MIN_HOURS = float(os.getenv("PAIRS_HL_MIN_HOURS", "12"))
 PAIRS_HL_MAX_HOURS = float(os.getenv("PAIRS_HL_MAX_HOURS", str(20 * 24)))
 PAIRS_BETA_LO = float(os.getenv("PAIRS_BETA_LO", "0.2"))
 PAIRS_BETA_HI = float(os.getenv("PAIRS_BETA_HI", "5.0"))
-PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "8000000"))  # 8M daily median: drops BTW (~1.5M) / PUMP (~5M) memes; 500k still let them through
+PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "8000000"))  # median daily USD volume (24h sum of hourly quote vol)
 PAIRS_MIN_LISTING_DAYS = float(os.getenv("PAIRS_MIN_LISTING_DAYS", "180"))  # exclude names listed <6m (BTW listed 2026-06)
+PAIRS_EXCLUDE_SYMBOLS = tuple(
+    s.strip().upper() if "/" in s.strip().upper() else f"{s.strip().upper()}/USDT"
+    for s in os.getenv("PAIRS_EXCLUDE_SYMBOLS", "BTW/USDT,PUMP/USDT").split(",")
+    if s.strip()
+)  # memes that still clear the volume floor (PUMP ~90M/day) but break cointegration
 PAIRS_MIN_COVERAGE = float(os.getenv("PAIRS_MIN_COVERAGE", "0.7"))
 PAIRS_COST_LEG = float(os.getenv("PAIRS_COST_LEG", "0.0010"))       # per execution; 4 per round-trip
 PAIRS_FUND_HR = float(os.getenv("PAIRS_FUND_HR", "0.0000125"))      # short-leg funding/borrow per hour
