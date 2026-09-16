@@ -6,8 +6,20 @@ from dotenv import load_dotenv
 import os
 
 # Load .env from project root (parent of src/)
+#
+# CONFIG_SKIP_DOTENV exists for the test suite. config is read at IMPORT time,
+# so whichever test module imports it first fixes every flag for the whole run
+# from whatever .env that machine happens to have. A suite whose verdict
+# depends on the operator's .env is not a safety net: tests can fail on a live
+# box that pass in CI, and worse, tests can PASS for the wrong reason and hide
+# a real regression silently. scripts/run_safety_tests.sh sets this so a test
+# run is hermetic. DOTENV_LOADED records what actually happened, so a run that
+# is not hermetic can say so rather than being guessed at.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+SKIP_DOTENV = os.getenv("CONFIG_SKIP_DOTENV", "").strip().lower() in ("1", "true", "yes")
+DOTENV_LOADED = False
+if not SKIP_DOTENV:
+    DOTENV_LOADED = bool(load_dotenv(_PROJECT_ROOT / ".env"))
 
 # --- Promotion overrides overlay ---
 # The research promotion engine (src/research/promotion.py) writes vetted
