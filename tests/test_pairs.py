@@ -61,15 +61,17 @@ class EntryExitRule(unittest.TestCase):
         self.assertFalse(pairs.should_close(None))
 
     def test_should_stop_adverse_delta_from_entry_z(self):
-        # default delta=0.5: entry 2.2 stops at >= 2.7
-        self.assertTrue(pairs.should_stop(2.7, 2.2))
-        self.assertFalse(pairs.should_stop(2.69, 2.2))
-        self.assertTrue(pairs.should_stop(-2.7, -2.2))
-        self.assertFalse(pairs.should_stop(-2.69, -2.2))
-        self.assertFalse(pairs.should_stop(-2.7, 2.2))  # wrong direction is revert, not stop
+        # default delta=1.0: entry 2.2 stops at >= 3.2
+        self.assertTrue(pairs.should_stop(3.2, 2.2))
+        self.assertFalse(pairs.should_stop(3.19, 2.2))
+        self.assertTrue(pairs.should_stop(-3.2, -2.2))
+        self.assertFalse(pairs.should_stop(-3.19, -2.2))
+        self.assertFalse(pairs.should_stop(-3.2, 2.2))  # wrong direction is revert, not stop
         self.assertFalse(pairs.should_stop(None, 2.2))
         self.assertFalse(pairs.should_stop(2.7, None))
-        # explicit 1.5 still available for research
+        # tighter 0.5 and the originally suggested 1.5 remain available
+        self.assertTrue(pairs.should_stop(2.7, 2.2, 0.5))
+        self.assertFalse(pairs.should_stop(2.69, 2.2, 0.5))
         self.assertTrue(pairs.should_stop(3.7, 2.2, 1.5))
         self.assertFalse(pairs.should_stop(3.69, 2.2, 1.5))
 

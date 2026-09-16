@@ -48,7 +48,7 @@ PAIR_NOTIONAL_PCT = float(getattr(config, "PAIRS_PAIR_NOTIONAL_PCT", 0.01))
 MAX_GROSS_PCT = float(getattr(config, "PAIRS_MAX_GROSS_PCT", 0.80))
 MARGIN_FRAC = float(getattr(config, "PAIRS_MARGIN_FRAC", 1.0))
 STOP_PCT = float(getattr(config, "PAIRS_STOP_PCT", 0.15))
-Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 0.5))
+Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 1.0))
 NEG_EXPECTANCY_DEPLOY_PCT = float(getattr(config, "PAIRS_NEG_EXPECTANCY_DEPLOY_PCT", 0.40))
 MIN_EXPECTANCY_TRADES = int(getattr(config, "PAIRS_MIN_EXPECTANCY_TRADES", 10))
 MAX_HOLD_HOURS = float(getattr(config, "PAIRS_MAX_HOLD_HOURS", pairs.TRADE_HOURS))
@@ -365,6 +365,8 @@ def run_pairs_cycle(storage=None) -> dict[str, Any]:
             break
         key = (p["a"], p["b"])
         if key in open_keys:
+            continue
+        if pairs.is_excluded(p["a"]) or pairs.is_excluded(p["b"]):
             continue
         z = _pair_z(storage, p["a"], p["b"], p["beta"], now_ts)
         if pairs.should_open(z) and _open_one(storage, p["a"], p["b"], p["beta"], z, now_ts):

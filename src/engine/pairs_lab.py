@@ -146,6 +146,8 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
             key = (p["a"], p["b"])
             if key in open_keys:
                 continue
+            if pairs.is_excluded(p["a"]) or pairs.is_excluded(p["b"]):
+                continue
             eq, gross, _ = _equity(storage, name, cash, margin_frac)
             z = ptr._pair_z(storage, p["a"], p["b"], p["beta"], now)
             if not pairs.should_open(z):

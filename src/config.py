@@ -186,7 +186,7 @@ PAIRS_PAIR_NOTIONAL_PCT = float(os.getenv("PAIRS_PAIR_NOTIONAL_PCT", "0.09"))  #
 PAIRS_MAX_GROSS_PCT = float(os.getenv("PAIRS_MAX_GROSS_PCT", "2.0"))  # 2x leverage (user, 2026-07-20); gross exposure up to 200% of equity
 PAIRS_MARGIN_FRAC = float(os.getenv("PAIRS_MARGIN_FRAC", "0.5"))       # cash margin per unit gross notional; 0.5 => up to 2x gross with full equity
 PAIRS_STOP_PCT = float(os.getenv("PAIRS_STOP_PCT", "0.15"))            # last-resort dollar stop (rugs). Primary stop is PAIRS_Z_STOP_DELTA.
-PAIRS_Z_STOP_DELTA = float(os.getenv("PAIRS_Z_STOP_DELTA", "0.5"))     # close if z moves +0.5 further adverse from entry z
+PAIRS_Z_STOP_DELTA = float(os.getenv("PAIRS_Z_STOP_DELTA", "1.0"))     # close if z moves +1.0 further adverse from entry z
 PAIRS_NEG_EXPECTANCY_DEPLOY_PCT = float(os.getenv("PAIRS_NEG_EXPECTANCY_DEPLOY_PCT", "0.40"))
 PAIRS_MAX_HOLD_HOURS = float(os.getenv("PAIRS_MAX_HOLD_HOURS", str(30 * 24)))
 # Strategy LAB: race pairs config variants in parallel, each an isolated book, so

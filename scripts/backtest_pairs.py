@@ -204,7 +204,7 @@ def compare_stops(lo_ts: int, hi_ts: int, k: int = 60, max_windows: int = 6,
     for d in deltas:
         label = "z_revert only" if d is None else f"z_stop +{d:g}"
         specs_plan.append((label, d, None))
-    specs_plan.append(("AFTER z_stop +0.5 + dollar 15% (new live)", 0.5, 0.15))
+    specs_plan.append(("AFTER z_stop +1.0 + dollar 15% (new live)", 1.0, 0.15))
     for label, _, _ in specs_plan:
         books[label] = []
     print(f"compare-stops windows={len(starts)} universe={len(logp)} K={k} "

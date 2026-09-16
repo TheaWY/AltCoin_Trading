@@ -43,10 +43,12 @@ COST_LEG = float(getattr(config, "PAIRS_COST_LEG", 0.0010))        # per executi
 FUND_HR = float(getattr(config, "PAIRS_FUND_HR", 0.0000125))       # short-leg funding/borrow per hour
 COVERAGE = float(getattr(config, "PAIRS_MIN_COVERAGE", 0.7))       # min finite fraction in select window
 MIN_LISTING_DAYS = float(getattr(config, "PAIRS_MIN_LISTING_DAYS", 180))
-# 0.5: live book avg win +6.76 vs avg loss -10.59 was driven by a 15% dollar
+# 1.0: live book avg win +6.76 vs avg loss -10.59 was driven by a 15% dollar
 # stop that overshoots the z-revert target (Z_IN→Z_OUT ≈ 1.5σ). User allowed
-# entry-z +1.5 or a tighter stop; only +0.5 keeps |avg loss| ≤ avg win.
-Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 0.5))
+# entry-z +1.5 or a tighter stop. On the corrected daily-volume universe
+# (K=60, 2026-03–05), +1.0 is the loosest delta with |avgL| ≤ avgW and the
+# best expectancy among those that pass; +1.5 still has avgL > avgW.
+Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 1.0))
 STOP_PCT = float(getattr(config, "PAIRS_STOP_PCT", 0.15))          # last-resort dollar/spread stop
 
 
@@ -232,11 +234,12 @@ def should_dollar_stop(spread_pnl: float, stop_pct: float | None = None) -> bool
 def should_stop(z: float | None, entry_z: float | None,
                 delta: float | None = None) -> bool:
     """Adverse z-stop: the spread moved `delta` further from the mean in the
-    same direction as entry. Default delta=0.5: entry at z=+2.2 (short rich
-    spread) stops at z>=+2.7; entry at z=-2.2 stops at z<=-2.7. Sized so the
+    same direction as entry. Default delta=1.0: entry at z=+2.2 (short rich
+    spread) stops at z>=+3.2; entry at z=-2.2 stops at z<=-3.2. Sized so the
     typical losing spread move is no larger than the z-revert take
-    (Z_IN -> Z_OUT = 1.5 sigma of the *winning* side, but a much tighter
-    cut on the adverse side)."""
+    (Z_IN -> Z_OUT = 1.5 sigma of the *winning* side). Default +1.0 is the
+    loosest cut that still keeps |avg loss| ≤ avg win on the live-like
+    historical panels."""
     if z is None or entry_z is None:
         return False
     d = Z_STOP_DELTA if delta is None else delta
