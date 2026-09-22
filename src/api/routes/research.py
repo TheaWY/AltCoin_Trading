@@ -246,6 +246,47 @@ def overfit() -> dict[str, Any]:
     return result
 
 
+@router.get("/hypotheses")
+def get_hypotheses() -> dict[str, Any]:
+    """Rotating hypothesis engine + signal lab forward test, for the dashboard."""
+    from pathlib import Path
+
+    from src.engine import sentiment_gate, signal_lab
+
+    storage = get_storage()
+    root = Path(__file__).resolve().parents[3]
+    latest: dict[str, Any] = {}
+    try:
+        latest = json.loads((root / "data" / "reports" / "hypotheses" / "latest.json").read_text())
+    except (OSError, ValueError):
+        pass
+    gstate = sentiment_gate.load_state(storage)
+    lab_state = signal_lab.load_state(storage, int(time.time()))
+
+    def price(sym: str) -> float | None:
+        row = storage.get_latest_price(sym)
+        return float(row["close"]) if row else None
+
+    lab_eq = signal_lab.equity(lab_state, price) if lab_state.get("positions") or lab_state.get("rebalances") else None
+    supported = sorted((latest.get("supported") or {}).items(), key=lambda kv: kv[1].get("q") or 1)
+    return {
+        "run_at": latest.get("run_at"),
+        "explored": latest.get("registry_size"),
+        "space": latest.get("space_size"),
+        "tested_last_run": len(latest.get("tested") or []),
+        "supported": [{"hid": h, "h0": r.get("h0"), "ic": r.get("ic"), "t": r.get("t"), "q": r.get("q"),
+                       "bps_per_sd": r.get("bps_per_sd")} for h, r in supported[:12]],
+        "weights": gstate.get("weights") or {},
+        "gate_mode": sentiment_gate.effective_mode(gstate),
+        "oos": gstate.get("oos") or {},
+        "signal_lab": {
+            "equity": lab_eq, "starting": lab_state.get("starting"),
+            "rebalances": lab_state.get("rebalances", 0), "legs": len(lab_state.get("positions") or []),
+            "fees_paid": lab_state.get("fees_paid", 0.0), "started_at": lab_state.get("started_at"),
+        },
+    }
+
+
 @router.get("/history")
 def get_history() -> dict[str, Any]:
     """Promotion timeline + weekly long-term research report cards."""
