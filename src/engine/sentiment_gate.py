@@ -55,14 +55,17 @@ def _wide(rows: list[Any], value: str) -> pd.DataFrame:
 
 
 def load_panel(storage: Any, since_ts: int, symbols: list[str] | None = None) -> dict[str, pd.DataFrame]:
-    """Hourly wide panel from the DB. Prices use the spot '1h' timeframe,
-    which covers more of the sentiment universe than '1h_perp'."""
+    """Hourly wide panel from the DB: perp prices ('1h_perp', refreshed
+    hourly by scripts/refresh_perp.py), spot '1h' as fallback."""
     sym_sql, params = "", [since_ts]
     if symbols:
         sym_sql = " AND symbol IN (" + ",".join("?" * len(symbols)) + ")"
         params += list(symbols)
     with storage._connect() as conn:  # noqa: SLF001
         prices = conn.execute(
+            "SELECT symbol, timestamp, close, volume FROM prices "
+            "WHERE timeframe = '1h_perp' AND timestamp >= ?" + sym_sql, tuple(params)).fetchall()
+        spot = conn.execute(
             "SELECT symbol, timestamp, close, volume FROM prices "
             "WHERE timeframe = '1h' AND timestamp >= ?" + sym_sql, tuple(params)).fetchall()
         funding = conn.execute(
@@ -74,8 +77,10 @@ def load_panel(storage: Any, since_ts: int, symbols: list[str] | None = None) ->
         oi = conn.execute(
             "SELECT symbol, timestamp, open_interest FROM open_interest "
             "WHERE timestamp >= ?" + sym_sql, tuple(params)).fetchall()
-    close = _wide(prices, "close")
-    vol = _wide(prices, "volume")
+    # Perp prices match the futures market the sentiment comes from; spot
+    # fills any symbol/hour the perp series lacks.
+    close = _wide(prices, "close").combine_first(_wide(spot, "close"))
+    vol = _wide(prices, "volume").combine_first(_wide(spot, "volume"))
     ls_w = _wide(ls, "ratio")
     cols = close.columns.intersection(ls_w.columns)   # sentiment universe only
     close = close[cols]
