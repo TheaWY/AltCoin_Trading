@@ -207,10 +207,20 @@ def test_question(
     arr = np.asarray(ics)
     mean_ic = float(arr.mean())
     sd = float(arr.std(ddof=1))
-    t = mean_ic / sd * math.sqrt(n) if sd > 0 else 0.0
+    # Persistent features make consecutive ICs correlated even when the
+    # forward windows do not overlap; shrink n to its AR(1) effective size
+    # so a slow-moving feature cannot fake significance with many samples.
+    rho = 0.0
+    if n > 3 and np.std(arr[:-1]) > 0 and np.std(arr[1:]) > 0:
+        rho = float(np.corrcoef(arr[:-1], arr[1:])[0, 1])
+    rho = min(max(rho, 0.0), 0.95)
+    n_eff = n * (1 - rho) / (1 + rho)
+    t = mean_ic / sd * math.sqrt(n_eff) if sd > 0 else 0.0
     half = n // 2
     first, second = arr[:half].mean(), arr[half:].mean()
     out.update(
+        ic_autocorr=rho,
+        n_effective=n_eff,
         mean_ic=mean_ic,
         t_stat=t,
         p_value=_p_two_sided(t),

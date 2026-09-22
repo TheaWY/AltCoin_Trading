@@ -44,7 +44,10 @@ PROMISING_P = 0.10
 FDR_Q = lab.FDR_Q
 
 HORIZONS = (1, 4, 8, 24, 72, 168)
-TARGETS = ("residual", "raw")
+# Rank IC is invariant to subtracting the cross-sectional mean, so "raw" and
+# "residual" targets give identical tests; keeping both double-counted every
+# finding in the FDR pass. Market-relative only.
+TARGETS = ("residual",)
 CONDITIONS = ("all", "high_vol", "low_vol", "btc_up", "btc_down", "liquid", "illiquid")
 
 SIGNAL_TEXT = {
