@@ -369,6 +369,13 @@ def run_pairs_cycle(storage=None) -> dict[str, Any]:
         if pairs.is_excluded(p["a"]) or pairs.is_excluded(p["b"]):
             continue
         z = _pair_z(storage, p["a"], p["b"], p["beta"], now_ts)
+        if pairs.should_open(z):
+            # sentiment gate on the spread: +1 = long A / short B
+            from src.engine.sentiment_gate import allow_pair
+
+            long_leg, short_leg = (p["a"], p["b"]) if pairs.entry_side(z) > 0 else (p["b"], p["a"])
+            if not allow_pair(storage, long_leg, short_leg)[0]:
+                continue
         if pairs.should_open(z) and _open_one(storage, p["a"], p["b"], p["beta"], z, now_ts):
             opened += 1
             live_open += 1
