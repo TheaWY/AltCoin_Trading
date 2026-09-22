@@ -51,7 +51,19 @@ def main() -> int:
                          {"supported": result["supported"]}, default=float, ensure_ascii=False)
     (out / "runs" / f"{result['run_at']}.json").write_text(payload)
     (out / "latest.json").write_text(payload)
-    (out / "latest.md").write_text(engine.render_markdown(result))
+    md = engine.render_markdown(result)
+    try:
+        from src.engine import signal_lab
+
+        st = signal_lab.load_state(storage, int(time.time()))
+        if st.get("rebalances"):
+            eq = signal_lab.equity(st, lambda s: (lambda r: float(r["close"]) if r else None)(storage.get_latest_price(s)))
+            md += (f"\n\n## Forward test (signal lab book)\n\nEquity {eq:.2f} from {st['starting']:.2f} "
+                   f"({(eq / st['starting'] - 1) * 100:+.2f}%), {st['rebalances']} rebalances, "
+                   f"{len(st['positions'])} open legs, fees {st['fees_paid']:.2f}.\n")
+    except Exception:  # noqa: BLE001
+        log.exception("signal lab summary failed")
+    (out / "latest.md").write_text(md)
     log.info("run done: %d tested, %d/%d explored, %d supported, weights %s, gate %s (%s)",
              len(result["tested"]), result["registry_size"], result["space_size"],
              len(result["supported"]), result["weights"],

@@ -38,7 +38,7 @@ import pandas as pd
 from src.research import sentiment_lab as lab
 
 HOUR = 3600
-N_PER_RUN = 40
+N_PER_RUN = 100
 RETEST_DAYS = 7
 PROMISING_P = 0.10
 FDR_Q = lab.FDR_Q

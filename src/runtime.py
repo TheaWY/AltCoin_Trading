@@ -143,6 +143,10 @@ def start_scheduler() -> BackgroundScheduler:
         _core_job, "interval", minutes=config.COLLECTION_INTERVAL_MINUTES,
         id="core_cycle", replace_existing=True, max_instances=1, coalesce=True,
     )
+    scheduler.add_job(
+        _signal_lab_job, "interval", minutes=config.COLLECTION_INTERVAL_MINUTES,
+        id="signal_lab", replace_existing=True, max_instances=1, coalesce=True,
+    )
     scheduler.start()
     start_liquidation_stream()
     logger.info(
@@ -151,6 +155,16 @@ def start_scheduler() -> BackgroundScheduler:
         config.EXIT_POLL_INTERVAL_MINUTES,
     )
     return scheduler
+
+
+def _signal_lab_job() -> None:
+    """Forward-test the hypothesis composite in a separate paper book."""
+    try:
+        from src.engine.signal_lab import run_signal_lab_cycle
+
+        run_signal_lab_cycle()
+    except Exception:
+        logger.exception("signal lab cycle failed")
 
 
 def _core_job() -> None:
