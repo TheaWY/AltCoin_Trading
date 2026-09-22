@@ -36,6 +36,7 @@ REBALANCE_HOURS = 24
 QUANTILE = 0.2
 GROSS = 1.0
 MIN_NAMES = 20
+RESIZE_TOLERANCE = 0.25   # keep a surviving leg unless it is >25% off its target size
 
 
 def _fee() -> float:
@@ -96,16 +97,32 @@ def target_book(scores: dict[str, float], eq: float) -> dict[str, tuple[str, flo
 def rebalance(state: dict[str, Any], scores: dict[str, float],
               price_of: Callable[[str], float | None], now: int) -> dict[str, Any]:
     fee = _fee()
-    # close everything (simple and exact; turnover is what it is)
-    for p in state["positions"]:
+    eq = equity(state, price_of)
+    target = target_book(scores, eq)
+    kept: list[dict] = []
+
+    def close(p: dict) -> None:
         px = price_of(p["symbol"]) or p["entry"]
-        val = _pos_value(p, px)
         cost = px * p["qty"] * fee
-        state["cash"] += val - cost
+        state["cash"] += _pos_value(p, px) - cost
         state["fees_paid"] += cost
-    state["positions"] = []
-    eq = float(state["cash"])
-    for sym, (direction, notional) in target_book(scores, eq).items():
+
+    # Keep legs that stay in the book on the same side and within
+    # RESIZE_TOLERANCE of their target size: re-trading them would only pay
+    # fees. Everything else is closed and reopened at target.
+    for p in state["positions"]:
+        tgt = target.get(p["symbol"])
+        px = price_of(p["symbol"]) or p["entry"]
+        if tgt and tgt[0] == p["dir"] and tgt[1] > 0 and \
+                abs(_pos_value(p, px) - tgt[1]) <= RESIZE_TOLERANCE * tgt[1]:
+            kept.append(p)
+        else:
+            close(p)
+    held = {p["symbol"] for p in kept}
+    state["positions"] = kept
+    for sym, (direction, notional) in target.items():
+        if sym in held:
+            continue
         px = price_of(sym)
         if not px or notional <= 0:
             continue

@@ -23,6 +23,18 @@ class SignalLabTests(unittest.TestCase):
     def test_too_few_names_stays_flat(self):
         self.assertEqual(sl.target_book({"A": 1.0, "B": 2.0}, 1000.0), {})
 
+    def test_surviving_legs_are_not_retraded(self):
+        state = sl.fresh_state(0)
+        scores = {f"S{i}": float(i) for i in range(50)}
+        prices = {s: 10.0 for s in scores}
+        sl.rebalance(state, scores, prices.get, 0)
+        fees_first = state["fees_paid"]
+        eq_before = sl.equity(state, prices.get)
+        sl.rebalance(state, scores, prices.get, 86400)   # same ranking
+        self.assertAlmostEqual(state["fees_paid"], fees_first)          # nothing traded
+        self.assertAlmostEqual(sl.equity(state, prices.get), eq_before)
+        self.assertEqual(len(state["positions"]), 20)
+
     def test_rebalance_accounting(self):
         state = sl.fresh_state(0)
         state["cash"] = 1000.0
