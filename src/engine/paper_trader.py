@@ -931,10 +931,19 @@ class PaperTrader:
         return total
 
     def investment_for_symbol(
-        self, symbol: str, current_price: float | None = None
+        self,
+        symbol: str,
+        current_price: float | None = None,
+        open_trade: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Per-coin invested amount, value, and P&L (open + realized)."""
-        open_trade = self.storage.get_open_trade_for_symbol(symbol)
+        """Per-coin invested amount, value, and P&L (open + realized).
+
+        Pass ``open_trade`` when a symbol can hold more than one open trade
+        (e.g. two pairs_statarb legs on the same base); otherwise the first
+        open trade for the symbol is used.
+        """
+        if open_trade is None:
+            open_trade = self.storage.get_open_trade_for_symbol(symbol)
         closed = self.storage.get_closed_trades_for_symbol(symbol)
         realized_pnl = sum(float(t["pnl"] or 0) for t in closed)
         closed_invested = sum(
