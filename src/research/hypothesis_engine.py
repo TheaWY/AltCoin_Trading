@@ -41,6 +41,8 @@ HOUR = 3600
 N_PER_RUN = 100
 RETEST_DAYS = 7
 PROMISING_P = 0.10
+TRAIN_MIN_T = 2.5      # OOS validation: selection bar inside the training window
+TRAIN_MAX_KEYS = 12
 FDR_Q = lab.FDR_Q
 
 HORIZONS = (1, 4, 8, 24, 72, 168)
@@ -268,20 +270,64 @@ def weights_from_registry(registry: dict[str, dict[str, Any]]) -> dict[str, dict
         if r.get("verdict") != "supported":
             continue
         h = Hypothesis.parse(hid)
-        if h.target != "residual" or h.condition != "all":
+        if h.target != "residual":
             continue
-        if h.key not in best or abs(r["t"]) > abs(best[h.key][1]["t"]):
-            best[h.key] = (hid, r)
+        # conditional findings get their own key and only act while the
+        # condition holds (market regime) or on symbols inside it (liquidity)
+        wkey = h.key if h.condition == "all" else f"{h.key}@{h.condition}"
+        if wkey not in best or abs(r["t"]) > abs(best[wkey][1]["t"]):
+            best[wkey] = (hid, r)
     raw = {k: float(np.sign(r["t"]) * min(abs(r["t"]), 3.0)) for k, (_, r) in best.items()}
     total = sum(abs(v) for v in raw.values())
     return {k: {"weight": raw[k] / total if total else 0.0, "hid": best[k][0], "t_stat": best[k][1]["t"]}
             for k in raw}
 
 
-def validate(cache: FeatureCache, close: pd.DataFrame, weights: dict[str, float]) -> dict[str, Any]:
-    """Out-of-sample check of the composite: signs and relative sizes are
-    re-fit on the first 70% of hours, then the composite is scored on the
-    last 30% it never saw."""
+def split_key(wkey: str) -> tuple[str, str]:
+    """'sig:tf@cond' -> ('sig:tf', 'cond'); unconditional keys get 'all'."""
+    key, _, cond = wkey.partition("@")
+    return key, cond or "all"
+
+
+def conditioned_feature(cache: FeatureCache, masks: dict, wkey: str) -> pd.DataFrame | None:
+    """Feature frame with cells outside the key's condition set to NaN."""
+    key, cond = split_key(wkey)
+    feat = cache.feature(key)
+    if cond == "all":
+        return feat
+    mask = masks.get(cond)
+    if mask is None:
+        return None
+    return feat.where(mask.reindex_like(feat).fillna(False).astype(bool))
+
+
+def composite(cache: FeatureCache, masks: dict, weights: dict[str, float]) -> pd.DataFrame | None:
+    parts = []
+    for wkey, w in weights.items():
+        if not w:
+            continue
+        f = conditioned_feature(cache, masks, wkey)
+        if f is None:
+            continue
+        parts.append(lab.xs_zscore_frame(f).fillna(0.0) * w)
+    if not parts:
+        return None
+    total = parts[0]
+    for p in parts[1:]:
+        total = total.add(p, fill_value=0.0)
+    return total
+
+
+def validate(cache: FeatureCache, close: pd.DataFrame, weights: dict[str, float],
+             masks: dict | None = None) -> dict[str, Any]:
+    """Out-of-sample check of the composite.
+
+    ``weights`` is the CANDIDATE set: every signal/condition the engine has
+    ever tested, not just the supported ones -- choosing candidates by their
+    full-sample significance would leak the test window into the selection.
+    Selection, signs and sizes are all decided on the first 70% of hours only
+    (|t| >= TRAIN_MIN_T, strongest TRAIN_MAX_KEYS), then the composite is
+    scored on the last 30% it never saw."""
     if not weights:
         return {"passed": False, "reason": "no supported unconditional market-relative signal yet"}
     idx = close.index
@@ -289,15 +335,25 @@ def validate(cache: FeatureCache, close: pd.DataFrame, weights: dict[str, float]
         return {"passed": False, "reason": "panel too short"}
     cut = idx[int(len(idx) * (1 - lab.OOS_FRACTION))]
     train_fwd = lab.forward_returns(close.loc[:cut], lab.PRIMARY_HORIZON, "residual")
+    masks = masks if masks is not None else {}
     fit: dict[str, float] = {}
-    for key in weights:
-        res = lab.test_question(cache.feature(key).loc[:cut], train_fwd, lab.PRIMARY_HORIZON)
+    for wkey in weights:
+        f = conditioned_feature(cache, masks, wkey)
+        if f is None:
+            continue
+        res = lab.test_question(f.loc[:cut], train_fwd, lab.PRIMARY_HORIZON,
+                                min_cross_section=max(10, lab.MIN_CROSS_SECTION // 2))
         t = res.get("t_stat")
-        if t is not None and abs(t) >= 1.0:
-            fit[key] = float(np.sign(t) * min(abs(t), 3.0))
+        if t is not None and abs(t) >= TRAIN_MIN_T:
+            fit[wkey] = float(np.sign(t) * min(abs(t), 3.0))
+    # keep the strongest few so a wide candidate set cannot overfit the train window
+    fit = dict(sorted(fit.items(), key=lambda kv: -abs(kv[1]))[:TRAIN_MAX_KEYS])
     if not fit:
         return {"passed": False, "reason": "signals not present in the training window"}
-    comp = lab.composite_frame({k: cache.feature(k).loc[cut:] for k in fit}, fit)
+    comp = composite(cache, masks, fit)
+    comp = comp.loc[cut:] if comp is not None else None
+    if comp is None:
+        return {"passed": False, "reason": "empty composite"}
     res = lab.test_question(comp, lab.forward_returns(close.loc[cut:], lab.PRIMARY_HORIZON, "residual"),
                             lab.PRIMARY_HORIZON)
     n, t, ic = res.get("n_periods", 0), res.get("t_stat"), res.get("mean_ic")
@@ -339,7 +395,12 @@ def run(panel: dict[str, pd.DataFrame], registry: dict[str, dict[str, Any]],
     apply_fdr(registry)
     target = weights_from_registry(registry)
     weights = lab.shift_weights(prev_weights or {}, target)
-    oos = validate(cache, close, {k: w for k, w in weights.items() if w})
+    candidates = {}
+    for hid in registry:
+        h = Hypothesis.parse(hid)
+        if h.target == "residual":
+            candidates[h.key if h.condition == "all" else f"{h.key}@{h.condition}"] = 1.0
+    oos = validate(cache, close, candidates, masks)
     log(f"tested {len(tested)} hypotheses; registry {len(registry)}; "
         f"supported {sum(r['verdict'] == 'supported' for r in registry.values())}")
     return {

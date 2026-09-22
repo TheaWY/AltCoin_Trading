@@ -53,6 +53,21 @@ class HypothesisEngineTests(unittest.TestCase):
         he.apply_fdr(reg)
         self.assertFalse(reg["ret:level|1h|raw|all"]["verdict"] == "supported")
 
+    def test_conditional_weights_only_act_inside_condition(self):
+        reg = {"oi:chg24|24h|residual|high_vol": {"p": 0.001, "n": 80, "halves_agree": True, "t": 3.5},
+               "ls:level|4h|residual|all": {"p": 0.001, "n": 80, "halves_agree": True, "t": -3.1}}
+        he.apply_fdr(reg)
+        w = he.weights_from_registry(reg)
+        self.assertIn("oi:chg24@high_vol", w)
+        self.assertIn("ls:level", w)
+        p = _panel(n_hours=900)
+        cache, masks = he.FeatureCache(p), he.condition_masks(p)
+        f = he.conditioned_feature(cache, masks, "oi:chg24@high_vol")
+        inside = masks["high_vol"].reindex_like(f).fillna(False).astype(bool)
+        self.assertTrue(f.where(~inside).isna().all().all())
+        comp = he.composite(cache, masks, {"oi:chg24@high_vol": 1.0, "ls:level": -0.5})
+        self.assertEqual(comp.shape, p["close"].shape)
+
     def test_parse_roundtrip(self):
         h = he.Hypothesis("funding", "z720", 72, "raw", "btc_up")
         self.assertEqual(he.Hypothesis.parse(h.hid), h)
