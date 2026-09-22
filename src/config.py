@@ -160,6 +160,14 @@ SETUP_PAIRS_STATARB_ENABLED = os.getenv("SETUP_PAIRS_STATARB_ENABLED", "false").
 SENTIMENT_GATE_MODE = os.getenv("SENTIMENT_GATE_MODE", "auto").strip().lower()
 # composite score (in cross-sectional sd) at which sentiment vetoes an entry
 SENTIMENT_GATE_THRESHOLD = float(os.getenv("SENTIMENT_GATE_THRESHOLD", "1.0"))
+
+# Core allocation (src/engine/core_manager.py): capital no strategy is using is
+# held as LONG CORE_SYMBOL instead of idle cash. target = equity*CORE_PCT - committed.
+CORE_ENABLED = os.getenv("CORE_ENABLED", "false").lower() == "true"
+CORE_SYMBOL = os.getenv("CORE_SYMBOL", "BTC/USDT")
+CORE_PCT = float(os.getenv("CORE_PCT", "0.97"))
+CORE_BAND = float(os.getenv("CORE_BAND", "0.05"))
+CORE_MIN_NOTIONAL = float(os.getenv("CORE_MIN_NOTIONAL", "10"))
 PAIRS_SEL_HOURS = int(os.getenv("PAIRS_SEL_HOURS", str(90 * 24)))    # trailing select window
 PAIRS_TRADE_HOURS = int(os.getenv("PAIRS_TRADE_HOURS", str(30 * 24)))  # rebalance / forward window
 PAIRS_ZWIN_HOURS = int(os.getenv("PAIRS_ZWIN_HOURS", str(20 * 24)))  # rolling z-score window

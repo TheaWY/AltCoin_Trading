@@ -134,12 +134,18 @@ def compute_scores(panel: dict[str, pd.DataFrame], weights: dict[str, float]) ->
     """Composite score per symbol at the latest hour of the panel."""
     if not weights or panel["close"].empty:
         return {}
-    feats = lab.build_features(panel)
+    from src.research.hypothesis_engine import FeatureCache
+
+    cache = FeatureCache(panel)
     total: pd.Series | None = None
-    for f, w in weights.items():
-        if not w or f not in feats:
+    for key, w in weights.items():
+        if not w or ":" not in key:
             continue
-        z = lab.xs_zscore(feats[f].iloc[-1]).fillna(0.0) * w
+        try:
+            latest = cache.feature(key).iloc[-1]
+        except KeyError:
+            continue
+        z = lab.xs_zscore(latest).fillna(0.0) * w
         total = z if total is None else total.add(z, fill_value=0.0)
     if total is None:
         return {}

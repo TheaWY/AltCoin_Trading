@@ -237,7 +237,9 @@ def _equity(storage) -> float:
     eq = cash
     for t in _open_pairs(storage):
         eq += _pair_gross(t) * MARGIN_FRAC + _pair_unrealized(storage, t)
-    return eq
+    from src.engine.core_manager import core_value
+
+    return eq + core_value(storage)
 
 
 def _open_one(storage, a: str, b: str, beta: float, z: float, now_ts: int) -> bool:

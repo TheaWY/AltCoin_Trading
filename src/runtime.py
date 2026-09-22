@@ -139,6 +139,10 @@ def start_scheduler() -> BackgroundScheduler:
             id="pairs_lab", replace_existing=True, max_instances=1, coalesce=True,
         )
         logger.info("Strategy LAB ENABLED — racing pairs variants every %s min", config.COLLECTION_INTERVAL_MINUTES)
+    scheduler.add_job(
+        _core_job, "interval", minutes=config.COLLECTION_INTERVAL_MINUTES,
+        id="core_cycle", replace_existing=True, max_instances=1, coalesce=True,
+    )
     scheduler.start()
     start_liquidation_stream()
     logger.info(
@@ -147,6 +151,18 @@ def start_scheduler() -> BackgroundScheduler:
         config.EXIT_POLL_INTERVAL_MINUTES,
     )
     return scheduler
+
+
+def _core_job() -> None:
+    """Keep idle capital in the core BTC position (src/engine/core_manager.py)."""
+    try:
+        from src.engine.core_manager import run_core_cycle
+
+        result = run_core_cycle()
+        if result.get("action") not in (None, "hold"):
+            logger.info("Core cycle: %s", result)
+    except Exception:
+        logger.exception("core cycle failed")
 
 
 def _exit_poll_job() -> None:

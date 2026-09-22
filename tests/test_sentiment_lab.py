@@ -120,7 +120,7 @@ class SentimentGateTests(unittest.TestCase):
 
     def test_compute_scores_uses_latest_row(self):
         p = _panel(n_hours=900)
-        sc = self.g.compute_scores(p, {"oi_chg24": 1.0})
+        sc = self.g.compute_scores(p, {"oi:chg24": 1.0})
         self.assertEqual(len(sc), 40)
         self.assertAlmostEqual(float(np.mean(list(sc.values()))), 0.0, places=6)
 
