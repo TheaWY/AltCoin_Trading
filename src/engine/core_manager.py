@@ -115,6 +115,10 @@ def run_core_cycle(storage: Any = None, now: int | None = None) -> dict[str, Any
     cash = float(storage.get_portfolio_state()["cash"])
     core = core_value(storage, price)
     committed = committed_to_strategies(storage, equity, cash, core)
+    # keep the signal book's allocation free even before it has deployed
+    from src.engine import signal_book
+
+    committed = max(committed, equity * signal_book.pct())
     target = max(0.0, equity * float(getattr(config, "CORE_PCT", 0.97)) - committed)
     band = float(getattr(config, "CORE_BAND", 0.05)) * equity
     drift = target - core

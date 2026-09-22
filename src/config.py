@@ -180,6 +180,11 @@ CORE_SYMBOL = os.getenv("CORE_SYMBOL", "BTC/USDT")
 CORE_PCT = float(os.getenv("CORE_PCT", "0.97"))
 CORE_BAND = float(os.getenv("CORE_BAND", "0.05"))
 CORE_MIN_NOTIONAL = float(os.getenv("CORE_MIN_NOTIONAL", "10"))
+
+# Signal book (src/engine/signal_book.py): SIGNAL_BOOK_PCT of equity trades the
+# research composite market-neutral; the core leaves that slice free.
+SIGNAL_BOOK_ENABLED = os.getenv("SIGNAL_BOOK_ENABLED", "false").lower() == "true"
+SIGNAL_BOOK_PCT = float(os.getenv("SIGNAL_BOOK_PCT", "0.10"))
 PAIRS_SEL_HOURS = int(os.getenv("PAIRS_SEL_HOURS", str(90 * 24)))    # trailing select window
 PAIRS_TRADE_HOURS = int(os.getenv("PAIRS_TRADE_HOURS", str(30 * 24)))  # rebalance / forward window
 PAIRS_ZWIN_HOURS = int(os.getenv("PAIRS_ZWIN_HOURS", str(20 * 24)))  # rolling z-score window

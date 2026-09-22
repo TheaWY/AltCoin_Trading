@@ -216,7 +216,7 @@ class PaperTrader:
             # and owned entirely by src/engine/pairs_trader.run_pairs_cycle. The
             # per-symbol stop/TP path would misfire on them (stop_loss/take_profit
             # are 0 sentinels), so skip them here.
-            if trade.get("strategy") in ("pairs_statarb", "core_btc"):
+            if trade.get("strategy") in ("pairs_statarb", "core_btc", "signal_xs"):
                 continue
             # No-stop / time-exit-only: skip trailing + partial-TP (the stop
             # itself is skipped inside _check_exit). Mirrors backtest.check_exits

@@ -177,6 +177,13 @@ def _core_job() -> None:
             logger.info("Core cycle: %s", result)
     except Exception:
         logger.exception("core cycle failed")
+    # after the core, so the cash it frees is available
+    try:
+        from src.engine.signal_book import run_signal_book_cycle
+
+        run_signal_book_cycle()
+    except Exception:
+        logger.exception("signal book cycle failed")
 
 
 def _exit_poll_job() -> None:
