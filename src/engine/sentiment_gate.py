@@ -55,8 +55,8 @@ def _wide(rows: list[Any], value: str) -> pd.DataFrame:
 
 
 def load_panel(storage: Any, since_ts: int, symbols: list[str] | None = None) -> dict[str, pd.DataFrame]:
-    """Hourly wide panel from the DB. Prices use the '1h' timeframe (the
-    1h_perp table stopped updating on 2026-06-30)."""
+    """Hourly wide panel from the DB. Prices use the spot '1h' timeframe,
+    which covers more of the sentiment universe than '1h_perp'."""
     sym_sql, params = "", [since_ts]
     if symbols:
         sym_sql = " AND symbol IN (" + ",".join("?" * len(symbols)) + ")"
