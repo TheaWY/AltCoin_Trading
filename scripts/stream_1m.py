@@ -91,9 +91,24 @@ async def flusher(storage, buf: Buffer, deadline: float) -> None:
                 log.exception("prune failed")
 
 
+async def refill_after_start(delay_s: int = 90, hours: float = 3.0) -> None:
+    """A restart leaves a hole between the last stored bar and the first
+    streamed one; re-fetch the recent window over REST once the stream is up."""
+    await asyncio.sleep(delay_s)
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, str(PROJECT_ROOT / "scripts" / "backfill_1m.py"), "--refill-hours", str(hours),
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        await proc.wait()
+        log.info("startup refill finished (exit %s)", proc.returncode)
+    except Exception:  # noqa: BLE001
+        log.exception("startup refill failed")
+
+
 async def main() -> None:
     storage = get_storage()
     k1.ensure_schema(storage)
+    refill = asyncio.get_running_loop().create_task(refill_after_start())  # noqa: F841 (keep a reference)
     while True:
         symbols = k1.usdt_perps()
         deadline = time.time() + REFRESH_S
