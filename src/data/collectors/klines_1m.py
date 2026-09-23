@@ -45,7 +45,15 @@ INSERT = ("INSERT INTO prices_1m (symbol, ts, open, high, low, close, volume, qu
 
 
 def ensure_schema(storage: Any) -> None:
+    """Create table/index only when missing. CREATE INDEX IF NOT EXISTS still
+    takes a SHARE lock on the table first, so running it unconditionally made
+    the stream hang at startup behind the backfill's open insert."""
     with storage._connect() as c:  # noqa: SLF001
+        if getattr(storage, "is_postgres", False):
+            row = c.execute("SELECT to_regclass('prices_1m') AS t, to_regclass('prices_1m_ts') AS i").fetchone()
+            row = dict(row)
+            if row.get("t") and row.get("i"):
+                return
         c.execute(SCHEMA)
         c.execute("CREATE INDEX IF NOT EXISTS prices_1m_ts ON prices_1m (ts)")
 
