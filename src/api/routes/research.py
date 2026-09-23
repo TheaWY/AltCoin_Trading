@@ -275,7 +275,8 @@ def get_pumps() -> dict[str, Any]:
                                    "AVG(CASE WHEN status='closed' THEN (CASE WHEN net>0 THEN 1.0 ELSE 0.0 END) END) AS win "
                                    "FROM pump_signals").fetchone())
                 shadow.update(open=int(s.get("o") or 0), closed=int(s.get("cl") or 0),
-                              avg_net=s.get("avg_net"), win_rate=s.get("win"))
+                              avg_net=None if s.get("avg_net") is None else float(s["avg_net"]),
+                              win_rate=None if s.get("win") is None else float(s["win"]))
                 shadow["recent"] = [dict(x) for x in c.execute(
                     "SELECT symbol, rule, opened_at, entry, peak, status, net, reason, target_pct "
                     "FROM pump_signals ORDER BY opened_at DESC LIMIT 12").fetchall()]
