@@ -246,6 +246,72 @@ def overfit() -> dict[str, Any]:
     return result
 
 
+@router.get("/pumps")
+def get_pumps() -> dict[str, Any]:
+    """Pump rider: 1m pipeline health, precursor findings, rules, shadow and live results."""
+    from pathlib import Path
+
+    storage = get_storage()
+    root = Path(__file__).resolve().parents[3]
+    rep: dict[str, Any] = {}
+    try:
+        rep = json.loads((root / "data" / "reports" / "pumps" / "latest.json").read_text())
+    except (OSError, ValueError):
+        pass
+    now = int(time.time())
+    pipe = {"symbols_last_min": 0, "last_bar_age_s": None}
+    shadow = {"open": 0, "closed": 0, "win_rate": None, "avg_net": None, "recent": []}
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            r = dict(c.execute("SELECT MAX(ts) AS mx FROM prices_1m WHERE ts > ?", (now - 900,)).fetchone())
+            if r.get("mx"):
+                pipe["last_bar_age_s"] = now - int(r["mx"])
+                pipe["symbols_last_min"] = int(dict(c.execute(
+                    "SELECT COUNT(*) AS n FROM prices_1m WHERE ts = ?", (int(r["mx"]),)).fetchone())["n"])
+            if _table_exists("pump_signals"):
+                s = dict(c.execute("SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS o, "
+                                   "SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) AS cl, "
+                                   "AVG(CASE WHEN status='closed' THEN net END) AS avg_net, "
+                                   "AVG(CASE WHEN status='closed' THEN (CASE WHEN net>0 THEN 1.0 ELSE 0.0 END) END) AS win "
+                                   "FROM pump_signals").fetchone())
+                shadow.update(open=int(s.get("o") or 0), closed=int(s.get("cl") or 0),
+                              avg_net=s.get("avg_net"), win_rate=s.get("win"))
+                shadow["recent"] = [dict(x) for x in c.execute(
+                    "SELECT symbol, rule, opened_at, entry, peak, status, net, reason, target_pct "
+                    "FROM pump_signals ORDER BY opened_at DESC LIMIT 12").fetchall()]
+    except Exception:  # noqa: BLE001
+        pass
+    live = [dict(t) for t in storage.get_open_trades() if t.get("strategy") == "pump_rider"]
+    closed = []
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            closed = [dict(x) for x in c.execute(
+                "SELECT symbol, entry_price, exit_price, pnl, exit_reason, opened_at, closed_at FROM paper_trades "
+                "WHERE strategy='pump_rider' AND status='closed' ORDER BY closed_at DESC LIMIT 10").fetchall()]
+    except Exception:  # noqa: BLE001
+        pass
+    study = rep.get("study") or {}
+    pre = (rep.get("precursors") or {}).get("precursors") or []
+    return {
+        "pipeline": pipe,
+        "report_at": rep.get("run_at"),
+        "coins": study.get("symbols"), "minutes": study.get("minutes"),
+        "rules_tested": study.get("rules_tested"),
+        "validated": [{k: r.get(k) for k in ("rule", "events", "mfe_median", "minutes_to_peak_median",
+                                             "test_mean_net", "test_t", "test_win_rate", "target_pct", "trail")}
+                      for r in (study.get("validated") or [])[:8]],
+        "top_rules": [{k: r.get(k) for k in ("rule", "events", "mfe_median", "test_mean_net", "test_t",
+                                             "test_win_rate", "validated")} for r in (rep.get("top_rules") or [])[:8]],
+        "onsets": (rep.get("precursors") or {}).get("onsets_total"),
+        "precursors": [{k: r.get(k) for k in ("text", "train_auc", "test_auc", "test_lift_top10", "holds")}
+                       for r in pre[:8]],
+        "shadow": shadow,
+        "live_open": [{k: t.get(k) for k in ("symbol", "entry_price", "take_profit", "trail_price", "opened_at", "quantity")}
+                      for t in live],
+        "live_closed": closed,
+    }
+
+
 @router.get("/hypotheses")
 def get_hypotheses() -> dict[str, Any]:
     """Rotating hypothesis engine + signal lab forward test, for the dashboard."""

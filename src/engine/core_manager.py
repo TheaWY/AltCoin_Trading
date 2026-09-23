@@ -118,7 +118,9 @@ def run_core_cycle(storage: Any = None, now: int | None = None) -> dict[str, Any
     # keep the signal book's allocation free even before it has deployed
     from src.engine import signal_book
 
-    committed = max(committed, equity * signal_book.pct())
+    from src.engine import pump_rider
+
+    committed = max(committed, equity * (signal_book.pct() + pump_rider.reserve_pct(storage)))
     target = max(0.0, equity * float(getattr(config, "CORE_PCT", 0.97)) - committed)
     band = float(getattr(config, "CORE_BAND", 0.05)) * equity
     drift = target - core

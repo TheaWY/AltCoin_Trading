@@ -23,7 +23,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-STREAM_URL = "wss://fstream.binance.com/stream?streams=!miniTicker@arr"
+STREAM_URL = "wss://fstream.binance.com/market/stream?streams=!miniTicker@arr"  # /market: old path went silent
 REST_24H_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"  # weight 40
 REST_PRICE_URL = "https://fapi.binance.com/fapi/v1/ticker/price"  # weight 2
 BROADCAST_INTERVAL_SECONDS = 0.25
