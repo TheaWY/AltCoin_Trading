@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -61,6 +62,45 @@ def precursor_family(panel, pre: dict, split: int) -> list[tuple[str, dict, list
         mask = (score >= m) & liquid
         key = f"pre{m}of{len(flags)}"
         out.append((key, {"type": "precursor", "m": m, "features": spec}, ps.events(mask)))
+    out += rank_score_family(panel, feats, held, liquid, split)
+    return out
+
+
+def rank_score_family(panel, feats, held, liquid, split) -> list[tuple[str, dict, list]]:
+    """Composite precursor score: the average signed percentile of every held
+    feature (percentiles from the train window only), then trade only the most
+    extreme tail. Voting on 10% thresholds fires far too often; the tail of a
+    continuous score is where precision can beat costs."""
+    liq_tr = liquid.iloc[:split].to_numpy(dtype=bool)
+    grids: dict[str, list] = {}
+    total = None
+    n = 0
+    for r in held:
+        name = r["feature"]
+        f = feats[name]
+        base = f.iloc[:split].to_numpy()[liq_tr]
+        base = np.sort(base[np.isfinite(base)])
+        if len(base) < 1000:
+            continue
+        grid = np.quantile(base, np.linspace(0, 1, 101)).astype(float)
+        sign = 1.0 if (r["train_auc"] or 0.5) > 0.5 else -1.0
+        vals = f.to_numpy(dtype=np.float32)
+        pct = np.interp(vals, grid, np.linspace(0, 1, 101)).astype(np.float32)
+        pct[~np.isfinite(vals)] = 0.5
+        pct = pct if sign > 0 else 1 - pct
+        total = pct if total is None else total + pct
+        grids[name] = [sign, [round(x, 6) for x in grid.tolist()]]
+        n += 1
+    if n < 2:
+        return []
+    score = pd.DataFrame(total / n, index=panel["close"].index, columns=panel["close"].columns)
+    tr = score.iloc[:split].to_numpy()[liq_tr]
+    out = []
+    for tail in (0.005, 0.001, 0.0002):
+        thr = float(np.quantile(tr, 1 - tail))
+        mask = (score >= thr) & liquid
+        key = f"prescore_top{tail * 100:g}pct"
+        out.append((key, {"type": "prescore", "thr": thr, "grids": grids}, ps.events(mask)))
     return out
 
 

@@ -67,7 +67,7 @@ def reserve_pct(storage: Any) -> float:
 
 
 def _latest_features(storage: Any, now: int, rules: list[dict]) -> tuple[dict, dict]:
-    need_pre = any(r["trigger"].get("type") == "precursor" for r in rules)
+    need_pre = any(r["trigger"].get("type") in ("precursor", "prescore") for r in rules)
     minutes = 1500 if need_pre else ps.LOOKBACK_MIN + 30
     panel = ps.load_panel(storage, now - minutes * 60)
     feats: dict = {w: ps.features(panel, w) for w in ps.WINDOWS}
@@ -81,6 +81,19 @@ def _latest_features(storage: Any, now: int, rules: list[dict]) -> tuple[dict, d
 
 def _fires(feats: dict, rule: dict, sym: str) -> bool:
     t = rule["trigger"]
+    if t.get("type") == "prescore":
+        try:
+            if feats["liquid"][sym].iat[-1] < ps.MIN_DOLLAR_VOL:
+                return False
+            total, n = 0.0, 0
+            for name, (sign, grid) in t["grids"].items():
+                v = float(feats["pre"][name][sym].iat[-1])
+                p = float(np.interp(v, grid, np.linspace(0, 1, len(grid)))) if np.isfinite(v) else 0.5
+                total += p if sign > 0 else 1 - p
+                n += 1
+            return n > 0 and total / n >= t["thr"]
+        except (KeyError, IndexError):
+            return False
     if t.get("type") == "precursor":
         try:
             if feats["liquid"][sym].iat[-1] < ps.MIN_DOLLAR_VOL:

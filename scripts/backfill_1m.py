@@ -29,6 +29,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--symbols", default="")
+    ap.add_argument("--refill-hours", type=float, default=0,
+                    help="re-fetch the last N hours for every symbol (fills gaps left by stream restarts)")
     args = ap.parse_args()
     storage = get_storage()
     k1.ensure_schema(storage)
@@ -39,7 +41,10 @@ def main() -> int:
     session = requests.Session()
     total = 0
     for i, sym in enumerate(symbols):
-        cursor = max(start_floor, have.get(sym, 0) + 60)
+        if args.refill_hours:
+            cursor = now_min - int(args.refill_hours * 3600)
+        else:
+            cursor = max(start_floor, have.get(sym, 0) + 60)
         rows = []
         while cursor < now_min:
             r = session.get(f"{k1.FAPI}/fapi/v1/klines", params={
