@@ -118,6 +118,11 @@ class CoreManagerTests(unittest.TestCase):
             return {"equity": eq}
 
         with mock.patch.object(cm.config, "CORE_ENABLED", True, create=True), \
+             mock.patch.object(cm.config, "CORE_SYMBOLS", "", create=True), \
+             mock.patch.object(cm.config, "CORE_SYMBOL", "BTC/USDT", create=True), \
+             mock.patch.object(cm.config, "CORE_TREND_MA", 0, create=True), \
+             mock.patch("src.engine.signal_book.pct", lambda: 0.0), \
+             mock.patch("src.engine.pump_rider.reserve_pct", lambda _s: 0.0), \
              mock.patch.object(cm.config, "CORE_PCT", 0.97, create=True), \
              mock.patch.object(cm.config, "CORE_BAND", 0.05, create=True), \
              mock.patch("src.engine.paper_trader.PaperTrader.summary", summary), \

@@ -246,6 +246,43 @@ def overfit() -> dict[str, Any]:
     return result
 
 
+@router.get("/swing")
+def swing() -> dict[str, Any]:
+    """Swing core (trend-following BTC/ETH legs) + latest swing research."""
+    from pathlib import Path
+
+    from src import config
+    from src.engine import core_manager as cm
+
+    storage = get_storage()
+    ma = cm._trend_ma()  # noqa: SLF001
+    legs = []
+    for sym in cm._symbols():  # noqa: SLF001
+        px = cm._price(storage, sym)  # noqa: SLF001
+        trades = cm.core_trades(storage, sym)
+        value = sum(float(t["quantity"]) * (px or float(t["entry_price"])) for t in trades)
+        cost = sum(float(t["quantity"]) * float(t["entry_price"]) for t in trades)
+        st = cm.trend_state(storage, sym, ma) if ma else {"up": True}
+        legs.append({"symbol": sym, "price": px, "held": bool(trades), "value": round(value, 2),
+                     "pnl": round(value - cost, 2), "up": st.get("up"), "close": st.get("close"),
+                     "ma": st.get("ma"), "ma_days": ma,
+                     "gap_pct": (st["close"] / st["ma"] - 1) if st.get("close") and st.get("ma") else None})
+    out: dict[str, Any] = {"enabled": bool(getattr(config, "CORE_ENABLED", False)), "ma_days": ma, "legs": legs}
+    path = Path(__file__).resolve().parents[3] / "data" / "reports" / "swing" / "latest.json"
+    if path.exists():
+        rep = json.loads(path.read_text())
+        keep = ("btc_eth_trend_ma50", "btc_eth_trend_ma100", "btc_trend_ma50", "top3liq_trend_ma50",
+                "xs_mom30_top10", "btc_hold")
+        out["report_at"] = rep.get("run_at")
+        out["test_from"] = rep.get("split_ts")
+        out["rules_tested"] = rep.get("rules_tested")
+        out["rules_validated"] = rep.get("validated")
+        out["books"] = [{"name": k, "train": b["train"], "test": b["test"], "beats_btc_test": b["beats_btc_test"],
+                         "beats_btc_train": b["beats_btc_train"]}
+                        for k, b in (rep.get("books") or {}).items() if k in keep]
+    return out
+
+
 @router.get("/pumps")
 def get_pumps() -> dict[str, Any]:
     """Pump rider: 1m pipeline health, precursor findings, rules, shadow and live results."""

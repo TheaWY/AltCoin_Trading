@@ -177,6 +177,10 @@ SENTIMENT_GATE_THRESHOLD = float(os.getenv("SENTIMENT_GATE_THRESHOLD", "1.0"))
 # held as LONG CORE_SYMBOL instead of idle cash. target = equity*CORE_PCT - committed.
 CORE_ENABLED = os.getenv("CORE_ENABLED", "false").lower() == "true"
 CORE_SYMBOL = os.getenv("CORE_SYMBOL", "BTC/USDT")
+# comma list; each leg gets an equal share. Empty = CORE_SYMBOL only.
+CORE_SYMBOLS = os.getenv("CORE_SYMBOLS", "")
+# daily trend filter: hold a leg only while its last daily close > N-day MA (0 = always hold)
+CORE_TREND_MA = int(os.getenv("CORE_TREND_MA", "0"))
 CORE_PCT = float(os.getenv("CORE_PCT", "0.97"))
 CORE_BAND = float(os.getenv("CORE_BAND", "0.05"))
 CORE_MIN_NOTIONAL = float(os.getenv("CORE_MIN_NOTIONAL", "10"))
