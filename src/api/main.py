@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response
 
 from src import config
-from src.api.routes import alts, categories, dashboard, health, research, signals, trades
+from src.api.routes import alts, categories, dashboard, health, indicators, research, signals, trades
 from src.api.websocket import router as ws_router
 
 logger = logging.getLogger(__name__)
@@ -95,6 +95,7 @@ app.include_router(research.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(signals.router, prefix="/api")
 app.include_router(trades.router, prefix="/api")
+app.include_router(indicators.router, prefix="/api")
 
 
 @app.get("/experiments", response_class=HTMLResponse)

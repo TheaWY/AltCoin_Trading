@@ -8,7 +8,7 @@ if sudo -n true 2>/dev/null; then
 else
   echo "skip: pmset sleep change requires sudo password"
 fi
-SERVICES=(com.altcoin.worker com.altcoin.research com.altcoin.watchdog com.altcoin.dashboard com.altcoin.category com.altcoin.xsec com.altcoin.edgesearch com.altcoin.liqmoonshot com.altcoin.logrotate com.altcoin.sentiment com.altcoin.perp com.altcoin.stream1m com.altcoin.pumps com.altcoin.swing)
+SERVICES=(com.altcoin.worker com.altcoin.research com.altcoin.watchdog com.altcoin.dashboard com.altcoin.category com.altcoin.xsec com.altcoin.edgesearch com.altcoin.liqmoonshot com.altcoin.logrotate com.altcoin.sentiment com.altcoin.perp com.altcoin.stream1m com.altcoin.pumps com.altcoin.swing com.altcoin.perpmetrics com.altcoin.indicators com.altcoin.indstudy)
 if [ "${INSTALL_TICKBARS:-false}" = "true" ]; then
   SERVICES+=(com.altcoin.tickbars)
 fi

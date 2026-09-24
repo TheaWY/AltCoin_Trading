@@ -79,15 +79,21 @@ def _run_length(up: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out, index=up.index, columns=up.columns)
 
 
-def onsets(p: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """Boolean frame: True at pump onset minutes."""
-    c, hi = p["close"], p["high"]
-    fwd_hi = hi[::-1].rolling(PUMP_WINDOW, min_periods=PUMP_WINDOW // 2).max()[::-1].shift(-1)
-    fwd = fwd_hi / c - 1
-    # the move must actually START now: half of it inside the next 15 minutes,
-    # otherwise "onset" lands long before anything happens
-    fwd15 = hi[::-1].rolling(15, min_periods=10).max()[::-1].shift(-1) / c - 1
-    prior = c / c.shift(15) - 1
+def onsets(p: dict[str, pd.DataFrame], direction: int = 1) -> pd.DataFrame:
+    """Boolean frame: True at pump (direction=1) or dump (direction=-1) onset minutes."""
+    c = p["close"]
+    if direction > 0:
+        hi = p["high"]
+        fwd = hi[::-1].rolling(PUMP_WINDOW, min_periods=PUMP_WINDOW // 2).max()[::-1].shift(-1) / c - 1
+        # the move must actually START now: half of it inside the next 15 minutes,
+        # otherwise "onset" lands long before anything happens
+        fwd15 = hi[::-1].rolling(15, min_periods=10).max()[::-1].shift(-1) / c - 1
+        prior = c / c.shift(15) - 1
+    else:
+        lo = p["low"]
+        fwd = 1 - lo[::-1].rolling(PUMP_WINDOW, min_periods=PUMP_WINDOW // 2).min()[::-1].shift(-1) / c
+        fwd15 = 1 - lo[::-1].rolling(15, min_periods=10).min()[::-1].shift(-1) / c
+        prior = 1 - c / c.shift(15)
     liquid = p["quote_volume"].rolling(60, min_periods=30).sum() >= MIN_DOLLAR_VOL
     raw = (fwd >= PUMP_MIN) & (fwd15 >= PUMP_MIN / 2) & (prior < PUMP_MIN / 3) & liquid
     arr = raw.to_numpy(dtype=bool)
@@ -110,35 +116,75 @@ def _auc(pos: np.ndarray, neg: np.ndarray) -> float | None:
 
 def study(p: dict[str, pd.DataFrame], train_frac: float = 0.7) -> dict[str, Any]:
     feats = precursor_features(p)
-    on = onsets(p)
-    liquid = p["quote_volume"].rolling(60, min_periods=30).sum() >= MIN_DOLLAR_VOL
-    n = len(on.index)
+    res = study_stream(p, ((k, FEATURE_TEXT.get(k, k), v) for k, v in feats.items()), train_frac,
+                       {"pump": onsets(p, 1)})
+    return res["pump"]
+
+
+def _side(f: np.ndarray, on: np.ndarray, base: np.ndarray, label: str, res: dict[str, Any]) -> None:
+    pos = f[on]
+    neg = f[base & ~on]
+    pos, neg = pos[np.isfinite(pos)], neg[np.isfinite(neg)]
+    res[f"{label}_onsets"] = int(len(pos))
+    res[f"{label}_auc"] = _auc(pos, neg)
+    lift_hi = lift_lo = None
+    if len(neg) > 100 and len(pos) >= 5:
+        hi, lo = np.quantile(neg, [0.9, 0.1])
+        lift_hi = float((pos >= hi).mean() / 0.1)
+        lift_lo = float((pos <= lo).mean() / 0.1)
+    res[f"{label}_lift_top10"] = lift_hi
+    res[f"{label}_lift_bottom10"] = lift_lo
+    res[f"{label}_median_at_onset"] = float(np.median(pos)) if len(pos) else None
+    res[f"{label}_median_base"] = float(np.median(neg)) if len(neg) else None
+
+
+def study_stream(p: dict[str, pd.DataFrame], feats, train_frac: float = 0.7,
+                 ons: dict[str, pd.DataFrame] | None = None) -> dict[str, dict[str, Any]]:
+    """Precursor test for any stream of (name, text, frame) against one or
+    more onset sets (e.g. pumps and dumps), one feature frame in memory at a
+    time. A feature "holds" when its AUC is on the same side of 0.5 (beyond
+    0.55 / 0.45) in both the train and the test part of time."""
+    ons = ons or {"pump": onsets(p, 1)}
+    liquid = (p["quote_volume"].rolling(60, min_periods=30).sum() >= MIN_DOLLAR_VOL).to_numpy(dtype=bool)
+    n = liquid.shape[0]
     split = int(n * train_frac)
-    rows = []
-    for name, f in feats.items():
-        res: dict[str, Any] = {"feature": name, "text": FEATURE_TEXT.get(name, name)}
-        for part, sl in (("train", slice(0, split)), ("test", slice(split, n))):
-            fo, oo, lo = f.iloc[sl], on.iloc[sl], liquid.iloc[sl]
-            pos = fo.to_numpy()[oo.to_numpy(dtype=bool)]
-            base_mask = lo.to_numpy(dtype=bool) & ~oo.to_numpy(dtype=bool)
-            base_mask &= (np.arange(len(base_mask)) % SAMPLE_EVERY == 0)[:, None]
-            neg = fo.to_numpy()[base_mask]
-            pos, neg = pos[np.isfinite(pos)], neg[np.isfinite(neg)]
-            auc = _auc(pos, neg)
-            lift = None
-            if len(neg) > 100 and len(pos) >= 5:
-                cut = np.quantile(neg, 0.9)
-                p_top = (pos >= cut).mean()
-                lift = float(p_top / 0.1)
-            res[f"{part}_onsets"] = int(len(pos))
-            res[f"{part}_auc"] = auc
-            res[f"{part}_lift_top10"] = lift
-            res[f"{part}_median_at_onset"] = float(np.median(pos)) if len(pos) else None
-            res[f"{part}_median_base"] = float(np.median(neg)) if len(neg) else None
-        a1, a2 = res.get("train_auc"), res.get("test_auc")
-        res["holds"] = bool(a1 is not None and a2 is not None and
-                            ((a1 > 0.55 and a2 > 0.55) or (a1 < 0.45 and a2 < 0.45)))
-        rows.append(res)
-    rows.sort(key=lambda r: -abs((r.get("test_auc") or 0.5) - 0.5))
-    return {"onsets_total": int(on.to_numpy().sum()), "minutes": n, "symbols": int(on.shape[1]),
-            "split_ts": int(on.index[split]) if n else None, "precursors": rows}
+    sample = (np.arange(n) % SAMPLE_EVERY == 0)[:, None]
+    base = liquid & sample
+    on_np = {k: v.to_numpy(dtype=bool) for k, v in ons.items()}
+    out: dict[str, list[dict[str, Any]]] = {k: [] for k in ons}
+    both = "pump" in on_np and "dump" in on_np
+    if both:
+        out["direction"] = []
+    for name, text, f in feats:
+        a = f.to_numpy(dtype="float32")
+        if both:
+            # given that a big move starts, which way? pos = pump onsets, neg = dump onsets
+            res = {"feature": name, "text": text}
+            for label, sl in (("train", slice(0, split)), ("test", slice(split, n))):
+                pos, neg = a[sl][on_np["pump"][sl]], a[sl][on_np["dump"][sl]]
+                pos, neg = pos[np.isfinite(pos)], neg[np.isfinite(neg)]
+                res[f"{label}_auc"] = _auc(pos, neg)
+                res[f"{label}_onsets"] = int(len(pos) + len(neg))
+                res[f"{label}_median_at_onset"] = float(np.median(pos)) if len(pos) else None  # pumps
+                res[f"{label}_median_base"] = float(np.median(neg)) if len(neg) else None      # dumps
+                res[f"{label}_lift_top10"] = res[f"{label}_lift_bottom10"] = None
+            a1, a2 = res.get("train_auc"), res.get("test_auc")
+            res["holds"] = bool(a1 is not None and a2 is not None and
+                                ((a1 > 0.55 and a2 > 0.55) or (a1 < 0.45 and a2 < 0.45)))
+            out["direction"].append(res)
+        for k, o in on_np.items():
+            res: dict[str, Any] = {"feature": name, "text": text}
+            _side(a[:split], o[:split], base[:split], "train", res)
+            _side(a[split:], o[split:], base[split:], "test", res)
+            a1, a2 = res.get("train_auc"), res.get("test_auc")
+            res["holds"] = bool(a1 is not None and a2 is not None and
+                                ((a1 > 0.55 and a2 > 0.55) or (a1 < 0.45 and a2 < 0.45)))
+            out[k].append(res)
+    result = {}
+    for k, rows in out.items():
+        rows.sort(key=lambda r: (not r["holds"], -min(abs((r.get("train_auc") or 0.5) - 0.5),
+                                                          abs((r.get("test_auc") or 0.5) - 0.5))))
+        total = int(on_np[k].sum()) if k in on_np else int(on_np["pump"].sum() + on_np["dump"].sum())
+        result[k] = {"onsets_total": total, "minutes": n, "symbols": int(p["close"].shape[1]),
+                     "split_ts": int(p["close"].index[split]) if n else None, "precursors": rows}
+    return result
