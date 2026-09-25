@@ -108,8 +108,17 @@ def map_ids(cg: CoinGecko, symbols: list[str], pages: int = 10) -> dict[str, str
 def backfill_mcap(storage: Any, cg: CoinGecko, ids: dict[str, str], days: int = 200, log=logger.info) -> None:
     sql = ("INSERT INTO cg_daily (symbol, cg_id, ts, mcap, volume, price) VALUES (?,?,?,?,?,?) "
            "ON CONFLICT (symbol, ts) DO UPDATE SET mcap=EXCLUDED.mcap, volume=EXCLUDED.volume, price=EXCLUDED.price")
+    with storage._connect() as c:  # noqa: SLF001
+        have = {r["symbol"] for r in c.execute("SELECT symbol FROM cg_daily GROUP BY symbol HAVING COUNT(*) >= ?",
+                                               (days // 2,)).fetchall()}
     for i, (sym, cid) in enumerate(sorted(ids.items())):
-        d = cg.get(f"/coins/{cid}/market_chart", vs_currency="usd", days=days, interval="daily")
+        if sym in have:
+            continue
+        try:
+            d = cg.get(f"/coins/{cid}/market_chart", vs_currency="usd", days=days, interval="daily")
+        except Exception as e:  # noqa: BLE001  (connection drops: skip, the next run fills it)
+            log(f"coingecko {sym}: {e!r}")
+            continue
         if not d:
             continue
         vol = {int(t) // 86_400_000: v for t, v in d.get("total_volumes", [])}
