@@ -28,7 +28,7 @@ def main() -> int:
     (OUT / "latest.json").write_text(json.dumps(rep, default=float))
     (OUT / "latest.md").write_text(render(rep))
     slim = {k: rep[k] for k in ("run_at", "rows", "coins", "days", "from", "to", "base_up10", "base_dn10",
-                                "interactions", "model")}
+                                "interactions", "model", "backtests")}
     slim["univariate"] = rep["univariate"][:25]
     slim["clusters"] = rep["correlation"]["clusters"]
     slim["by_size"] = rep["by_size"]
@@ -79,6 +79,19 @@ def render(r: dict) -> str:
     for k, b in (m.get("books") or {}).items():
         L.append(f"| {k} | {b['days']} | {pc(b['long_mean'])} | {b['long_win'] * 100:.0f}% | {pc(b['short_mean'])} | "
                  f"{b['short_win'] * 100:.0f}% | {pc(b['ls_mean'])} | {f2(b['ls_t'])} |")
+    bt = r.get("backtests") or {}
+    names = {"quiet_long": "조용한 코인 롱 (하위 10%)", "noisy_short": "시끄러운 코인 숏 (상위 10%)",
+             "quiet_vs_noisy": "조용 롱 + 시끄러움 숏", "leverage_long": "레버리지 상위 5% 롱",
+             "breakout_5": "변동성 상위 10개 양방향 돌파 ±5%", "breakout_8": "양방향 돌파 ±8%",
+             "universe": "전체 코인 평균 (비교용, 비용 없음)"}
+    L += ["", f"## 6. 매일 매매 백테스트 ({bt.get('days', 0)}일, 00:00 UTC 진입, 24시간 보유, 왕복 0.3%)", "",
+          "| 전략 | 하루 평균 | t | 승률 | 누적 | 최대낙폭 | 앞 절반 평균 | 뒤 절반 평균 |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for k, v in bt.items():
+        if not isinstance(v, dict) or "all" not in v:
+            continue
+        a, h1, h2 = v["all"], v.get("h1", {}), v.get("h2", {})
+        L.append(f"| {names.get(k, k)} | {pc(a['mean'])} | {a['t']:.2f} | {a['win'] * 100:.0f}% | {pc(a['total'])} | "
+                 f"{pc(a['max_dd'])} | {pc(h1.get('mean'))} | {pc(h2.get('mean'))} |")
     return "\n".join(L) + "\n"
 
 

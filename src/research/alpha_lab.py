@@ -57,40 +57,91 @@ def _wide(rows, col: str) -> pd.DataFrame:
     return df.pivot_table(index="timestamp", columns="symbol", values=col, aggfunc="last").sort_index()
 
 
-def load(storage: Any, days: int = 95) -> dict[str, pd.DataFrame]:
-    since = int(time.time()) - days * 86400
+def _q(storage: Any, sql: str, params: tuple) -> pd.DataFrame:
+    """Query straight into a DataFrame (tuples, not dicts: millions of rows)."""
     with storage._connect() as c:  # noqa: SLF001
-        px = c.execute("SELECT symbol, timestamp, high, low, close, volume FROM prices WHERE timeframe='1h_perp' "
-                       "AND timestamp >= ?", (since,)).fetchall()
-        sp = c.execute("SELECT symbol, timestamp, high, low, close, volume FROM prices WHERE timeframe='1h' "
-                       "AND timestamp >= ?", (since,)).fetchall()
-        fu = c.execute("SELECT symbol, timestamp, funding_rate FROM funding_rates WHERE timestamp >= ?",
-                       (since - 86400,)).fetchall()
-        oi = c.execute("SELECT symbol, timestamp, open_interest FROM open_interest WHERE timestamp >= ?", (since,)).fetchall()
-        ls = c.execute("SELECT symbol, timestamp, ratio FROM long_short_ratio WHERE timestamp >= ?", (since,)).fetchall()
-        lq = c.execute("SELECT symbol, timestamp, long_liq_notional, short_liq_notional FROM liquidation_agg_1h "
-                       "WHERE timestamp >= ?", (since,)).fetchall()
-        try:
-            sup = c.execute("SELECT DISTINCT ON (symbol) symbol, supply FROM perp_5m WHERE supply IS NOT NULL "
-                            "ORDER BY symbol, ts DESC").fetchall()
-        except Exception:  # noqa: BLE001
-            sup = []
-    oi_w = _wide(oi, "open_interest")
-    cols = oi_w.columns                                   # the sentiment universe
-    p = {}
+        with c.raw.cursor() as cur:
+            cur.execute(sql.replace("?", "%s"), params)
+            cols = [d[0] for d in cur.description]
+            return pd.DataFrame.from_records(cur.fetchall(), columns=cols)
+
+
+def _pivot(df: pd.DataFrame, col: str, ts: str = "ts") -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+    return df.pivot_table(index=ts, columns="symbol", values=col, aggfunc="last").sort_index().astype("float64")
+
+
+def load(storage: Any, days: int = 185) -> dict[str, pd.DataFrame]:
+    """Every USDT perp with hourly prices over `days`. Sentiment comes from
+    metrics_5m (Binance archive: OI, long/short, taker ratio, full history),
+    falling back to the older hourly open_interest / long_short_ratio tables."""
+    since = int(time.time()) - days * 86400
+    px = _q(storage, "SELECT symbol, (timestamp/3600)*3600 AS ts, high, low, close, volume FROM prices "
+                     "WHERE timeframe='1h_perp' AND timestamp >= ?", (since,))
+    sp = _q(storage, "SELECT symbol, (timestamp/3600)*3600 AS ts, high, low, close, volume FROM prices "
+                     "WHERE timeframe='1h' AND timestamp >= ?", (since,))
+    met = _q(storage, "SELECT DISTINCT ON (symbol, ts/3600) symbol, (ts/3600)*3600 + 3600 AS ts, oi, oi_usd, "
+                      "ls_top_acct, ls_top_pos, ls_global, taker_ratio FROM metrics_5m WHERE ts >= ? "
+                      "ORDER BY symbol, ts/3600, ts DESC", (since,))
+    tk = _q(storage, "SELECT symbol, (ts/3600)*3600 + 3600 AS ts, AVG(taker_ratio) AS taker_1h FROM metrics_5m "
+                     "WHERE ts >= ? GROUP BY 1, 2", (since,))
+    fu = _q(storage, "SELECT symbol, (timestamp/3600)*3600 AS ts, funding_rate FROM funding_rates WHERE timestamp >= ?",
+            (since - 86400,))
+    lq = _q(storage, "SELECT symbol, timestamp AS ts, long_liq_notional, short_liq_notional FROM liquidation_agg_1h "
+                     "WHERE timestamp >= ?", (since,))
+    try:
+        sup = _q(storage, "SELECT DISTINCT ON (symbol) symbol, supply FROM perp_5m WHERE supply IS NOT NULL "
+                          "ORDER BY symbol, ts DESC", ())
+    except Exception:  # noqa: BLE001
+        sup = pd.DataFrame(columns=["symbol", "supply"])
+    try:
+        up = _q(storage, "SELECT symbol, ts, close, value_krw FROM upbit_1h WHERE ts >= ?", (since,))
+        notes = _q(storage, "SELECT source, ts, kind, symbols FROM exchange_notices WHERE ts >= ?", (since - 7 * 86400,))
+    except Exception:  # noqa: BLE001
+        up, notes = pd.DataFrame(), pd.DataFrame()
+
+    perp_syms = set(px["symbol"].unique()) | set(met["symbol"].unique())
+    p: dict[str, pd.DataFrame] = {}
     for k in ("high", "low", "close", "volume"):
-        p[k] = _wide(px, k).combine_first(_wide(sp, k)).reindex(columns=cols)
+        p[k] = _pivot(px, k).combine_first(_pivot(sp, k))
+    cols = pd.Index(sorted(c for c in p["close"].columns if c in perp_syms))
     idx = pd.RangeIndex(int(p["close"].index.min()), int(p["close"].index.max()) + HOUR, HOUR)
-    p = {k: v.reindex(idx) for k, v in p.items()}
-    p["oi"] = oi_w.reindex(index=idx, columns=cols).ffill(limit=3)
-    p["ls"] = _wide(ls, "ratio").reindex(index=idx, columns=cols).ffill(limit=3)
-    p["funding"] = _wide(fu, "funding_rate").reindex(index=idx.union(_wide(fu, "funding_rate").index)).ffill(limit=12) \
-        .reindex(index=idx, columns=cols)
-    p["liq_long"] = _wide(lq, "long_liq_notional").reindex(index=idx, columns=cols).fillna(0)
-    p["liq_short"] = _wide(lq, "short_liq_notional").reindex(index=idx, columns=cols).fillna(0)
-    supply = pd.Series({dict(r)["symbol"]: float(dict(r)["supply"]) for r in sup}).reindex(cols)
+    p = {k: v.reindex(index=idx, columns=cols) for k, v in p.items()}
+    rx = lambda f, lim=3: f.reindex(index=idx.union(f.index)).ffill(limit=lim).reindex(index=idx, columns=cols) \
+        if not f.empty else pd.DataFrame(np.nan, index=idx, columns=cols)  # noqa: E731
+    for k in ("oi", "oi_usd", "ls_top_acct", "ls_top_pos", "ls_global"):
+        p[k] = rx(_pivot(met, k))
+    p["taker_fut"] = rx(_pivot(tk, "taker_1h"))
+    p["funding"] = rx(_pivot(fu, "funding_rate"), 12)
+    p["liq_long"] = rx(_pivot(lq, "long_liq_notional"), 0).fillna(0)
+    p["liq_short"] = rx(_pivot(lq, "short_liq_notional"), 0).fillna(0)
+    supply = sup.set_index("symbol")["supply"].astype(float).reindex(cols) if not sup.empty else pd.Series(np.nan, index=cols)
     p["mcap"] = p["close"].mul(supply, axis=1)
     p["dv"] = p["close"] * p["volume"]
+    # Upbit: KRW price and value, USDT/KRW for FX (+ the Korean premium baseline)
+    if not up.empty:
+        ukrw = _pivot(up, "close").reindex(index=idx)
+        uval = _pivot(up, "value_krw").reindex(index=idx)
+        usdt = ukrw.get("USDT/KRW")
+        if usdt is not None:
+            usdt = usdt.ffill(limit=24)
+            p["kimchi"] = ukrw.reindex(columns=cols).div(usdt, axis=0) / p["close"] - 1
+            p["upbit_dv"] = uval.reindex(columns=cols).div(usdt, axis=0)
+    # exchange notices -> hours since the last listing / warning / delisting notice per coin
+    for kind in ("listing", "warning", "delisting"):
+        ev = pd.DataFrame(0.0, index=idx, columns=cols)
+        if not notes.empty:
+            for _, n in notes[notes["kind"] == kind].iterrows():
+                for t in str(n["symbols"] or "").split(","):
+                    sym = f"{t}/USDT"
+                    if t and sym in ev.columns:
+                        h = int(n["ts"]) // HOUR * HOUR + HOUR
+                        if h in ev.index:
+                            ev.at[h, sym] = 1.0
+                        elif idx[0] > h >= idx[0] - 7 * 86400:
+                            ev.iat[0, ev.columns.get_loc(sym)] = 1.0
+        p[f"ev_{kind}"] = ev
     return p
 
 
@@ -108,7 +159,7 @@ def _rsi(c: pd.DataFrame, n: int = 14) -> pd.DataFrame:
 
 def signals(p: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     c, hi, lo, dv, mcap = p["close"], p["high"], p["low"], p["dv"], p["mcap"]
-    oi_usd = p["oi"] * c
+    oi_usd = p["oi_usd"] if "oi_usd" in p else p["oi"] * c
     lr = np.log(c / c.shift(1))
     btc = lr["BTC/USDT"] if "BTC/USDT" in lr else lr.median(axis=1)
     s: dict[str, pd.DataFrame] = {}
@@ -147,8 +198,15 @@ def signals(p: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     add("funding", "심리", "펀딩비", f)
     add("funding_z", "심리", "펀딩비 z점수 (30일)", (f - f.rolling(720, min_periods=240).mean()) / f.rolling(720, min_periods=240).std())
     add("funding_chg", "심리", "펀딩비 24시간 변화", f - f.shift(24))
-    ls = p["ls"]
-    add("ls", "심리", "롱/숏 계정 비율", ls)
+    ls = p["ls_global"]
+    add("ls", "심리", "롱/숏 계정 비율 (전체)", ls)
+    add("ls_top_pos", "심리", "상위 트레이더 포지션 롱/숏", p["ls_top_pos"])
+    add("ls_top_acct", "심리", "상위 트레이더 계정 롱/숏", p["ls_top_acct"])
+    add("smart_crowd", "심리", "상위 트레이더 ÷ 전체 롱숏 (고수가 더 롱이면 >1)", p["ls_top_pos"] / ls)
+    add("smart_chg24", "심리", "상위 트레이더 롱숏 24시간 변화", np.log(p["ls_top_pos"] / p["ls_top_pos"].shift(24)))
+    tf = p["taker_fut"]
+    add("taker_fut", "심리", "선물 시장가 매수/매도 비율 (1시간)", tf)
+    add("taker_fut24", "심리", "선물 시장가 매수/매도 비율 (24시간 평균)", tf.rolling(24, min_periods=12).mean())
     add("ls_z", "심리", "롱/숏 비율 z점수 (30일)", (ls - ls.rolling(720, min_periods=240).mean()) / ls.rolling(720, min_periods=240).std())
     add("ls_chg24", "심리", "롱/숏 비율 24시간 변화", np.log(ls / ls.shift(24)))
     for h in (1, 4, 24, 72):
@@ -161,6 +219,20 @@ def signals(p: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     add("liq_short24", "청산", "24시간 숏 청산 ÷ 거래대금", ls_ / dv24)
     add("liq_net24", "청산", "(숏-롱) 청산 ÷ 거래대금", (ls_ - ll) / dv24)
     add("liq_mcap", "청산", "24시간 총 청산 ÷ 시가총액", (ll + ls_) / mcap)
+
+    if "kimchi" in p:
+        k = p["kimchi"]
+        add("kimchi", "한국", "김치 프리미엄 (업비트 원화가 ÷ 바이낸스가, USDT 환율 기준)", k)
+        add("kimchi_chg24", "한국", "김치 프리미엄 24시간 변화", k - k.shift(24))
+        udv24 = p["upbit_dv"].rolling(24, min_periods=6).sum()
+        add("upbit_share", "한국", "업비트 거래대금 ÷ 바이낸스 선물 거래대금 (24시간)", udv24 / dv24)
+        add("upbit_surge", "한국", "업비트 4시간 거래대금 ÷ 직전 7일 평균", p["upbit_dv"].rolling(4).sum()
+            / (p["upbit_dv"].rolling(168, min_periods=48).sum().shift(4) / 42))
+        add("on_upbit", "한국", "업비트 원화마켓 상장 여부", p["upbit_dv"].notna().astype(float).rolling(24).max())
+    for kind, ko in (("listing", "상장/신규지원"), ("warning", "유의종목 지정"), ("delisting", "상장폐지")):
+        ev = p.get(f"ev_{kind}")
+        if ev is not None:
+            add(f"ev_{kind}72", "공지", f"최근 72시간 내 {ko} 공지 (업비트/바이낸스)", ev.rolling(72, min_periods=1).max())
 
     bc = lambda v: pd.DataFrame(np.repeat(v.to_numpy()[:, None], c.shape[1], axis=1), index=c.index, columns=c.columns)  # noqa: E731
     add("btc24", "시장", "BTC 24시간 수익률", bc(btc.rolling(24).sum()))
@@ -371,7 +443,110 @@ def model(df: pd.DataFrame, feats: list[str], log: Callable[[str], None] = lambd
     return res
 
 
-def run(storage: Any, days: int = 95, log: Callable[[str], None] = lambda _m: None) -> dict[str, Any]:
+def backtests(p: dict[str, pd.DataFrame], s: dict[str, pd.DataFrame], min_dv24: float = 1e6) -> dict[str, Any]:
+    """The three candidates from the first alpha pass, as daily books on the
+    whole period: rebalance at 00:00 UTC, hold 24h, 0.3% round trip.
+
+      quiet_vs_noisy   long the calmest decile (low 24h vol + low turnover),
+                       short the noisiest decile; also the long leg alone
+      leverage_long    long the top 5% by open interest / market cap
+      breakout_both    on the 10 most volatile coins, enter whichever side
+                       first moves X% from the 00:00 price (stop back at the
+                       00:00 price, exit at the 24h close); an hour that
+                       touches both sides counts as a loss
+    """
+    c, hi, lo = p["close"], p["high"], p["low"]
+    dv24 = p["dv"].rolling(24, min_periods=12).sum()
+    fwd = c.shift(-H) / c - 1
+    idx = np.asarray(c.index)
+    days = [i for i in range(len(idx) - H) if idx[i] % 86400 == 0]
+    ok = (dv24 >= min_dv24).to_numpy() & np.isfinite(fwd.to_numpy())
+    F = fwd.to_numpy()
+    rv = s["rv24"].to_numpy()
+    turn = s["turnover"].to_numpy()
+    dv_log = s["dv24"].to_numpy()
+    lev = s["oi_mcap"].to_numpy()
+    C, HI, LO = c.to_numpy(), hi.to_numpy(), lo.to_numpy()
+    out: dict[str, list] = {k: [] for k in ("quiet_long", "noisy_short", "quiet_vs_noisy", "leverage_long",
+                                             "breakout_5", "breakout_8", "universe")}
+    stamps = []
+    for i in days:
+        m = ok[i]
+        if m.sum() < 40:
+            continue
+        stamps.append(int(idx[i]))
+        f = F[i]
+        # noise score: rank of vol + rank of turnover (dollar volume when market cap is missing)
+        t_ = np.where(np.isfinite(turn[i]), turn[i], np.nan)
+        r1 = pd.Series(rv[i]).where(m).rank(pct=True)
+        r2 = pd.Series(t_).where(m).rank(pct=True)
+        r2 = r2.fillna(pd.Series(dv_log[i]).where(m).rank(pct=True))
+        noise = ((r1 + r2) / 2).to_numpy()
+        q_lo, q_hi = np.nanquantile(noise, 0.1), np.nanquantile(noise, 0.9)
+        ql, qs = m & (noise <= q_lo), m & (noise >= q_hi)
+        long_r = np.nanmean(f[ql]) - COST if ql.any() else np.nan
+        short_r = -np.nanmean(f[qs]) - COST if qs.any() else np.nan
+        out["quiet_long"].append(long_r)
+        out["noisy_short"].append(short_r)
+        out["quiet_vs_noisy"].append(np.nanmean([long_r, short_r]))
+        lv = np.where(m, lev[i], np.nan)
+        if np.isfinite(lv).sum() >= 20:
+            sel = lv >= np.nanquantile(lv, 0.95)
+            out["leverage_long"].append(np.nanmean(f[sel]) - COST)
+        else:
+            out["leverage_long"].append(np.nan)
+        out["universe"].append(np.nanmean(f[m]))
+        top = np.argsort(np.where(m, rv[i], -np.inf))[-10:]
+        for x, key in ((0.05, "breakout_5"), (0.08, "breakout_8")):
+            rs = []
+            for j in top:
+                o = C[i, j]
+                if not np.isfinite(o):
+                    continue
+                side, entry = 0, 0.0
+                ret = None
+                for h in range(1, H + 1):
+                    up_hit, dn_hit = HI[i + h, j] >= o * (1 + x), LO[i + h, j] <= o * (1 - x)
+                    if side == 0:
+                        if up_hit and dn_hit:
+                            ret = -x
+                            break
+                        if up_hit:
+                            side, entry = 1, o * (1 + x)
+                        elif dn_hit:
+                            side, entry = -1, o * (1 - x)
+                        if side == 0:
+                            continue
+                        # same hour: stop checked from the next hour on
+                        continue
+                    if (side > 0 and LO[i + h, j] <= o) or (side < 0 and HI[i + h, j] >= o):
+                        ret = side * (o / entry - 1)
+                        break
+                if side == 0 and ret is None:
+                    continue                                   # never triggered: no trade
+                if ret is None:
+                    ret = side * (C[i + H, j] / entry - 1)
+                rs.append(ret - COST)
+            out[key].append(np.mean(rs) if rs else np.nan)
+    half = len(stamps) // 2
+    res: dict[str, Any] = {"days": len(stamps), "from": stamps[0] if stamps else None, "split": stamps[half] if stamps else None}
+    for k, v in out.items():
+        a = np.asarray(v, dtype=float)
+        row = {}
+        for part, sl in (("all", slice(None)), ("h1", slice(0, half)), ("h2", slice(half, None))):
+            x = a[sl]
+            x = x[np.isfinite(x)]
+            if len(x) < 3:
+                continue
+            eq = np.cumprod(1 + x)
+            row[part] = {"days": int(len(x)), "mean": float(x.mean()), "t": float(x.mean() / x.std(ddof=1) * math.sqrt(len(x))),
+                         "win": float((x > 0).mean()), "total": float(eq[-1] - 1),
+                         "max_dd": float((eq / np.maximum.accumulate(eq) - 1).min())}
+        res[k] = row
+    return res
+
+
+def run(storage: Any, days: int = 185, log: Callable[[str], None] = lambda _m: None) -> dict[str, Any]:
     t0 = time.time()
     p = load(storage, days)
     s = signals(p)
@@ -385,10 +560,13 @@ def run(storage: Any, days: int = 95, log: Callable[[str], None] = lambda _m: No
     size = by_size(df, [u["name"] for u in uni[:20]])
     inter = interactions(df)
     log("size/interactions done")
-    mdl = model(df, feats, log)
+    bt = backtests(p, s)
+    log("backtests done")
+    mdl = model(df[df["ts"] % (4 * HOUR) == 0], feats, log)
     return {"run_at": int(time.time()), "elapsed_s": round(time.time() - t0, 1), "rows": int(len(df)),
             "coins": int(df["symbol"].nunique()), "days": int(df["day"].nunique()),
             "from": int(df["ts"].min()), "to": int(df["ts"].max()),
             "base_up10": float(df["up10"].mean()), "base_dn10": float(df["dn10"].mean()),
             "catalog": {k: {"category": v[0], "ko": v[1]} for k, v in TEXT.items()},
-            "univariate": uni, "correlation": cor, "by_size": size, "interactions": inter, "model": mdl}
+            "univariate": uni, "correlation": cor, "by_size": size, "interactions": inter, "model": mdl,
+            "backtests": bt}
