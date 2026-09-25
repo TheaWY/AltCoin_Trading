@@ -75,6 +75,12 @@ async def lifespan(app: FastAPI):
     from src.api.websocket import manager
 
     price_task = asyncio.create_task(relay.run(manager))
+    # build the dashboard payload once in the background so the first phone load is instant-ish
+    import threading
+
+    from src.api.dashboard_data import build_alts_payload
+
+    threading.Thread(target=build_alts_payload, daemon=True).start()
     yield
     price_task.cancel()
     if scheduler:
@@ -87,6 +93,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="BTC Auto Trading", version="0.1.0", lifespan=lifespan)
+from fastapi.middleware.gzip import GZipMiddleware  # noqa: E402
+
+app.add_middleware(GZipMiddleware, minimum_size=2000)
 
 app.include_router(alts.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
@@ -104,6 +113,16 @@ async def experiments_page() -> HTMLResponse:
 
 
 app.include_router(ws_router)
+
+
+@app.get("/api/market")
+def market() -> dict:
+    """Every perp's last price, 24h % and 24h quote volume from the live relay (instant)."""
+    from src.api.price_stream import relay
+
+    rows = [[s, v[0], v[1], relay.qvol.get(s)] for s, v in relay.prices.items()]
+    rows.sort(key=lambda r: -(r[3] or 0))
+    return {"rows": rows}
 
 
 @app.get("/")

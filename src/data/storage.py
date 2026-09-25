@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS market_outcomes (
 
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
+CREATE INDEX IF NOT EXISTS idx_signals_symbol_ts ON signals(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
 
 CREATE TABLE IF NOT EXISTS portfolio_state (
@@ -321,6 +322,7 @@ CREATE TABLE IF NOT EXISTS market_outcomes (
 CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts ON prices(symbol, timeframe, timestamp);
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
+CREATE INDEX IF NOT EXISTS idx_signals_symbol_ts ON signals(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
 
 CREATE TABLE IF NOT EXISTS portfolio_state (

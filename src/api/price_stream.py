@@ -42,6 +42,7 @@ class PriceRelay:
         # symbol -> [last_price, pct_24h]
         self.prices: dict[str, list[Any]] = {}
         self.open_24h: dict[str, float] = {}
+        self.qvol: dict[str, float] = {}
         self.dirty: set[str] = set()
         # /ws client -> symbols it currently displays (drives aggTrade subs)
         self.watchers: dict[Any, set[str]] = {}
@@ -91,6 +92,10 @@ class PriceRelay:
                 continue
             if open_24h:
                 self.open_24h[symbol] = open_24h
+            try:
+                self.qvol[symbol] = float(ticker.get("q") or ticker.get("quoteVolume") or 0)
+            except (TypeError, ValueError):
+                pass
             self._set_price(symbol, close)
 
     def ingest_trade(self, trade: dict[str, Any]) -> None:
