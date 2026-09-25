@@ -83,6 +83,12 @@ async def flusher(storage, buf: Buffer, deadline: float) -> None:
                 await asyncio.to_thread(run_minute, storage)
             except Exception:  # noqa: BLE001
                 log.exception("pump rider minute failed")
+            try:
+                from src.engine.grid_shadow import run_minute as grid_minute
+
+                await asyncio.to_thread(grid_minute, storage)
+            except Exception:  # noqa: BLE001
+                log.exception("grid shadow minute failed")
         if time.time() - last_prune > 86400:
             last_prune = time.time()
             try:

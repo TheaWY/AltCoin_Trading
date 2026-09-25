@@ -246,6 +246,43 @@ def overfit() -> dict[str, Any]:
     return result
 
 
+@router.get("/grid")
+def grid() -> dict[str, Any]:
+    """Strategy grid results (taker and maker cost) + live forward-test of its candidates."""
+    storage = get_storage()
+    out: dict[str, Any] = {}
+    for key, label in (("strategy_grid", "taker"), ("strategy_grid_cost0.001", "maker")):
+        row = storage.get_system_status(key)
+        if row and row.get("value"):
+            try:
+                d = json.loads(row["value"])
+                out[label] = {"run_at": d.get("run_at"), "tried": d.get("tried"), "families": d.get("families"),
+                              "validated": len(d.get("validated") or []),
+                              "picks": [{k: p.get(k) for k in ("rule", "family", "train_mean", "train_t", "test_mean",
+                                                               "test_t", "train_trades", "test_trades", "win_rate_test")}
+                                        for p in d.get("picks") or []]}
+            except ValueError:
+                pass
+    fwd = []
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = c.execute("SELECT rule, COUNT(*) AS n, SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS open_n, "
+                             "AVG(net_taker) AS taker, AVG(net_maker) AS maker, "
+                             "AVG(CASE WHEN status='closed' THEN (CASE WHEN gross > 0 THEN 1.0 ELSE 0.0 END) END) AS win "
+                             "FROM grid_signals GROUP BY rule ORDER BY COUNT(*) DESC").fetchall()
+        for r in rows:
+            r = dict(r)
+            fwd.append({"rule": r["rule"], "signals": int(r["n"]), "open": int(r["open_n"] or 0),
+                        "closed": int(r["n"]) - int(r["open_n"] or 0),
+                        "net_taker": None if r["taker"] is None else float(r["taker"]),
+                        "net_maker": None if r["maker"] is None else float(r["maker"]),
+                        "win": None if r["win"] is None else float(r["win"])})
+    except Exception:  # noqa: BLE001
+        pass
+    out["forward"] = fwd
+    return out
+
+
 @router.get("/swing")
 def swing() -> dict[str, Any]:
     """Swing core (trend-following BTC/ETH legs) + latest swing research."""
