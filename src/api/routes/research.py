@@ -246,6 +246,18 @@ def overfit() -> dict[str, Any]:
     return result
 
 
+@router.get("/alpha")
+def alpha() -> dict[str, Any]:
+    """Alpha lab summary (scripts/alpha_lab.py)."""
+    row = get_storage().get_system_status("alpha_lab")
+    if not row or not row.get("value"):
+        return {}
+    try:
+        return json.loads(row["value"])
+    except ValueError:
+        return {}
+
+
 @router.get("/grid")
 def grid() -> dict[str, Any]:
     """Strategy grid results (taker and maker cost) + live forward-test of its candidates."""
