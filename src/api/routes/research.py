@@ -258,6 +258,60 @@ def alpha() -> dict[str, Any]:
         return {}
 
 
+KO_FEAT = {"ret_60m": "1시간 수익률", "ret_240m": "4시간 수익률", "ret_1440m": "24시간 수익률", "vsurge_15m": "15분 거래대금 폭증",
+           "vsurge_60m": "1시간 거래대금 폭증", "nsurge_60m": "1시간 체결수 폭증", "taker_60m": "1시간 시장가 매수 비중",
+           "taker_z_60m": "시장가 매수 비중 이상치", "cvd_60m": "1시간 순매수(CVD)", "oi_1h": "미결제약정 1시간 증가",
+           "oi_4h": "미결제약정 4시간 증가", "oi_24h": "미결제약정 24시간 증가", "funding": "펀딩비", "ls_global": "롱/숏 비율",
+           "smart_crowd": "고수 vs 대중 롱숏", "fut_taker_1h": "선물 시장가 매수/매도", "rv_1h": "1시간 변동성",
+           "rv_ratio_1h_24h": "변동성 확대", "dhi_24h": "24시간 고점 근접", "dhi_7d": "7일 고점 근접", "max1m_60": "1시간 내 최대 1분봉",
+           "mcap_log": "시가총액", "oi_mcap": "레버리지 (OI/시총)", "turnover": "회전율", "age_days": "상장 후 일수"}
+
+
+@router.get("/pump_watch")
+def pump_watch() -> dict[str, Any]:
+    """Live +/-10% hours with what was extreme right before (src/engine/pump_watch.py)."""
+    storage = get_storage()
+    now = int(time.time())
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            ev = [dict(r) for r in c.execute("SELECT symbol, ts, kind, move, pct FROM pump_watch_events WHERE ts >= ? "
+                                             "ORDER BY ts DESC", (now - 7 * 86400,)).fetchall()]
+            picks = [dict(r) for r in c.execute("SELECT model, ts, symbol, rank, status, mfe, hit10, trade FROM pump_watch_picks "
+                                                "WHERE ts >= ? ORDER BY ts DESC, rank", (now - 14 * 86400,)).fetchall()]
+    except Exception:  # noqa: BLE001
+        return {"events": [], "summary": [], "picks": []}
+    def pj(x):
+        return x if isinstance(x, dict) else json.loads(x or "{}")
+    # 7-day summary: how often each feature was in the top/bottom 10% one hour before, pumps vs dumps
+    agg: dict[str, dict[str, list[float]]] = {}
+    for e in ev:
+        pre = pj(e["pct"]).get("1h") or {}
+        for f, v in pre.items():
+            if v is not None:
+                agg.setdefault(f, {"up": [], "down": []})[e["kind"]].append(v)
+    summary = []
+    for f, d in agg.items():
+        up, dn = d["up"], d["down"]
+        if len(up) < 5:
+            continue
+        summary.append({"feature": f, "ko": KO_FEAT.get(f, f), "n_up": len(up), "n_down": len(dn),
+                        "up_med": float(sorted(up)[len(up) // 2]), "down_med": float(sorted(dn)[len(dn) // 2]) if dn else None,
+                        "up_top10": sum(v >= 90 for v in up) / len(up), "down_top10": (sum(v >= 90 for v in dn) / len(dn)) if dn else None})
+    summary.sort(key=lambda s: -abs(s["up_med"] - 50))
+    recent = []
+    for e in [x for x in ev if x["kind"] == "up"][:25]:
+        pre = pj(e["pct"]).get("1h") or {}
+        lit = sorted(((f, v) for f, v in pre.items() if v is not None and (v >= 90 or v <= 10)), key=lambda x: -abs(x[1] - 50))
+        recent.append({"symbol": e["symbol"], "ts": e["ts"], "move": e["move"],
+                       "lit": [{"f": f, "ko": KO_FEAT.get(f, f), "pct": v} for f, v in lit[:5]]})
+    closed = [p for p in picks if p["status"] == "closed"]
+    return {"summary": summary[:12], "recent": recent, "n_up": sum(e["kind"] == "up" for e in ev),
+            "n_down": sum(e["kind"] == "down" for e in ev),
+            "picks": {"closed": len(closed), "hit10": (sum(p["hit10"] or 0 for p in closed) / len(closed)) if closed else None,
+                      "avg_trade": (sum(p["trade"] or 0 for p in closed) / len(closed)) if closed else None,
+                      "open": [p for p in picks if p["status"] == "open"][:15]}}
+
+
 @router.get("/alpha_shadow")
 def alpha_shadow() -> dict[str, Any]:
     """Forward test of the alpha-lab candidates (src/engine/alpha_shadow.py)."""
