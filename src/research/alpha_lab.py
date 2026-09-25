@@ -108,14 +108,23 @@ def load(storage: Any, days: int = 185) -> dict[str, pd.DataFrame]:
     cols = pd.Index(sorted(c for c in p["close"].columns if c in perp_syms))
     idx = pd.RangeIndex(int(p["close"].index.min()), int(p["close"].index.max()) + HOUR, HOUR)
     p = {k: v.reindex(index=idx, columns=cols) for k, v in p.items()}
-    rx = lambda f, lim=3: f.reindex(index=idx.union(f.index)).ffill(limit=lim).reindex(index=idx, columns=cols) \
-        if not f.empty else pd.DataFrame(np.nan, index=idx, columns=cols)  # noqa: E731
+    def rx(f: pd.DataFrame, lim: int = 3) -> pd.DataFrame:
+        if f.empty:
+            return pd.DataFrame(np.nan, index=idx, columns=cols)
+        g = f.reindex(index=idx.union(f.index))
+        if lim:
+            g = g.ffill(limit=lim)
+        return g.reindex(index=idx, columns=cols)
     for k in ("oi", "oi_usd", "ls_top_acct", "ls_top_pos", "ls_global"):
         p[k] = rx(_pivot(met, k))
     p["taker_fut"] = rx(_pivot(tk, "taker_1h"))
     p["funding"] = rx(_pivot(fu, "funding_rate"), 12)
     p["liq_long"] = rx(_pivot(lq, "long_liq_notional"), 0).fillna(0)
     p["liq_short"] = rx(_pivot(lq, "short_liq_notional"), 0).fillna(0)
+    if not lq.empty:  # before liquidation collection started, "no data" is not "zero liquidations"
+        first = int(lq["ts"].min())
+        for k in ("liq_long", "liq_short"):
+            p[k].loc[p[k].index < first] = np.nan
     supply = sup.set_index("symbol")["supply"].astype(float).reindex(cols) if not sup.empty else pd.Series(np.nan, index=cols)
     p["mcap"] = p["close"].mul(supply, axis=1)
     p["dv"] = p["close"] * p["volume"]
@@ -387,12 +396,13 @@ def model(df: pd.DataFrame, feats: list[str], log: Callable[[str], None] = lambd
         if len(tr) < 5000 or te.empty:
             continue
         out = te[["ts", "day", "symbol", "fwd24", "up10", "dn10"]].copy()
+        use = [f for f in feats if tr[f].notna().mean() > 0.05]   # a signal with no history yet cannot be learned
         for lab in ("up10", "dn10"):
             clf = HistGradientBoostingClassifier(max_iter=250, learning_rate=0.05, max_leaf_nodes=31,
                                                  min_samples_leaf=200, l2_regularization=1.0, random_state=0)
-            clf.fit(tr[feats], tr[lab])
-            out[f"p_{lab}"] = clf.predict_proba(te[feats])[:, 1]
-            last[lab] = (clf, te)
+            clf.fit(tr[use], tr[lab])
+            out[f"p_{lab}"] = clf.predict_proba(te[use])[:, 1]
+            last[lab] = (clf, te, use)
         preds.append(out)
         log(f"fold from day {int(test_days[0])}: train {len(tr)} test {len(te)}")
     if not preds:
@@ -410,11 +420,11 @@ def model(df: pd.DataFrame, feats: list[str], log: Callable[[str], None] = lambd
             r[f"precision_top{int(top * 100)}"] = float(y[sel].mean())
             r[f"lift_top{int(top * 100)}"] = float(y[sel].mean() / base) if base else None
             r[f"mean_fwd_top{int(top * 100)}"] = float(oos.loc[sel, "fwd24"].mean())
-        clf, te = last[lab]
+        clf, te, use = last[lab]
         smp = te.sample(min(15_000, len(te)), random_state=0)
         if smp[lab].sum() >= 20:
-            pi = permutation_importance(clf, smp[feats], smp[lab], scoring="roc_auc", n_repeats=3, random_state=0)
-            r["importance"] = sorted([[f, round(float(m), 4)] for f, m in zip(feats, pi.importances_mean)],
+            pi = permutation_importance(clf, smp[use], smp[lab], scoring="roc_auc", n_repeats=3, random_state=0)
+            r["importance"] = sorted([[f, round(float(m), 4)] for f, m in zip(use, pi.importances_mean)],
                                      key=lambda x: -x[1])[:15]
         res[lab] = r
     # trading: once a day at 00 UTC, long the top-k by p_up - p_dn, short the bottom-k, hold 24h
@@ -466,9 +476,11 @@ def backtests(p: dict[str, pd.DataFrame], s: dict[str, pd.DataFrame], min_dv24: 
     turn = s["turnover"].to_numpy()
     dv_log = s["dv24"].to_numpy()
     lev = s["oi_mcap"].to_numpy()
+    oidv = s["oi_dv"].to_numpy()
     C, HI, LO = c.to_numpy(), hi.to_numpy(), lo.to_numpy()
     out: dict[str, list] = {k: [] for k in ("quiet_long", "noisy_short", "quiet_vs_noisy", "leverage_long",
-                                             "breakout_5", "breakout_8", "universe")}
+                                             "breakout_5", "breakout_8", "universe",
+                                             "oidv_long", "leverage_long_all")}
     stamps = []
     for i in days:
         m = ok[i]
@@ -496,6 +508,15 @@ def backtests(p: dict[str, pd.DataFrame], s: dict[str, pd.DataFrame], min_dv24: 
         else:
             out["leverage_long"].append(np.nan)
         out["universe"].append(np.nanmean(f[m]))
+        # same idea without market cap (which only exists for coins listed today): OI / volume, all coins
+        od = np.where(m, oidv[i], np.nan)
+        if np.isfinite(od).sum() >= 20:
+            sel = od >= np.nanquantile(od, 0.95)
+            out["oidv_long"].append(np.nanmean(f[sel]) - COST)
+        else:
+            out["oidv_long"].append(np.nan)
+        # share of today's universe that has a market cap (delisted coins do not)
+        out["leverage_long_all"].append(float(np.isfinite(lv).sum() / max(1, m.sum())))
         top = np.argsort(np.where(m, rv[i], -np.inf))[-10:]
         for x, key in ((0.05, "breakout_5"), (0.08, "breakout_8")):
             rs = []
