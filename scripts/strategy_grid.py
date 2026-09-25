@@ -63,7 +63,11 @@ def main() -> int:
     # forward-test candidates: the train-chosen best per family plus the top
     # stable rules by train t; the live shadow (src/engine/grid_shadow.py)
     # records every signal so the choice is judged on data it never saw
-    shadow = {r["rule"]: r for r in picks + [r for r in top_train if r["stable"]][:5]}
+    # plus rules positive on BOTH halves (ranked by the weaker half's t): the
+    # forward test is new data, so using the test half to nominate is fair
+    both = sorted([r for r in rules if r["stable"] and r["train_mean"] > 0 and r["test_mean"] > 0
+                   and r["train_trades"] >= 100], key=lambda r: -min(r["train_t"], r["test_t"]))
+    shadow = {r["rule"]: r for r in picks + [r for r in top_train if r["stable"]][:5] + both[:4]}
     storage.set_system_status(key, json.dumps({**{k: report[k] for k in
                               ("run_at", "tried", "split_ts", "validated", "picks", "families")},
                               "cost": args.cost, "shadow": list(shadow.values())}, default=float))
