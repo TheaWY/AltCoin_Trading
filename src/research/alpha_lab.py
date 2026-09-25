@@ -100,6 +100,17 @@ def load(storage: Any, days: int = 185) -> dict[str, pd.DataFrame]:
         notes = _q(storage, "SELECT source, ts, kind, symbols FROM exchange_notices WHERE ts >= ?", (since - 7 * 86400,))
     except Exception:  # noqa: BLE001
         up, notes = pd.DataFrame(), pd.DataFrame()
+    def _try(sql: str, params: tuple) -> pd.DataFrame:
+        try:
+            return _q(storage, sql, params)
+        except Exception:  # noqa: BLE001
+            return pd.DataFrame()
+    # CoinGecko daily market cap (point in time, includes supply changes); the
+    # 00:00 UTC value is known from the next hour on
+    cgd = _try("SELECT symbol, ts + 3600 AS ts, mcap FROM cg_daily WHERE mcap > 0 AND ts >= ?", (since - 3 * 86400,))
+    fng = _try("SELECT ts + 3600 AS ts, value FROM fng_daily WHERE ts >= ?", (since - 3 * 86400,))
+    cb = _try("SELECT product, ts, close FROM coinbase_1h WHERE ts >= ?", (since,))
+    bt = _try("SELECT symbol, ts, close, volume FROM bithumb_1h WHERE ts >= ?", (since,))
 
     perp_syms = set(px["symbol"].unique()) | set(met["symbol"].unique())
     p: dict[str, pd.DataFrame] = {}
@@ -126,8 +137,30 @@ def load(storage: Any, days: int = 185) -> dict[str, pd.DataFrame]:
         for k in ("liq_long", "liq_short"):
             p[k].loc[p[k].index < first] = np.nan
     supply = sup.set_index("symbol")["supply"].astype(float).reindex(cols) if not sup.empty else pd.Series(np.nan, index=cols)
-    p["mcap"] = p["close"].mul(supply, axis=1)
+    p["mcap_supply"] = p["close"].mul(supply, axis=1)
+    if not cgd.empty:
+        cg = rx(_pivot(cgd, "mcap"), 30)
+        # rescale the daily CoinGecko value by the intraday price move so it stays hourly
+        day_px = p["close"].copy()
+        day_px.loc[np.asarray(idx % 86400 != 3600)] = np.nan
+        day_px = day_px.ffill(limit=30)
+        pit = cg * p["close"] / day_px
+        p["mcap_is_cg"] = pit.notna().astype(float)
+        p["mcap"] = pit.combine_first(p["mcap_supply"])
+    else:
+        p["mcap"] = p["mcap_supply"]
     p["dv"] = p["close"] * p["volume"]
+    if not fng.empty:
+        p["fng"] = fng.set_index("ts")["value"].astype(float).reindex(idx.union(pd.Index(fng["ts"].astype("int64")))).ffill(limit=30).reindex(idx)
+    if not cb.empty and "BTC/USDT" in p["close"]:
+        cbb = cb[cb["product"] == "BTC-USD"].set_index("ts")["close"].astype(float)
+        p["cb_premium"] = (cbb.reindex(idx) / p["close"]["BTC/USDT"] - 1)
+    if not bt.empty:
+        bpx = _pivot(bt, "close").reindex(index=idx)
+        bvol = _pivot(bt, "volume").reindex(index=idx)
+        busdt = bpx.get("USDT/KRW")
+        if busdt is not None:
+            p["bithumb_dv"] = (bpx * bvol).reindex(columns=cols).div(busdt.ffill(limit=24), axis=0)
     # Upbit: KRW price and value, USDT/KRW for FX (+ the Korean premium baseline)
     if not up.empty:
         ukrw = _pivot(up, "close").reindex(index=idx)
@@ -238,6 +271,14 @@ def signals(p: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         add("upbit_surge", "한국", "업비트 4시간 거래대금 ÷ 직전 7일 평균", p["upbit_dv"].rolling(4).sum()
             / (p["upbit_dv"].rolling(168, min_periods=48).sum().shift(4) / 42))
         add("on_upbit", "한국", "업비트 원화마켓 상장 여부", p["upbit_dv"].notna().astype(float).rolling(24).max())
+    if "bithumb_dv" in p:
+        bdv24 = p["bithumb_dv"].rolling(24, min_periods=6).sum()
+        add("bithumb_share", "한국", "빗썸 거래대금 ÷ 바이낸스 선물 거래대금 (24시간)", bdv24 / dv24)
+        if "upbit_dv" in p:
+            add("kr_share", "한국", "(업비트+빗썸) 거래대금 ÷ 바이낸스 선물 (24시간)",
+                (bdv24.fillna(0) + p["upbit_dv"].rolling(24, min_periods=6).sum().fillna(0)).replace(0, np.nan) / dv24)
+    add("mcap_supply_gap", "거래량·규모", "CoinGecko 시총 ÷ (현재 공급량×가격) (언락/소각 흔적)",
+        mcap / p["mcap_supply"] if "mcap_supply" in p else mcap * np.nan)
     for kind, ko in (("listing", "상장/신규지원"), ("warning", "유의종목 지정"), ("delisting", "상장폐지")):
         ev = p.get(f"ev_{kind}")
         if ev is not None:
@@ -247,6 +288,13 @@ def signals(p: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
     add("btc24", "시장", "BTC 24시간 수익률", bc(btc.rolling(24).sum()))
     add("breadth24", "시장", "24시간 오른 코인 비율", bc((s["r24"] > 0).where(s["r24"].notna()).mean(axis=1)))
     add("mkt24", "시장", "전체 코인 24시간 수익률 중앙값", bc(s["r24"].median(axis=1)))
+    if "fng" in p:
+        add("fng", "시장", "공포·탐욕 지수 (0 공포 ~ 100 탐욕)", bc(p["fng"]))
+        add("fng_chg7", "시장", "공포·탐욕 지수 7일 변화", bc(p["fng"] - p["fng"].shift(168)))
+    if "cb_premium" in p:
+        cbp = p["cb_premium"].rolling(24, min_periods=6).mean()
+        add("cb_premium", "시장", "코인베이스 프리미엄 (BTC, 24시간 평균, 미국 현물 수요)", bc(cbp))
+        add("cb_premium_chg", "시장", "코인베이스 프리미엄 24시간 변화", bc(cbp - cbp.shift(24)))
     return s
 
 
@@ -477,10 +525,13 @@ def backtests(p: dict[str, pd.DataFrame], s: dict[str, pd.DataFrame], min_dv24: 
     dv_log = s["dv24"].to_numpy()
     lev = s["oi_mcap"].to_numpy()
     oidv = s["oi_dv"].to_numpy()
+    lev_sup = (s["oi_mcap"] * p["mcap"] / p["mcap_supply"]).to_numpy() if "mcap_supply" in p else lev
+    is_cg = p["mcap_is_cg"].to_numpy() > 0 if "mcap_is_cg" in p else np.zeros_like(lev, dtype=bool)
     C, HI, LO = c.to_numpy(), hi.to_numpy(), lo.to_numpy()
     out: dict[str, list] = {k: [] for k in ("quiet_long", "noisy_short", "quiet_vs_noisy", "leverage_long",
                                              "breakout_5", "breakout_8", "universe",
-                                             "oidv_long", "leverage_long_all")}
+                                             "oidv_long", "leverage_long_all",
+                                             "leverage_long_supply", "leverage_long_cg")}
     stamps = []
     for i in days:
         m = ok[i]
@@ -508,6 +559,13 @@ def backtests(p: dict[str, pd.DataFrame], s: dict[str, pd.DataFrame], min_dv24: 
         else:
             out["leverage_long"].append(np.nan)
         out["universe"].append(np.nanmean(f[m]))
+        # comparison: old supply x price market cap, and CoinGecko point-in-time only
+        for key, arr, extra in (("leverage_long_supply", lev_sup, m), ("leverage_long_cg", lev, m & is_cg[i])):
+            v_ = np.where(extra, arr[i], np.nan)
+            if np.isfinite(v_).sum() >= 20:
+                out[key].append(np.nanmean(f[v_ >= np.nanquantile(v_, 0.95)]) - COST)
+            else:
+                out[key].append(np.nan)
         # same idea without market cap (which only exists for coins listed today): OI / volume, all coins
         od = np.where(m, oidv[i], np.nan)
         if np.isfinite(od).sum() >= 20:

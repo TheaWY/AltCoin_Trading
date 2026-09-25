@@ -258,6 +258,39 @@ def alpha() -> dict[str, Any]:
         return {}
 
 
+@router.get("/alpha_shadow")
+def alpha_shadow() -> dict[str, Any]:
+    """Forward test of the alpha-lab candidates (src/engine/alpha_shadow.py)."""
+    storage = get_storage()
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = [dict(r) for r in c.execute(
+                "SELECT strategy, day, symbol, status, side, net, note FROM alpha_shadow "
+                "WHERE day >= ? ORDER BY day DESC, strategy, net DESC NULLS LAST",
+                (int(time.time()) - 60 * 86400,)).fetchall()]
+    except Exception:  # noqa: BLE001
+        return {"strategies": {}, "today": []}
+    out: dict[str, Any] = {}
+    for s in ("breakout8", "leverage_long"):
+        days: dict[int, list[float]] = {}
+        for r in rows:
+            if r["strategy"] == s and r["status"] == "closed" and r["net"] is not None and (s != "breakout8" or r["side"]):
+                days.setdefault(int(r["day"]), []).append(float(r["net"]))
+        daily = [sum(v) / len(v) for _, v in sorted(days.items())]
+        eq = 1.0
+        for d in daily:
+            eq *= 1 + d
+        out[s] = {"days": len(daily), "mean": (sum(daily) / len(daily)) if daily else None,
+                  "win": (sum(d > 0 for d in daily) / len(daily)) if daily else None, "total": eq - 1 if daily else None,
+                  "trades": sum(len(v) for v in days.values())}
+    last = max((int(r["day"]) for r in rows), default=None)
+    prev = max((int(r["day"]) for r in rows if r["status"] == "closed"), default=None)
+    pick = lambda d: [{k: r[k] for k in ("strategy", "symbol", "status", "side", "net", "note")}  # noqa: E731
+                      for r in rows if int(r["day"]) == d]
+    return {"strategies": out, "today_day": last, "today": pick(last) if last else [],
+            "last_closed_day": prev, "last_closed": pick(prev) if prev else []}
+
+
 @router.get("/grid")
 def grid() -> dict[str, Any]:
     """Strategy grid results (taker and maker cost) + live forward-test of its candidates."""
