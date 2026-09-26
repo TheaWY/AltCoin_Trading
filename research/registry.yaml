@@ -71,12 +71,13 @@ hypotheses:
     rule: daily 00 UTC, short perp + long spot when trailing 24h funding (8h-normalised) >= 0.03%; exit when < 0.01%
     params: {enter: 0.0003, exit: 0.0001, spot_fee: 0.001}
     universe_floor_usd: 5000000
-    sizing: equal weight across active positions; basis risk ignored (optimistic)
+    sizing: equal weight across active positions
+    amended: "2026-09-26 before any OOT run: basis P&L now included (Binance spot 1h closes); coins without a Binance spot market are not eligible. The first DEV run ignored basis and gave an impossible Sharpe of 17."
 
   - id: S7_pump_fade
     tier: confirmatory
     registered: 2026-09-26
-    mechanism: pumps mean-revert in the median (our data: median -6% 24h after a +10% hour); stop caps the fat right tail
+    mechanism: pumps mean-revert in the median (our data, median -6% 24h after a +10% hour); stop caps the fat right tail
     rule: any hour, 1h return >= +10% -> short, stop +15%, target -10%, max 24h, one per coin per 24h
     params: {trigger: 0.10, stop: 0.15, target: 0.10, hold_min: 1440}
     universe_floor_usd: 5000000
