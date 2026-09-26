@@ -32,6 +32,10 @@ MODELS = Path(__file__).resolve().parents[2] / "data" / "models"
 SCHEMA = (
     """CREATE TABLE IF NOT EXISTS pump_watch_events (symbol TEXT NOT NULL, ts BIGINT NOT NULL, kind TEXT NOT NULL,
        move DOUBLE PRECISION, pct JSON, raw JSON, PRIMARY KEY (symbol, ts, kind))""",
+    """CREATE TABLE IF NOT EXISTS move_top10_log (ts BIGINT NOT NULL, symbol TEXT NOT NULL, rank INTEGER,
+       move_p DOUBLE PRECISION, up_p DOUBLE PRECISION, price DOUBLE PRECISION, status TEXT NOT NULL DEFAULT 'open',
+       mfe DOUBLE PRECISION, mae DOUBLE PRECISION, ret DOUBLE PRECISION, moved10 INTEGER, up10 INTEGER, dn10 INTEGER,
+       replay INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (ts, symbol))""",
     """CREATE TABLE IF NOT EXISTS pump_watch_picks (model TEXT NOT NULL, ts BIGINT NOT NULL, symbol TEXT NOT NULL,
        rank INTEGER, score DOUBLE PRECISION, price DOUBLE PRECISION, status TEXT NOT NULL DEFAULT 'open',
        mfe DOUBLE PRECISION, mae DOUBLE PRECISION, ret DOUBLE PRECISION, hit10 INTEGER, trade DOUBLE PRECISION,
@@ -173,9 +177,40 @@ def move_top10(storage: Any, p: pd.DataFrame) -> list[dict[str, Any]]:
                     "rsi": float(r["rsi_1h"]) if pd.notna(r["rsi_1h"]) else None,
                     "rv_1h": float(r["rv_1h"]) if pd.notna(r["rv_1h"]) else None,
                     "funding": float(r["funding"]) if "funding" in r and pd.notna(r["funding"]) else None})
-    storage.set_system_status("move_top10", json.dumps({"ts": int(cur["ts"].iloc[0]), "made_at": int(time.time()),
-                                                         "coins": out}))
+    ts0 = int(cur["ts"].iloc[0])
+    storage.set_system_status("move_top10", json.dumps({"ts": ts0, "made_at": int(time.time()), "coins": out}))
+    with storage._connect() as c:  # noqa: SLF001
+        for rank, o in enumerate(out):
+            px = c.execute("SELECT close FROM prices_1m WHERE symbol = ? AND ts < ? ORDER BY ts DESC LIMIT 1",
+                           (o["symbol"], ts0)).fetchone()
+            c.execute("INSERT INTO move_top10_log (ts, symbol, rank, move_p, up_p, price) VALUES (?,?,?,?,?,?) "
+                      "ON CONFLICT DO NOTHING", (ts0, o["symbol"], rank + 1, o["move_p"], o["up_p"],
+                                                 float(px["close"]) if px else None))
     return out
+
+
+def settle_top10(storage: Any) -> int:
+    """Outcome of each logged TOP 10 pick over the 24h after it was made, from the live 1m bars."""
+    now = int(time.time())
+    n = 0
+    with storage._connect() as c:  # noqa: SLF001
+        rows = [dict(r) for r in c.execute("SELECT ts, symbol, price FROM move_top10_log WHERE status = 'open' AND ts <= ?",
+                                           (now - 86400 - 300,)).fetchall()]
+        for r in rows:
+            agg = c.execute("SELECT MAX(high) AS h, MIN(low) AS l, COUNT(*) AS n FROM prices_1m WHERE symbol = ? "
+                            "AND ts >= ? AND ts < ?", (r["symbol"], r["ts"], r["ts"] + 86400)).fetchone()
+            last = c.execute("SELECT close FROM prices_1m WHERE symbol = ? AND ts < ? ORDER BY ts DESC LIMIT 1",
+                             (r["symbol"], r["ts"] + 86400)).fetchone()
+            if not r["price"] or not agg or not agg["n"] or agg["n"] < 600 or not last:
+                c.execute("UPDATE move_top10_log SET status='void' WHERE ts=? AND symbol=?", (r["ts"], r["symbol"]))
+                continue
+            e = float(r["price"])
+            mfe, mae, ret = float(agg["h"]) / e - 1, float(agg["l"]) / e - 1, float(last["close"]) / e - 1
+            c.execute("UPDATE move_top10_log SET status='closed', mfe=?, mae=?, ret=?, moved10=?, up10=?, dn10=? "
+                      "WHERE ts=? AND symbol=?", (mfe, mae, ret, int(mfe >= 0.1 or mae <= -0.1), int(mfe >= 0.1),
+                                                  int(mae <= -0.1), r["ts"], r["symbol"]))
+            n += 1
+    return n
 
 
 def run(storage: Any) -> dict[str, Any]:
@@ -188,6 +223,7 @@ def run(storage: Any) -> dict[str, Any]:
     res.update(score_and_settle(storage, p))
     try:
         res["top10"] = len(move_top10(storage, p))
+        res["top10_settled"] = settle_top10(storage)
     except Exception as e:  # noqa: BLE001
         logger.warning("move top10 failed: %r", e)
     res["elapsed_s"] = round(time.time() - t0)

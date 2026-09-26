@@ -269,11 +269,50 @@ KO_FEAT = {"ret_60m": "1시간 수익률", "ret_240m": "4시간 수익률", "ret
 
 @router.get("/move_top10")
 def move_top10() -> dict[str, Any]:
-    row = get_storage().get_system_status("move_top10")
+    storage = get_storage()
+    row = storage.get_system_status("move_top10")
     try:
-        return json.loads(row["value"]) if row and row.get("value") else {}
+        out = json.loads(row["value"]) if row and row.get("value") else {}
     except ValueError:
-        return {}
+        out = {}
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = [dict(r) for r in c.execute("SELECT ts, symbol, rank, move_p, up_p, mfe, mae, ret, moved10, up10, dn10, replay "
+                                               "FROM move_top10_log WHERE status='closed' ORDER BY ts DESC").fetchall()]
+            n_open = c.execute("SELECT COUNT(*) AS n FROM move_top10_log WHERE status='open'").fetchone()["n"]
+    except Exception:  # noqa: BLE001
+        rows, n_open = [], 0
+    # one row per coin per day (the first time it made the list), so a coin listed 20 hours in a row counts once
+    def firsts(rs):
+        seen, out_ = set(), []
+        for r in sorted(rs, key=lambda r: r["ts"]):
+            k = (r["symbol"], r["ts"] // 86400)
+            if k not in seen:
+                seen.add(k)
+                out_.append(r)
+        return out_
+    live = [r for r in rows if not r.get("replay")]
+    rep = [r for r in rows if r.get("replay")]
+    first = firsts(live)
+    def summ(rs):
+        if not rs:
+            return None
+        lean = [r for r in rs if r["up_p"] is not None and abs(r["up_p"] - 0.5) >= 0.1 and (r["up10"] or r["dn10"])
+                and not (r["up10"] and r["dn10"])]
+        right = [r for r in lean if (r["up_p"] > 0.5) == bool(r["up10"])]
+        return {"n": len(rs), "moved10": sum(r["moved10"] for r in rs) / len(rs), "up10": sum(r["up10"] for r in rs) / len(rs),
+                "dn10": sum(r["dn10"] for r in rs) / len(rs),
+                "median_swing": sorted(max(r["mfe"], -r["mae"]) for r in rs)[len(rs) // 2],
+                "lean_n": len(lean), "lean_right": (len(right) / len(lean)) if lean else None}
+    rf = firsts(rep)
+    out["record"] = {"all": summ(live), "coin_days": summ(first), "open": n_open,
+                     "replay": summ(rf), "replay_from": min((r["ts"] for r in rep), default=None),
+                     "replay_to": max((r["ts"] for r in rep), default=None),
+                     "recent_replay": [{k: r[k] for k in ("ts", "symbol", "move_p", "up_p", "mfe", "mae", "ret", "moved10")}
+                                       for r in list(reversed(rf))[:30]],
+                     "recent": [{k: r[k] for k in ("ts", "symbol", "move_p", "up_p", "mfe", "mae", "ret", "moved10")}
+                                for r in list(reversed(first))[:30]]}
+    return out
 
 
 @router.get("/pump_watch")
