@@ -197,7 +197,8 @@ def build_symbol(code: str, since: int, until: int, aux: dict[str, pd.DataFrame]
         mm = met.reindex(met.index.union(hs - MIN)).ffill(limit=6).reindex(hs - MIN)
         oi = mm["oi"].to_numpy(np.float64)
         for k, lag in (("oi_1h", 1), ("oi_4h", 4), ("oi_24h", 24)):
-            past = met["oi"].reindex(met["oi"].index.union(hs - MIN - lag * H_)).ffill(limit=6).reindex(hs - MIN).to_numpy(np.float64)
+            back = hs - MIN - lag * H_
+            past = met["oi"].reindex(met["oi"].index.union(back)).ffill(limit=6).reindex(back).to_numpy(np.float64)
             F[k] = np.log(oi / past)
         oi_usd = mm["oi_usd"].to_numpy(np.float64)
         F["oi_dv"] = oi_usd / at(dv24)
@@ -205,7 +206,8 @@ def build_symbol(code: str, since: int, until: int, aux: dict[str, pd.DataFrame]
         F["ls_top_pos"] = mm["ls_top_pos"].to_numpy(np.float64)
         F["ls_top_acct"] = mm["ls_top_acct"].to_numpy(np.float64)
         F["smart_crowd"] = F["ls_top_pos"] / F["ls_global"]
-        ls24 = met["ls_global"].reindex(met.index.union(hs - MIN - 24 * H_)).ffill(limit=6).reindex(hs - MIN).to_numpy(np.float64)
+        back24 = hs - MIN - 24 * H_
+        ls24 = met["ls_global"].reindex(met.index.union(back24)).ffill(limit=6).reindex(back24).to_numpy(np.float64)
         F["ls_chg24"] = np.log(F["ls_global"] / ls24)
         tr = met["taker_ratio"].rolling(12, min_periods=3).mean()
         F["fut_taker_1h"] = tr.reindex(tr.index.union(hs - MIN)).ffill(limit=6).reindex(hs - MIN).to_numpy(np.float64)

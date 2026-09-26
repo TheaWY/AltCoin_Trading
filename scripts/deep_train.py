@@ -32,7 +32,10 @@ def main() -> int:
     p = pd.read_parquet(ds.PANEL)
     feats = [f for f in ds.feature_cols(p) if not f.startswith(LIVE_EXCLUDE) and not f.startswith(("trade_", "dir_"))]
     OUT.mkdir(parents=True, exist_ok=True)
-    for target in ("up10_24h", "win10_24h"):
+    u, d = p["up10_24h"], p["dn10_24h"]
+    p["move10_24h"] = np.where(u.isna(), np.nan, ((u == 1) | (d == 1)).astype(float))
+    p["dir_24h"] = np.where((u == 1) & (d != 1), 1.0, np.where((d == 1) & (u != 1), 0.0, np.nan))
+    for target in ("up10_24h", "win10_24h", "move10_24h", "dir_24h"):
         y = p[target].to_numpy()
         ok = np.where(np.isfinite(y))[0]
         rng = np.random.default_rng(0)

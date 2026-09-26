@@ -267,6 +267,15 @@ KO_FEAT = {"ret_60m": "1시간 수익률", "ret_240m": "4시간 수익률", "ret
            "mcap_log": "시가총액", "oi_mcap": "레버리지 (OI/시총)", "turnover": "회전율", "age_days": "상장 후 일수"}
 
 
+@router.get("/move_top10")
+def move_top10() -> dict[str, Any]:
+    row = get_storage().get_system_status("move_top10")
+    try:
+        return json.loads(row["value"]) if row and row.get("value") else {}
+    except ValueError:
+        return {}
+
+
 @router.get("/pump_watch")
 def pump_watch() -> dict[str, Any]:
     """Live +/-10% hours with what was extreme right before (src/engine/pump_watch.py)."""

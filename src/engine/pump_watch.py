@@ -101,6 +101,8 @@ def score_and_settle(storage: Any, p: pd.DataFrame) -> dict[str, int]:
     now_h = int(p["ts"].max())
     for path in sorted(MODELS.glob("deep_*.txt")):
         name = path.stem
+        if name not in ("deep_up10_24h", "deep_win10_24h"):
+            continue
         meta = json.loads(path.with_suffix(".json").read_text()) if path.with_suffix(".json").exists() else {}
         feats = meta.get("features")
         if not feats or any(f not in p for f in feats):
@@ -140,6 +142,42 @@ def score_and_settle(storage: Any, p: pd.DataFrame) -> dict[str, int]:
     return out
 
 
+def _model(name: str):
+    import lightgbm as lgb
+    path = MODELS / f"{name}.txt"
+    meta = MODELS / f"{name}.json"
+    if not path.exists() or not meta.exists():
+        return None, None
+    return lgb.Booster(model_file=str(path)), json.loads(meta.read_text())["features"]
+
+
+def move_top10(storage: Any, p: pd.DataFrame) -> list[dict[str, Any]]:
+    """Coins most likely to move 10% either way in the next 24h, with the up-vs-down lean."""
+    bm, fm = _model("deep_move10_24h")
+    if bm is None or any(f not in p for f in fm):
+        return []
+    cur = p[p["ts"] == p["ts"].max()].reset_index(drop=True)
+    cur = cur[cur["dv24_log"] >= np.log1p(2e6)].reset_index(drop=True)      # skip illiquid names
+    if cur.empty:
+        return []
+    sm = bm.predict(cur[fm].to_numpy(np.float32))
+    bd, fd = _model("deep_dir_24h")
+    sd = bd.predict(cur[fd].to_numpy(np.float32)) if bd is not None and all(f in cur for f in fd) else np.full(len(cur), np.nan)
+    top = np.argsort(-sm)[:10]
+    out = []
+    for i in top:
+        r = cur.iloc[i]
+        out.append({"symbol": r["symbol"], "move_p": float(sm[i]), "up_p": None if np.isnan(sd[i]) else float(sd[i]),
+                    "ret_24h": float(np.expm1(r["ret_1440m"])) if pd.notna(r["ret_1440m"]) else None,
+                    "ret_15m": float(np.expm1(r["ret_15m"])) if pd.notna(r["ret_15m"]) else None,
+                    "rsi": float(r["rsi_1h"]) if pd.notna(r["rsi_1h"]) else None,
+                    "rv_1h": float(r["rv_1h"]) if pd.notna(r["rv_1h"]) else None,
+                    "funding": float(r["funding"]) if "funding" in r and pd.notna(r["funding"]) else None})
+    storage.set_system_status("move_top10", json.dumps({"ts": int(cur["ts"].iloc[0]), "made_at": int(time.time()),
+                                                         "coins": out}))
+    return out
+
+
 def run(storage: Any) -> dict[str, Any]:
     with storage._connect() as c:  # noqa: SLF001
         for s in SCHEMA:
@@ -148,5 +186,9 @@ def run(storage: Any) -> dict[str, Any]:
     p = build_live(storage)
     res = {"rows": int(len(p)), "coins": int(p["symbol"].nunique()), "events": record_events(storage, p)}
     res.update(score_and_settle(storage, p))
+    try:
+        res["top10"] = len(move_top10(storage, p))
+    except Exception as e:  # noqa: BLE001
+        logger.warning("move top10 failed: %r", e)
     res["elapsed_s"] = round(time.time() - t0)
     return res
