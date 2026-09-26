@@ -128,7 +128,7 @@ def fit_torch(model, Xtr, ytr, Xva, yva, epochs=40, bs=256, lr=1e-3):
     opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
     lossf = nn.BCEWithLogitsLoss()
     Xt, yt = torch.tensor(Xtr, dtype=torch.float32), torch.tensor(ytr, dtype=torch.float32)
-    Xv = torch.tensor(Xva, dtype=torch.float32).to(DEV)
+    Xv = torch.tensor(Xva, dtype=torch.float32).to(DEV)  # batched below (MPS memory)
     best, best_state, bad = -1, None, 0
     for ep in range(epochs):
         model.train()
@@ -142,7 +142,7 @@ def fit_torch(model, Xtr, ytr, Xva, yva, epochs=40, bs=256, lr=1e-3):
             opt.step()
         model.eval()
         with torch.no_grad():
-            pv = torch.sigmoid(model(Xv)).cpu().numpy()
+            pv = np.concatenate([torch.sigmoid(model(Xv[k:k + 1024])).cpu().numpy() for k in range(0, len(Xv), 1024)])
         a = auc(yva, pv)
         if np.isfinite(a) and a > best:
             best, bad = a, 0
