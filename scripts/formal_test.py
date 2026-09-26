@@ -330,13 +330,13 @@ def spot_daily(code: str, t0: int, t1: int) -> pd.Series | None:
     import zipfile
     import requests
     SPOT.mkdir(parents=True, exist_ok=True)
-    f = SPOT / f"{code}.parquet"
+    months = pd.period_range(pd.to_datetime(t0, unit="s"), pd.to_datetime(t1 + 8 * D_, unit="s"), freq="M")
+    f = SPOT / f"{code}_{months[0]}_{months[-1]}.parquet"      # cache per period
     if f.exists():
         d = pd.read_parquet(f)
     else:
         rows = []
         s = requests.Session()
-        months = pd.period_range(pd.to_datetime(t0, unit="s"), pd.to_datetime(t1 + 8 * D_, unit="s"), freq="M")
         today = pd.Timestamp.utcnow().tz_localize(None)
         for m in months:
             urls = [f"{VISION}/monthly/klines/{code}/1h/{code}-1h-{m}.zip"]
