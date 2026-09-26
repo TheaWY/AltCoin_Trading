@@ -60,11 +60,14 @@ def key() -> str:
 
 def stream_csv(url: str, usecols=None, dtype=None):
     """Yield DataFrame chunks of a gzipped CSV straight from HTTP (nothing on disk)."""
-    for attempt in range(4):
+    for attempt in range(10):
         try:
             r = requests.get(url, headers={"Authorization": f"Bearer {key()}"}, stream=True, timeout=120)
             if r.status_code == 404:
                 return
+            if r.status_code == 429:           # rate limited: wait it out instead of failing the file
+                time.sleep(int(r.headers.get("Retry-After", 0)) or 30 * (attempt + 1))
+                continue
             r.raise_for_status()
             r.raw.decode_content = False
             gz = gzip.GzipFile(fileobj=r.raw)
