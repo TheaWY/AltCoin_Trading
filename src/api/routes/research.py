@@ -246,6 +246,335 @@ def overfit() -> dict[str, Any]:
     return result
 
 
+@router.get("/alpha")
+def alpha() -> dict[str, Any]:
+    """Alpha lab summary (scripts/alpha_lab.py)."""
+    row = get_storage().get_system_status("alpha_lab")
+    if not row or not row.get("value"):
+        return {}
+    try:
+        return json.loads(row["value"])
+    except ValueError:
+        return {}
+
+
+KO_FEAT = {"ret_60m": "1시간 수익률", "ret_240m": "4시간 수익률", "ret_1440m": "24시간 수익률", "vsurge_15m": "15분 거래대금 폭증",
+           "vsurge_60m": "1시간 거래대금 폭증", "nsurge_60m": "1시간 체결수 폭증", "taker_60m": "1시간 시장가 매수 비중",
+           "taker_z_60m": "시장가 매수 비중 이상치", "cvd_60m": "1시간 순매수(CVD)", "oi_1h": "미결제약정 1시간 증가",
+           "oi_4h": "미결제약정 4시간 증가", "oi_24h": "미결제약정 24시간 증가", "funding": "펀딩비", "ls_global": "롱/숏 비율",
+           "smart_crowd": "고수 vs 대중 롱숏", "fut_taker_1h": "선물 시장가 매수/매도", "rv_1h": "1시간 변동성",
+           "rv_ratio_1h_24h": "변동성 확대", "dhi_24h": "24시간 고점 근접", "dhi_7d": "7일 고점 근접", "max1m_60": "1시간 내 최대 1분봉",
+           "mcap_log": "시가총액", "oi_mcap": "레버리지 (OI/시총)", "turnover": "회전율", "age_days": "상장 후 일수"}
+
+
+@router.get("/move_top10")
+def move_top10() -> dict[str, Any]:
+    storage = get_storage()
+    row = storage.get_system_status("move_top10")
+    try:
+        out = json.loads(row["value"]) if row and row.get("value") else {}
+    except ValueError:
+        out = {}
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = [dict(r) for r in c.execute("SELECT ts, symbol, rank, move_p, up_p, mfe, mae, ret, moved10, up10, dn10, replay "
+                                               "FROM move_top10_log WHERE status='closed' ORDER BY ts DESC").fetchall()]
+            n_open = c.execute("SELECT COUNT(*) AS n FROM move_top10_log WHERE status='open'").fetchone()["n"]
+    except Exception:  # noqa: BLE001
+        rows, n_open = [], 0
+    # one row per coin per day (the first time it made the list), so a coin listed 20 hours in a row counts once
+    def firsts(rs):
+        seen, out_ = set(), []
+        for r in sorted(rs, key=lambda r: r["ts"]):
+            k = (r["symbol"], r["ts"] // 86400)
+            if k not in seen:
+                seen.add(k)
+                out_.append(r)
+        return out_
+    live = [r for r in rows if not r.get("replay")]
+    rep = [r for r in rows if r.get("replay")]
+    first = firsts(live)
+    def summ(rs):
+        if not rs:
+            return None
+        lean = [r for r in rs if r["up_p"] is not None and abs(r["up_p"] - 0.5) >= 0.1 and (r["up10"] or r["dn10"])
+                and not (r["up10"] and r["dn10"])]
+        right = [r for r in lean if (r["up_p"] > 0.5) == bool(r["up10"])]
+        return {"n": len(rs), "moved10": sum(r["moved10"] for r in rs) / len(rs), "up10": sum(r["up10"] for r in rs) / len(rs),
+                "dn10": sum(r["dn10"] for r in rs) / len(rs),
+                "median_swing": sorted(max(r["mfe"], -r["mae"]) for r in rs)[len(rs) // 2],
+                "lean_n": len(lean), "lean_right": (len(right) / len(lean)) if lean else None}
+    rf = firsts(rep)
+    out["record"] = {"all": summ(live), "coin_days": summ(first), "open": n_open,
+                     "replay": summ(rf), "replay_from": min((r["ts"] for r in rep), default=None),
+                     "replay_to": max((r["ts"] for r in rep), default=None),
+                     "recent_replay": [{k: r[k] for k in ("ts", "symbol", "move_p", "up_p", "mfe", "mae", "ret", "moved10")}
+                                       for r in list(reversed(rf))[:30]],
+                     "recent": [{k: r[k] for k in ("ts", "symbol", "move_p", "up_p", "mfe", "mae", "ret", "moved10")}
+                                for r in list(reversed(first))[:30]]}
+    return out
+
+
+@router.get("/pump_watch")
+def pump_watch() -> dict[str, Any]:
+    """Live +/-10% hours with what was extreme right before (src/engine/pump_watch.py)."""
+    storage = get_storage()
+    now = int(time.time())
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            ev = [dict(r) for r in c.execute("SELECT symbol, ts, kind, move, pct FROM pump_watch_events WHERE ts >= ? "
+                                             "ORDER BY ts DESC", (now - 7 * 86400,)).fetchall()]
+            picks = [dict(r) for r in c.execute("SELECT model, ts, symbol, rank, status, mfe, hit10, trade FROM pump_watch_picks "
+                                                "WHERE ts >= ? ORDER BY ts DESC, rank", (now - 14 * 86400,)).fetchall()]
+    except Exception:  # noqa: BLE001
+        return {"events": [], "summary": [], "picks": []}
+    def pj(x):
+        return x if isinstance(x, dict) else json.loads(x or "{}")
+    # 7-day summary: how often each feature was in the top/bottom 10% one hour before, pumps vs dumps
+    agg: dict[str, dict[str, list[float]]] = {}
+    for e in ev:
+        pre = pj(e["pct"]).get("1h") or {}
+        for f, v in pre.items():
+            if v is not None:
+                agg.setdefault(f, {"up": [], "down": []})[e["kind"]].append(v)
+    summary = []
+    for f, d in agg.items():
+        up, dn = d["up"], d["down"]
+        if len(up) < 5:
+            continue
+        summary.append({"feature": f, "ko": KO_FEAT.get(f, f), "n_up": len(up), "n_down": len(dn),
+                        "up_med": float(sorted(up)[len(up) // 2]), "down_med": float(sorted(dn)[len(dn) // 2]) if dn else None,
+                        "up_top10": sum(v >= 90 for v in up) / len(up), "down_top10": (sum(v >= 90 for v in dn) / len(dn)) if dn else None})
+    summary.sort(key=lambda s: -abs(s["up_med"] - 50))
+    recent = []
+    for e in [x for x in ev if x["kind"] == "up"][:25]:
+        pre = pj(e["pct"]).get("1h") or {}
+        lit = sorted(((f, v) for f, v in pre.items() if v is not None and (v >= 90 or v <= 10)), key=lambda x: -abs(x[1] - 50))
+        recent.append({"symbol": e["symbol"], "ts": e["ts"], "move": e["move"],
+                       "lit": [{"f": f, "ko": KO_FEAT.get(f, f), "pct": v} for f, v in lit[:5]]})
+    closed = [p for p in picks if p["status"] == "closed"]
+    return {"summary": summary[:12], "recent": recent, "n_up": sum(e["kind"] == "up" for e in ev),
+            "n_down": sum(e["kind"] == "down" for e in ev),
+            "picks": {"closed": len(closed), "hit10": (sum(p["hit10"] or 0 for p in closed) / len(closed)) if closed else None,
+                      "avg_trade": (sum(p["trade"] or 0 for p in closed) / len(closed)) if closed else None,
+                      "open": [p for p in picks if p["status"] == "open"][:15]}}
+
+
+@router.get("/alpha_shadow")
+def alpha_shadow() -> dict[str, Any]:
+    """Forward test of the alpha-lab candidates (src/engine/alpha_shadow.py)."""
+    storage = get_storage()
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = [dict(r) for r in c.execute(
+                "SELECT strategy, day, symbol, status, side, net, note FROM alpha_shadow "
+                "WHERE day >= ? ORDER BY day DESC, strategy, net DESC NULLS LAST",
+                (int(time.time()) - 60 * 86400,)).fetchall()]
+    except Exception:  # noqa: BLE001
+        return {"strategies": {}, "today": []}
+    out: dict[str, Any] = {}
+    for s in ("breakout8", "leverage_long"):
+        days: dict[int, list[float]] = {}
+        for r in rows:
+            if r["strategy"] == s and r["status"] == "closed" and r["net"] is not None and (s != "breakout8" or r["side"]):
+                days.setdefault(int(r["day"]), []).append(float(r["net"]))
+        daily = [sum(v) / len(v) for _, v in sorted(days.items())]
+        eq = 1.0
+        for d in daily:
+            eq *= 1 + d
+        out[s] = {"days": len(daily), "mean": (sum(daily) / len(daily)) if daily else None,
+                  "win": (sum(d > 0 for d in daily) / len(daily)) if daily else None, "total": eq - 1 if daily else None,
+                  "trades": sum(len(v) for v in days.values())}
+    last = max((int(r["day"]) for r in rows), default=None)
+    prev = max((int(r["day"]) for r in rows if r["status"] == "closed"), default=None)
+    pick = lambda d: [{k: r[k] for k in ("strategy", "symbol", "status", "side", "net", "note")}  # noqa: E731
+                      for r in rows if int(r["day"]) == d]
+    return {"strategies": out, "today_day": last, "today": pick(last) if last else [],
+            "last_closed_day": prev, "last_closed": pick(prev) if prev else []}
+
+
+@router.get("/grid")
+def grid() -> dict[str, Any]:
+    """Strategy grid results (taker and maker cost) + live forward-test of its candidates."""
+    storage = get_storage()
+    out: dict[str, Any] = {}
+    for key, label in (("strategy_grid", "taker"), ("strategy_grid_cost0.001", "maker")):
+        row = storage.get_system_status(key)
+        if row and row.get("value"):
+            try:
+                d = json.loads(row["value"])
+                out[label] = {"run_at": d.get("run_at"), "tried": d.get("tried"), "families": d.get("families"),
+                              "validated": len(d.get("validated") or []),
+                              "picks": [{k: p.get(k) for k in ("rule", "family", "train_mean", "train_t", "test_mean",
+                                                               "test_t", "train_trades", "test_trades", "win_rate_test")}
+                                        for p in d.get("picks") or []]}
+            except ValueError:
+                pass
+    fwd = []
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = c.execute("SELECT rule, COUNT(*) AS n, SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS open_n, "
+                             "AVG(net_taker) AS taker, AVG(net_maker) AS maker, "
+                             "AVG(CASE WHEN status='closed' THEN (CASE WHEN gross > 0 THEN 1.0 ELSE 0.0 END) END) AS win "
+                             "FROM grid_signals GROUP BY rule ORDER BY COUNT(*) DESC").fetchall()
+        for r in rows:
+            r = dict(r)
+            fwd.append({"rule": r["rule"], "signals": int(r["n"]), "open": int(r["open_n"] or 0),
+                        "closed": int(r["n"]) - int(r["open_n"] or 0),
+                        "net_taker": None if r["taker"] is None else float(r["taker"]),
+                        "net_maker": None if r["maker"] is None else float(r["maker"]),
+                        "win": None if r["win"] is None else float(r["win"])})
+    except Exception:  # noqa: BLE001
+        pass
+    out["forward"] = fwd
+    return out
+
+
+@router.get("/swing")
+def swing() -> dict[str, Any]:
+    """Swing core (trend-following BTC/ETH legs) + latest swing research."""
+    from pathlib import Path
+
+    from src import config
+    from src.engine import core_manager as cm
+
+    storage = get_storage()
+    ma = cm._trend_ma()  # noqa: SLF001
+    legs = []
+    for sym in cm._symbols():  # noqa: SLF001
+        px = cm._price(storage, sym)  # noqa: SLF001
+        trades = cm.core_trades(storage, sym)
+        value = sum(float(t["quantity"]) * (px or float(t["entry_price"])) for t in trades)
+        cost = sum(float(t["quantity"]) * float(t["entry_price"]) for t in trades)
+        st = cm.trend_state(storage, sym, ma) if ma else {"up": True}
+        legs.append({"symbol": sym, "price": px, "held": bool(trades), "value": round(value, 2),
+                     "pnl": round(value - cost, 2), "up": st.get("up"), "close": st.get("close"),
+                     "ma": st.get("ma"), "ma_days": ma,
+                     "gap_pct": (st["close"] / st["ma"] - 1) if st.get("close") and st.get("ma") else None})
+    out: dict[str, Any] = {"enabled": bool(getattr(config, "CORE_ENABLED", False)), "ma_days": ma, "legs": legs}
+    path = Path(__file__).resolve().parents[3] / "data" / "reports" / "swing" / "latest.json"
+    if path.exists():
+        rep = json.loads(path.read_text())
+        keep = ("btc_eth_trend_ma50", "btc_eth_trend_ma100", "btc_trend_ma50", "top3liq_trend_ma50",
+                "xs_mom30_top10", "btc_hold")
+        out["report_at"] = rep.get("run_at")
+        out["test_from"] = rep.get("split_ts")
+        out["rules_tested"] = rep.get("rules_tested")
+        out["rules_validated"] = rep.get("validated")
+        out["books"] = [{"name": k, "train": b["train"], "test": b["test"], "beats_btc_test": b["beats_btc_test"],
+                         "beats_btc_train": b["beats_btc_train"]}
+                        for k, b in (rep.get("books") or {}).items() if k in keep]
+    return out
+
+
+@router.get("/pumps")
+def get_pumps() -> dict[str, Any]:
+    """Pump rider: 1m pipeline health, precursor findings, rules, shadow and live results."""
+    from pathlib import Path
+
+    storage = get_storage()
+    root = Path(__file__).resolve().parents[3]
+    rep: dict[str, Any] = {}
+    try:
+        rep = json.loads((root / "data" / "reports" / "pumps" / "latest.json").read_text())
+    except (OSError, ValueError):
+        pass
+    now = int(time.time())
+    pipe = {"symbols_last_min": 0, "last_bar_age_s": None}
+    shadow = {"open": 0, "closed": 0, "win_rate": None, "avg_net": None, "recent": []}
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            r = dict(c.execute("SELECT MAX(ts) AS mx FROM prices_1m WHERE ts > ?", (now - 900,)).fetchone())
+            if r.get("mx"):
+                pipe["last_bar_age_s"] = now - int(r["mx"])
+                pipe["symbols_last_min"] = int(dict(c.execute(
+                    "SELECT COUNT(*) AS n FROM prices_1m WHERE ts = ?", (int(r["mx"]),)).fetchone())["n"])
+            if _table_exists("pump_signals"):
+                s = dict(c.execute("SELECT SUM(CASE WHEN status='open' THEN 1 ELSE 0 END) AS o, "
+                                   "SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) AS cl, "
+                                   "AVG(CASE WHEN status='closed' THEN net END) AS avg_net, "
+                                   "AVG(CASE WHEN status='closed' THEN (CASE WHEN net>0 THEN 1.0 ELSE 0.0 END) END) AS win "
+                                   "FROM pump_signals").fetchone())
+                shadow.update(open=int(s.get("o") or 0), closed=int(s.get("cl") or 0),
+                              avg_net=None if s.get("avg_net") is None else float(s["avg_net"]),
+                              win_rate=None if s.get("win") is None else float(s["win"]))
+                shadow["recent"] = [dict(x) for x in c.execute(
+                    "SELECT symbol, rule, opened_at, entry, peak, status, net, reason, target_pct "
+                    "FROM pump_signals ORDER BY opened_at DESC LIMIT 12").fetchall()]
+    except Exception:  # noqa: BLE001
+        pass
+    live = [dict(t) for t in storage.get_open_trades() if t.get("strategy") == "pump_rider"]
+    closed = []
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            closed = [dict(x) for x in c.execute(
+                "SELECT symbol, entry_price, exit_price, pnl, exit_reason, opened_at, closed_at FROM paper_trades "
+                "WHERE strategy='pump_rider' AND status='closed' ORDER BY closed_at DESC LIMIT 10").fetchall()]
+    except Exception:  # noqa: BLE001
+        pass
+    study = rep.get("study") or {}
+    pre = (rep.get("precursors") or {}).get("precursors") or []
+    return {
+        "pipeline": pipe,
+        "report_at": rep.get("run_at"),
+        "coins": study.get("symbols"), "minutes": study.get("minutes"),
+        "rules_tested": study.get("rules_tested"),
+        "validated": [{k: r.get(k) for k in ("rule", "events", "mfe_median", "minutes_to_peak_median",
+                                             "test_mean_net", "test_t", "test_win_rate", "target_pct", "trail")}
+                      for r in (study.get("validated") or [])[:8]],
+        "top_rules": [{k: r.get(k) for k in ("rule", "events", "mfe_median", "test_mean_net", "test_t",
+                                             "test_win_rate", "validated")} for r in (rep.get("top_rules") or [])[:8]],
+        "onsets": (rep.get("precursors") or {}).get("onsets_total"),
+        "precursors": [{k: r.get(k) for k in ("text", "train_auc", "test_auc", "test_lift_top10", "holds")}
+                       for r in pre[:8]],
+        "shadow": shadow,
+        "live_open": [{k: t.get(k) for k in ("symbol", "entry_price", "take_profit", "trail_price", "opened_at", "quantity")}
+                      for t in live],
+        "live_closed": closed,
+    }
+
+
+@router.get("/hypotheses")
+def get_hypotheses() -> dict[str, Any]:
+    """Rotating hypothesis engine + signal lab forward test, for the dashboard."""
+    from pathlib import Path
+
+    from src.engine import sentiment_gate, signal_lab
+
+    storage = get_storage()
+    root = Path(__file__).resolve().parents[3]
+    latest: dict[str, Any] = {}
+    try:
+        latest = json.loads((root / "data" / "reports" / "hypotheses" / "latest.json").read_text())
+    except (OSError, ValueError):
+        pass
+    gstate = sentiment_gate.load_state(storage)
+    lab_state = signal_lab.load_state(storage, int(time.time()))
+
+    def price(sym: str) -> float | None:
+        row = storage.get_latest_price(sym)
+        return float(row["close"]) if row else None
+
+    lab_eq = signal_lab.equity(lab_state, price) if lab_state.get("positions") or lab_state.get("rebalances") else None
+    supported = sorted((latest.get("supported") or {}).items(), key=lambda kv: kv[1].get("q") or 1)
+    return {
+        "run_at": latest.get("run_at"),
+        "explored": latest.get("registry_size"),
+        "space": latest.get("space_size"),
+        "tested_last_run": len(latest.get("tested") or []),
+        "supported": [{"hid": h, "h0": r.get("h0"), "ic": r.get("ic"), "t": r.get("t"), "q": r.get("q"),
+                       "bps_per_sd": r.get("bps_per_sd")} for h, r in supported[:12]],
+        "weights": gstate.get("weights") or {},
+        "gate_mode": sentiment_gate.effective_mode(gstate),
+        "oos": gstate.get("oos") or {},
+        "signal_lab": {
+            "equity": lab_eq, "starting": lab_state.get("starting"),
+            "rebalances": lab_state.get("rebalances", 0), "legs": len(lab_state.get("positions") or []),
+            "fees_paid": lab_state.get("fees_paid", 0.0), "started_at": lab_state.get("started_at"),
+        },
+    }
+
+
 @router.get("/history")
 def get_history() -> dict[str, Any]:
     """Promotion timeline + weekly long-term research report cards."""

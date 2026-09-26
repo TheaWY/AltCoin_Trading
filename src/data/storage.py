@@ -154,6 +154,7 @@ CREATE TABLE IF NOT EXISTS market_outcomes (
 
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
+CREATE INDEX IF NOT EXISTS idx_signals_symbol_ts ON signals(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
 
 CREATE TABLE IF NOT EXISTS portfolio_state (
@@ -321,6 +322,7 @@ CREATE TABLE IF NOT EXISTS market_outcomes (
 CREATE INDEX IF NOT EXISTS idx_prices_symbol_timeframe_ts ON prices(symbol, timeframe, timestamp);
 CREATE INDEX IF NOT EXISTS idx_funding_symbol_ts ON funding_rates(symbol, timestamp);
 CREATE INDEX IF NOT EXISTS idx_signals_ts ON signals(timestamp);
+CREATE INDEX IF NOT EXISTS idx_signals_symbol_ts ON signals(symbol, timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
 
 CREATE TABLE IF NOT EXISTS portfolio_state (
@@ -681,7 +683,10 @@ class Storage:
         policies = {
             "15m": 14 * 24 * 60 * 60,
             # Research walk-forward/backfill needs 6.6y+ windows plus warmup.
-            "1h": 8 * 365 * 24 * 60 * 60,
+            # Research walk-forward needs BTC/ETH 1h from Binance spot 2017-08
+            # through holdout 2026-06 (~8.7y of span, plus warmup). 8y retention
+            # was pruning that prefix (cutoff ≈ 2018-09-16).
+            "1h": 10 * 365 * 24 * 60 * 60,
         }
         deleted: dict[str, int] = {}
         with self._connect() as conn:

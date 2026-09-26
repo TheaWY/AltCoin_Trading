@@ -54,6 +54,16 @@ def _space_size(axes: dict[str, list[Any]]) -> int:
     return total
 
 
+def queue_capacity(remaining: int, queued_challengers: int, max_new_per_run: int) -> int:
+    """How many NEW (non-champion) experiments may be inserted this run.
+
+    Champion baseline is re-queued nightly and does not consume this cap.
+    """
+    if remaining <= 0 or max_new_per_run <= 0:
+        return 0
+    return min(int(max_new_per_run), max(0, int(remaining) - int(queued_challengers)))
+
+
 def _iter_combos(
     axes: dict[str, list[Any]],
     constraints: dict[str, Any] | None = None,
@@ -202,50 +212,42 @@ def generate(space_path: Path | None = None, dry_run: bool = False) -> dict[str,
     budget = trial_budget_status()
     queued_count = int(budget.get("counts", {}).get("queued", 0))
     remaining_budget = int(budget.get("remaining", 0))
-    if queued_count > remaining_budget:
-        detail = {
-            "queued": queued_count,
-            "remaining_trial_budget": remaining_budget,
-            "budget": budget.get("budget"),
-            "tried": budget.get("tried"),
-            "total_space": total_space,
+    storage = get_storage()
+    with storage._connect() as conn:  # noqa: SLF001
+        champ_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM experiments "
+            "WHERE status = 'queued' AND is_champion_baseline = 1"
+        ).fetchone()
+        existing = {
+            _row_value(row, "config_hash")
+            for row in conn.execute("SELECT config_hash FROM experiments").fetchall()
         }
-        if not dry_run:
-            log_decision("generator", "generator_capped", "trial_budget", detail)
+    champ_queued = int(_row_value(champ_row, "n", 0) or 0)
+    queued_challengers = max(0, queued_count - champ_queued)
+    max_per_run = int(space.get("limits", {}).get("max_new_per_run", 300))
+    max_new = queue_capacity(remaining_budget, queued_challengers, max_per_run)
+    if remaining_budget <= 0:
         report = build_report(limit=8)
         return {
             "total_space": total_space,
             "already_run_or_queued": budget["counts"]["done"] + queued_count,
             "newly_queued": 0,
             "champion_hash": "",
-            "budget_exhausted": bool(budget.get("exhausted")),
-            "queue_capped": True,
-            "trial_budget": budget,
-            "next_candidates": len(report["recommended_narrowed_space"]["next_candidates"]),
-        }
-    if budget.get("exhausted"):
-        report = build_report(limit=8)
-        return {
-            "total_space": total_space,
-            "already_run_or_queued": budget["counts"]["done"] + budget["counts"]["queued"],
-            "newly_queued": 0,
-            "champion_hash": "",
             "budget_exhausted": True,
             "trial_budget": budget,
             "next_candidates": len(report["recommended_narrowed_space"]["next_candidates"]),
         }
+    if max_new <= 0 and not dry_run:
+        # Still refresh the champion below; no new challengers fit.
+        log_decision("generator", "generator_capped", "trial_budget", {
+            "queued": queued_count,
+            "queued_challengers": queued_challengers,
+            "remaining_trial_budget": remaining_budget,
+            "budget": budget.get("budget"),
+            "tried": budget.get("tried"),
+            "total_space": total_space,
+        })
     families = space.get("priority_families", [])
-    max_new = min(
-        int(space.get("limits", {}).get("max_new_per_run", 300)),
-        max(0, remaining_budget - queued_count),
-    )
-
-    storage = get_storage()
-    with storage._connect() as conn:  # noqa: SLF001
-        existing = {
-            _row_value(row, "config_hash")
-            for row in conn.execute("SELECT config_hash FROM experiments").fetchall()
-        }
 
     now = int(time.time())
     queued = 0

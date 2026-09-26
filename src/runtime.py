@@ -139,6 +139,14 @@ def start_scheduler() -> BackgroundScheduler:
             id="pairs_lab", replace_existing=True, max_instances=1, coalesce=True,
         )
         logger.info("Strategy LAB ENABLED — racing pairs variants every %s min", config.COLLECTION_INTERVAL_MINUTES)
+    scheduler.add_job(
+        _core_job, "interval", minutes=config.COLLECTION_INTERVAL_MINUTES,
+        id="core_cycle", replace_existing=True, max_instances=1, coalesce=True,
+    )
+    scheduler.add_job(
+        _signal_lab_job, "interval", minutes=config.COLLECTION_INTERVAL_MINUTES,
+        id="signal_lab", replace_existing=True, max_instances=1, coalesce=True,
+    )
     scheduler.start()
     start_liquidation_stream()
     logger.info(
@@ -147,6 +155,35 @@ def start_scheduler() -> BackgroundScheduler:
         config.EXIT_POLL_INTERVAL_MINUTES,
     )
     return scheduler
+
+
+def _signal_lab_job() -> None:
+    """Forward-test the hypothesis composite in a separate paper book."""
+    try:
+        from src.engine.signal_lab import run_signal_lab_cycle
+
+        run_signal_lab_cycle()
+    except Exception:
+        logger.exception("signal lab cycle failed")
+
+
+def _core_job() -> None:
+    """Keep idle capital in the core BTC position (src/engine/core_manager.py)."""
+    try:
+        from src.engine.core_manager import run_core_cycle
+
+        result = run_core_cycle()
+        if result.get("action") not in (None, "hold"):
+            logger.info("Core cycle: %s", result)
+    except Exception:
+        logger.exception("core cycle failed")
+    # after the core, so the cash it frees is available
+    try:
+        from src.engine.signal_book import run_signal_book_cycle
+
+        run_signal_book_cycle()
+    except Exception:
+        logger.exception("signal book cycle failed")
 
 
 def _exit_poll_job() -> None:

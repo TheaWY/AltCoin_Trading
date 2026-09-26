@@ -128,7 +128,9 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
             reason = None
             entry_z = t.get("entry_z")
             entry_z = float(entry_z) if entry_z is not None else None
-            if pairs.should_stop(z, entry_z):
+            if pairs.is_excluded(t["symbol"]) or pairs.is_excluded(t.get("hedge_symbol")):
+                reason = "excluded"
+            elif pairs.should_stop(z, entry_z):
                 reason = "z_stop"
             elif pairs.should_close(z):
                 reason = "z_revert"
@@ -143,6 +145,8 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
         for p in selection[:cfg["k"]]:
             key = (p["a"], p["b"])
             if key in open_keys:
+                continue
+            if pairs.is_excluded(p["a"]) or pairs.is_excluded(p["b"]):
                 continue
             eq, gross, _ = _equity(storage, name, cash, margin_frac)
             z = ptr._pair_z(storage, p["a"], p["b"], p["beta"], now)

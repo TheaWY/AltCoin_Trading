@@ -6,8 +6,20 @@ from dotenv import load_dotenv
 import os
 
 # Load .env from project root (parent of src/)
+#
+# CONFIG_SKIP_DOTENV exists for the test suite. config is read at IMPORT time,
+# so whichever test module imports it first fixes every flag for the whole run
+# from whatever .env that machine happens to have. A suite whose verdict
+# depends on the operator's .env is not a safety net: tests can fail on a live
+# box that pass in CI, and worse, tests can PASS for the wrong reason and hide
+# a real regression silently. scripts/run_safety_tests.sh sets this so a test
+# run is hermetic. DOTENV_LOADED records what actually happened, so a run that
+# is not hermetic can say so rather than being guessed at.
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_PROJECT_ROOT / ".env")
+SKIP_DOTENV = os.getenv("CONFIG_SKIP_DOTENV", "").strip().lower() in ("1", "true", "yes")
+DOTENV_LOADED = False
+if not SKIP_DOTENV:
+    DOTENV_LOADED = bool(load_dotenv(_PROJECT_ROOT / ".env"))
 
 # --- Promotion overrides overlay ---
 # The research promotion engine (src/research/promotion.py) writes vetted
@@ -154,6 +166,36 @@ DASHBOARD_CACHE_SECONDS = int(os.getenv("DASHBOARD_CACHE_SECONDS", "45"))
 # 2021-2026, survivorship-controlled). Defaults ARE the gate-passing config;
 # override via env only for research sweeps. See memory pairs-statarb-gate-pass.
 SETUP_PAIRS_STATARB_ENABLED = os.getenv("SETUP_PAIRS_STATARB_ENABLED", "false").lower() == "true"
+
+# Sentiment gate (src/engine/sentiment_gate.py, weights from scripts/sentiment_research.py).
+# off | shadow (log only) | auto (enforce only while research passes out-of-sample) | enforce
+SENTIMENT_GATE_MODE = os.getenv("SENTIMENT_GATE_MODE", "auto").strip().lower()
+# composite score (in cross-sectional sd) at which sentiment vetoes an entry
+SENTIMENT_GATE_THRESHOLD = float(os.getenv("SENTIMENT_GATE_THRESHOLD", "1.0"))
+
+# Core allocation (src/engine/core_manager.py): capital no strategy is using is
+# held as LONG CORE_SYMBOL instead of idle cash. target = equity*CORE_PCT - committed.
+CORE_ENABLED = os.getenv("CORE_ENABLED", "false").lower() == "true"
+CORE_SYMBOL = os.getenv("CORE_SYMBOL", "BTC/USDT")
+# comma list; each leg gets an equal share. Empty = CORE_SYMBOL only.
+CORE_SYMBOLS = os.getenv("CORE_SYMBOLS", "")
+# daily trend filter: hold a leg only while its last daily close > N-day MA (0 = always hold)
+CORE_TREND_MA = int(os.getenv("CORE_TREND_MA", "0"))
+CORE_PCT = float(os.getenv("CORE_PCT", "0.97"))
+CORE_BAND = float(os.getenv("CORE_BAND", "0.05"))
+CORE_MIN_NOTIONAL = float(os.getenv("CORE_MIN_NOTIONAL", "10"))
+
+# Signal book (src/engine/signal_book.py): SIGNAL_BOOK_PCT of equity trades the
+# research composite market-neutral; the core leaves that slice free.
+SIGNAL_BOOK_ENABLED = os.getenv("SIGNAL_BOOK_ENABLED", "false").lower() == "true"
+SIGNAL_BOOK_PCT = float(os.getenv("SIGNAL_BOOK_PCT", "0.10"))
+
+# Pump rider (src/engine/pump_rider.py, 1-minute): trades only VALIDATED rules;
+# the core frees PUMP_RESERVE_PCT of equity for it while any rule is validated.
+PUMP_RIDER_ENABLED = os.getenv("PUMP_RIDER_ENABLED", "false").lower() == "true"
+PUMP_POSITION_PCT = float(os.getenv("PUMP_POSITION_PCT", "0.10"))
+PUMP_MAX_OPEN = int(os.getenv("PUMP_MAX_OPEN", "5"))
+PUMP_RESERVE_PCT = float(os.getenv("PUMP_RESERVE_PCT", "0.50"))
 PAIRS_SEL_HOURS = int(os.getenv("PAIRS_SEL_HOURS", str(90 * 24)))    # trailing select window
 PAIRS_TRADE_HOURS = int(os.getenv("PAIRS_TRADE_HOURS", str(30 * 24)))  # rebalance / forward window
 PAIRS_ZWIN_HOURS = int(os.getenv("PAIRS_ZWIN_HOURS", str(20 * 24)))  # rolling z-score window
@@ -163,8 +205,13 @@ PAIRS_HL_MIN_HOURS = float(os.getenv("PAIRS_HL_MIN_HOURS", "12"))
 PAIRS_HL_MAX_HOURS = float(os.getenv("PAIRS_HL_MAX_HOURS", str(20 * 24)))
 PAIRS_BETA_LO = float(os.getenv("PAIRS_BETA_LO", "0.2"))
 PAIRS_BETA_HI = float(os.getenv("PAIRS_BETA_HI", "5.0"))
-PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "8000000"))  # 8M daily median: drops BTW (~1.5M) / PUMP (~5M) memes; 500k still let them through
+PAIRS_MIN_DVOL = float(os.getenv("PAIRS_MIN_DVOL", "8000000"))  # median daily USD volume (24h sum of hourly quote vol)
 PAIRS_MIN_LISTING_DAYS = float(os.getenv("PAIRS_MIN_LISTING_DAYS", "180"))  # exclude names listed <6m (BTW listed 2026-06)
+PAIRS_EXCLUDE_SYMBOLS = tuple(
+    s.strip().upper() if "/" in s.strip().upper() else f"{s.strip().upper()}/USDT"
+    for s in os.getenv("PAIRS_EXCLUDE_SYMBOLS", "BTW/USDT,PUMP/USDT").split(",")
+    if s.strip()
+)  # memes that still clear the volume floor (PUMP ~90M/day) but break cointegration
 PAIRS_MIN_COVERAGE = float(os.getenv("PAIRS_MIN_COVERAGE", "0.7"))
 PAIRS_COST_LEG = float(os.getenv("PAIRS_COST_LEG", "0.0010"))       # per execution; 4 per round-trip
 PAIRS_FUND_HR = float(os.getenv("PAIRS_FUND_HR", "0.0000125"))      # short-leg funding/borrow per hour
@@ -181,7 +228,7 @@ PAIRS_PAIR_NOTIONAL_PCT = float(os.getenv("PAIRS_PAIR_NOTIONAL_PCT", "0.09"))  #
 PAIRS_MAX_GROSS_PCT = float(os.getenv("PAIRS_MAX_GROSS_PCT", "2.0"))  # 2x leverage (user, 2026-07-20); gross exposure up to 200% of equity
 PAIRS_MARGIN_FRAC = float(os.getenv("PAIRS_MARGIN_FRAC", "0.5"))       # cash margin per unit gross notional; 0.5 => up to 2x gross with full equity
 PAIRS_STOP_PCT = float(os.getenv("PAIRS_STOP_PCT", "0.15"))            # last-resort dollar stop (rugs). Primary stop is PAIRS_Z_STOP_DELTA.
-PAIRS_Z_STOP_DELTA = float(os.getenv("PAIRS_Z_STOP_DELTA", "0.5"))     # close if z moves +0.5 further adverse from entry z
+PAIRS_Z_STOP_DELTA = float(os.getenv("PAIRS_Z_STOP_DELTA", "1.0"))     # close if z moves +1.0 further adverse from entry z
 PAIRS_NEG_EXPECTANCY_DEPLOY_PCT = float(os.getenv("PAIRS_NEG_EXPECTANCY_DEPLOY_PCT", "0.40"))
 PAIRS_MAX_HOLD_HOURS = float(os.getenv("PAIRS_MAX_HOLD_HOURS", str(30 * 24)))
 # Strategy LAB: race pairs config variants in parallel, each an isolated book, so
