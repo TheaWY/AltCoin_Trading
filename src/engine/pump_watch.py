@@ -168,10 +168,16 @@ def move_top10(storage: Any, p: pd.DataFrame) -> list[dict[str, Any]]:
     bd, fd = _model("deep_dir_24h")
     sd = bd.predict(cur[fd].to_numpy(np.float32)) if bd is not None and all(f in cur for f in fd) else np.full(len(cur), np.nan)
     top = np.argsort(-sm)[:10]
+    size = {}
+    for nm in ("down_24h_q50", "down_24h_q80", "up_24h_q50", "up_24h_q80", "down_4h_q80", "up_4h_q80"):
+        bq, fq = _model(f"deep_{nm}")
+        if bq is not None and all(f in cur for f in fq):
+            size[nm] = bq.predict(cur.iloc[top][fq].to_numpy(np.float32))
     out = []
-    for i in top:
+    for j, i in enumerate(top):
         r = cur.iloc[i]
         out.append({"symbol": r["symbol"], "move_p": float(sm[i]), "up_p": None if np.isnan(sd[i]) else float(sd[i]),
+                    **{k: float(v[j]) for k, v in size.items()},
                     "ret_24h": float(np.expm1(r["ret_1440m"])) if pd.notna(r["ret_1440m"]) else None,
                     "ret_15m": float(np.expm1(r["ret_15m"])) if pd.notna(r["ret_15m"]) else None,
                     "rsi": float(r["rsi_1h"]) if pd.notna(r["rsi_1h"]) else None,

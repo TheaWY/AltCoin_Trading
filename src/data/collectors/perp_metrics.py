@@ -31,6 +31,7 @@ from src.data.collectors.klines_1m import FAPI, code
 
 logger = logging.getLogger(__name__)
 RETENTION_DAYS = 35
+BOOK_RETENTION_DAYS = 150       # order book history is the input of the next direction test; keep it longer
 
 SCHEMAS = (
     """CREATE TABLE IF NOT EXISTS perp_1m (
@@ -48,6 +49,7 @@ SCHEMAS = (
         imb_05 DOUBLE PRECISION, imb_2 DOUBLE PRECISION, micro_bps DOUBLE PRECISION,
         PRIMARY KEY (symbol, ts))""",
 )
+SCHEMAS_BOOK1M = SCHEMAS[-1].replace("book_5m", "book_1m")
 
 FUT_ENDPOINTS = {
     "openInterestHist": ("oi", "oi_usd", "supply"),
@@ -64,7 +66,8 @@ def ensure_schema(storage: Any) -> None:
     with storage._connect() as c:  # noqa: SLF001
         for sql in SCHEMAS:
             c.execute(sql)
-        for t in ("perp_1m", "perp_5m", "book_5m"):
+        c.execute(SCHEMAS_BOOK1M)
+        for t in ("perp_1m", "perp_5m", "book_5m", "book_1m"):
             c.execute(f"CREATE INDEX IF NOT EXISTS {t}_ts ON {t} (ts)")
 
 
@@ -187,8 +190,8 @@ def fetch_book(session: requests.Session, symbol: str) -> tuple | None:
     return book_row(symbol, int(d.get("T", time.time() * 1000)) // 1000 // 60 * 60, d.get("bids"), d.get("asks"))
 
 
-def insert_book(storage: Any, rows: list[tuple]) -> int:
-    return _executemany(storage, "INSERT INTO book_5m (symbol, ts, spread_bps, bid_05, ask_05, bid_2, ask_2, imb_05, "
+def insert_book(storage: Any, rows: list[tuple], table: str = "book_5m") -> int:
+    return _executemany(storage, f"INSERT INTO {table} (symbol, ts, spread_bps, bid_05, ask_05, bid_2, ask_2, imb_05, "
                                  "imb_2, micro_bps) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT (symbol, ts) DO NOTHING",
                         [r for r in rows if r])
 
@@ -196,5 +199,8 @@ def insert_book(storage: Any, rows: list[tuple]) -> int:
 def prune(storage: Any, now: int | None = None) -> None:
     cutoff = int(now or time.time()) - RETENTION_DAYS * 86400
     with storage._connect() as c:  # noqa: SLF001
-        for t in ("perp_1m", "perp_5m", "book_5m"):
+        for t in ("perp_1m", "perp_5m"):
             c.execute(f"DELETE FROM {t} WHERE ts < ?", (cutoff,))
+        bcut = int(now or time.time()) - BOOK_RETENTION_DAYS * 86400
+        for t in ("book_5m", "book_1m"):
+            c.execute(f"DELETE FROM {t} WHERE ts < ?", (bcut,))

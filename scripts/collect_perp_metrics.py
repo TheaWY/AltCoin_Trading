@@ -71,6 +71,49 @@ def premium_loop(storage, syms: Symbols) -> None:
         time.sleep(max(1.0, 60 - (time.time() % 60) + 2))
 
 
+def hot_symbols(storage, n: int = 30) -> list[str]:
+    """The coins most likely to move right now: the live TOP 10 plus the highest 1h volatility."""
+    import json as _json
+    out: list[str] = []
+    try:
+        row = storage.get_system_status("move_top10")
+        out = [c["symbol"] for c in _json.loads(row["value"]).get("coins", [])] if row and row.get("value") else []
+    except Exception:  # noqa: BLE001
+        out = []
+    try:
+        with storage._connect() as c:  # noqa: SLF001
+            rows = c.execute("SELECT symbol, (MAX(high) / NULLIF(MIN(low), 0)) AS rg FROM prices_1m WHERE ts > ? "
+                             "GROUP BY symbol HAVING SUM(quote_volume) > 200000 ORDER BY rg DESC LIMIT ?",
+                             (int(time.time()) - 3600, n)).fetchall()
+        out += [r["symbol"] for r in rows]
+    except Exception:  # noqa: BLE001
+        pass
+    seen: list[str] = []
+    for s_ in out:
+        if s_ not in seen:
+            seen.append(s_)
+    return seen[:n]
+
+
+def hot_book_loop(storage) -> None:
+    """Every minute: order book of the ~30 hottest coins -> book_1m (weight ~150/min)."""
+    s = requests.Session()
+    while True:
+        t0 = time.time()
+        rows = []
+        for sym in hot_symbols(storage):
+            try:
+                rows.append(pm.fetch_book(s, sym))
+            except Exception:  # noqa: BLE001
+                pass
+            time.sleep(0.2)
+        try:
+            pm.insert_book(storage, rows, table="book_1m")
+        except Exception as e:  # noqa: BLE001
+            log.warning("hot book insert: %r", e)
+        time.sleep(max(1.0, 60 - (time.time() - t0)))
+
+
 def book_loop(storage, syms: Symbols) -> None:
     s = requests.Session()
     while True:
@@ -149,6 +192,7 @@ def main() -> int:
     syms = Symbols()
     threads = [threading.Thread(target=f, args=(storage, syms), daemon=True, name=f.__name__)
                for f in (premium_loop, book_loop, futures_loop)]
+    threads.append(threading.Thread(target=hot_book_loop, args=(storage,), daemon=True, name="hot_book_loop"))
     for t in threads:
         t.start()
     while all(t.is_alive() for t in threads):
