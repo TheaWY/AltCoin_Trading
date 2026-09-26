@@ -126,6 +126,26 @@ hypotheses:
     universe_floor_usd: 5000000
     sizing: 0.1 of capital per trade
 
+  - id: E1_upbit_krw_listing_speed
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: Korean retail flow; an Upbit KRW listing notice moves the same coin on Binance perps; a watcher in Seoul sees it within seconds
+    rule: on every Upbit notice adding a KRW market (first_listed_at, 2025-03 onward) for a coin with a live Binance USDT perp, long at the open of the next full minute (0-60s delay), exit after 60 minutes
+    params: {hold_min: 60, report_holds: [5, 15, 60, 240]}
+    data: Upbit announcements API first_listed_at; Binance 1m klines
+    pass: mean net per trade > 0 with 95% bootstrap CI above 0, same sign in 2025 and 2026 halves
+    sizing: per trade
+
+  - id: E2_binance_futures_delist_squeeze
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: after a Binance Futures delisting notice, shorts must close before settlement and liquidity thins; forced buying squeezes the perp
+    rule: on every "Binance Futures Will Delist" notice (2025-03 onward), for each USDT perp whose last trading day matches a settlement date in the title, long at the open of the next full minute, exit at the open 60 minutes before the last bar; actual funding paid
+    params: {exit_before_end_min: 60}
+    data: exchange_notices (binance), Binance 1m klines, funding
+    pass: mean net per trade > 0 with 95% bootstrap CI above 0, same sign in 2025 and 2026 halves
+    sizing: per trade
+
   # ---- exploratory backlog (new methods; data needed first) ----
   - id: X1_unlock_short
     tier: exploratory
