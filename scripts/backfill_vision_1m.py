@@ -50,6 +50,8 @@ def _get(s: requests.Session, url: str) -> list[list[str]]:
 
 def one(code: str, months: list[str], days: list[str], force: bool) -> tuple[str, int]:
     path = OUT / f"{code}.parquet"
+    if not months and not days:
+        return code, 0
     if path.exists() and not force:
         return code, -1
     s = requests.Session()
@@ -58,7 +60,7 @@ def one(code: str, months: list[str], days: list[str], force: bool) -> tuple[str
         recs += _get(s, f"{DATA}/data/futures/um/monthly/klines/{code}/1m/{code}-1m-{m}.zip")
         if not recs and m == months[0]:
             continue
-    if not recs and not _get(s, f"{DATA}/data/futures/um/daily/klines/{code}/1m/{code}-1m-{days[-1]}.zip"):
+    if days and not recs and not _get(s, f"{DATA}/data/futures/um/daily/klines/{code}/1m/{code}-1m-{days[-1]}.zip"):
         # not in any full month of the window and not trading now: nothing to do
         pass
     for d in days:
@@ -80,8 +82,12 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--symbols", default="")
+    ap.add_argument("--months", default="", help="explicit range YYYY-MM..YYYY-MM (full months only, no daily files)")
+    ap.add_argument("--out", default="", help="output folder instead of data/cache/k1m")
     a = ap.parse_args()
-    OUT.mkdir(parents=True, exist_ok=True)
+    global OUT
+    if a.out:
+        OUT = Path(a.out) if Path(a.out).is_absolute() else PROJECT_ROOT / a.out
     today = date.today()
     start = today - timedelta(days=a.days)
     first_full = date(start.year, start.month, 1)
@@ -91,8 +97,16 @@ def main() -> int:
         months.append(m.strftime("%Y-%m"))
         m = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
     days = [(cur_month + timedelta(days=i)).isoformat() for i in range((today - cur_month).days)]
+    if a.months:
+        m0, m1 = a.months.split("..")
+        months, y, mo = [], int(m0[:4]), int(m0[5:])
+        while f"{y}-{mo:02d}" <= m1:
+            months.append(f"{y}-{mo:02d}")
+            y, mo = y + (mo == 12), mo % 12 + 1
+        days = []
     s = requests.Session()
     codes = a.symbols.split(",") if a.symbols else [c for c in all_archive_symbols(s) if c.endswith("USDT")]
+    OUT.mkdir(parents=True, exist_ok=True)
     log.info("k1m: %d symbols, months %s, %d daily files", len(codes), months, len(days))
     done = 0
     with ThreadPoolExecutor(a.workers) as ex:

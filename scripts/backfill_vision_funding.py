@@ -47,16 +47,32 @@ def one(code: str, months: list[str]) -> int:
 
 
 def main() -> int:
+    import argparse
+    global OUT
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--months", default="", help="YYYY-MM..YYYY-MM")
+    ap.add_argument("--out", default="")
+    ap.add_argument("--k1m", default="data/cache/k1m", help="symbol list comes from this folder")
+    a = ap.parse_args()
+    if a.out:
+        OUT = PROJECT_ROOT / a.out
     OUT.mkdir(parents=True, exist_ok=True)
     today = date.today()
     months = []
-    y, m = today.year, today.month
-    for _ in range(8):
-        m -= 1
-        if m == 0:
-            y, m = y - 1, 12
-        months.append(f"{y}-{m:02d}")
-    codes = sorted(p.stem for p in (PROJECT_ROOT / "data" / "cache" / "k1m").glob("*.parquet"))
+    if a.months:
+        m0, m1 = a.months.split("..")
+        y, m = int(m0[:4]), int(m0[5:])
+        while f"{y}-{m:02d}" <= m1:
+            months.append(f"{y}-{m:02d}")
+            y, m = y + (m == 12), m % 12 + 1
+    else:
+        y, m = today.year, today.month
+        for _ in range(8):
+            m -= 1
+            if m == 0:
+                y, m = y - 1, 12
+            months.append(f"{y}-{m:02d}")
+    codes = sorted(p.stem for p in (PROJECT_ROOT / a.k1m).glob("*.parquet"))
     with ThreadPoolExecutor(8) as ex:
         for i, n in enumerate(ex.map(lambda c: one(c, months), codes)):
             if i % 100 == 0:

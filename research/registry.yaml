@@ -1,0 +1,130 @@
+# Research registry. Every hypothesis is written here BEFORE it is tested.
+# Tiers:
+#   exploratory   any idea, DEV data only (2026-03..09). Not a finding.
+#   confirmatory  pre-registered, run once on OOT data (2025-03..2026-02), net of costs, luck-corrected.
+#   forward       passed confirmatory; live paper trading.
+#   control       benchmark / sanity check, reported but never a candidate.
+# Every run is appended to research/trial_ledger.csv; the ledger size is the N used for
+# the deflated Sharpe, so every extra peek raises the bar for everything.
+#
+# Fields: id, tier, mechanism (why it should work), rule (exact), params (fixed),
+# universe_floor_usd (trailing 24h quote volume), sizing, registered (date), status.
+
+periods:
+  DEV: ["2026-03-01", "2026-09-24"]   # explored many times; reference only
+  OOT: ["2025-03-01", "2026-02-28"]   # untouched; confirmatory runs only, once
+prior_trials: 1000                    # rough count of tests run before this registry existed
+
+defaults:
+  entry: next minute open after the signal hour closes
+  fee_per_side: 0.0005
+  slippage_per_side: {">100M": 0.0002, "20-100M": 0.0005, "5-20M": 0.0010, "<5M": 0.0020}
+  funding: actual Binance funding events while the position is open (longs pay positive)
+  both_touch_same_bar: stop wins
+  min_history_days: 30
+  exclude: [AAPL, AMD, AMZN, COIN, COPPER, CRCL, CRWD, EWY, GOOGL, HOOD, INTC, KORU, META, MSFT, MSTR,
+            NATGAS, NFLX, NVDA, PAXG, PLTR, QQQ, SOXL, SPY, TQQQ, TSLA, XAG, XAU, XAUT, XPD, XPT]
+  pass: {oot_mean_daily_net: "> 0 with 95% block-bootstrap CI above 0", dsr_ledger_n: ">= 0.95",
+         dev_mean_daily_net: "> 0"}
+
+hypotheses:
+  - id: S1_rev4h_ls
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: short-term reversal from liquidity provision (price pressure fades); strongest documented crypto IC in our data
+    rule: every 4h at 00/04/08/12/16/20 UTC, long the 5 worst 4h returns, short the 5 best, hold 4h
+    params: {n: 5, hold_min: 240}
+    universe_floor_usd: 20000000
+    sizing: gross 1 per period, 0.1 per position
+
+  - id: S2_lowvol_btc
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: low-volatility / anti-lottery anomaly (investors overpay for lottery coins)
+    rule: daily 00 UTC, long the 10 lowest 7d-vol alts (50% total), short BTC (50%), hold 24h
+    params: {n: 10, hold_min: 1440}
+    universe_floor_usd: 5000000
+    sizing: 0.05 per alt, 0.5 BTC short
+
+  - id: S4_tsmom28
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: time-series momentum (trend persistence at multi-week horizon)
+    rule: Mondays 00 UTC, position sign(28d return), weight 1/7d-vol, sum of abs weights 1, hold 7d
+    params: {lookback_h: 672, hold_min: 10080}
+    universe_floor_usd: 20000000
+    sizing: gross 1
+
+  - id: S5_breakout8
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: volatility breakout; size is predictable, direction taken from the first 8% move
+    rule: daily 00 UTC, 10 highest 24h realised-vol coins; stop-entry at +-8% from the 00:00 open, stop back at the 00:00 open, exit at 24h
+    params: {n: 10, x: 0.08, hold_min: 1440}
+    universe_floor_usd: 1000000
+    sizing: 0.1 per coin
+
+  - id: S6_funding_carry
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: funding carry, crowded longs pay shorts; direction-free when hedged with spot
+    rule: daily 00 UTC, short perp + long spot when trailing 24h funding (8h-normalised) >= 0.03%; exit when < 0.01%
+    params: {enter: 0.0003, exit: 0.0001, spot_fee: 0.001}
+    universe_floor_usd: 5000000
+    sizing: equal weight across active positions; basis risk ignored (optimistic)
+
+  - id: S7_pump_fade
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: pumps mean-revert in the median (our data: median -6% 24h after a +10% hour); stop caps the fat right tail
+    rule: any hour, 1h return >= +10% -> short, stop +15%, target -10%, max 24h, one per coin per 24h
+    params: {trigger: 0.10, stop: 0.15, target: 0.10, hold_min: 1440}
+    universe_floor_usd: 5000000
+    sizing: 0.1 of capital per trade
+
+  - id: S9_ml_rank
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: combination of weak signals (reversal, vol, volume, flow) as in the ML literature
+    rule: Ridge on 12 price/volume features, retrained Mondays on the prior 8 weeks (1 day embargo), target cross-sectional rank of next 24h return; daily long top 10 / short bottom 10, hold 24h
+    params: {n: 10, train_days: 56, embargo_days: 1, alpha: 100}
+    universe_floor_usd: 20000000
+    sizing: 0.05 per position
+
+  - id: C1_random_long
+    tier: control
+    registered: 2026-09-26
+    rule: daily 00 UTC, long 10 random coins, hold 24h (seeded)
+    params: {n: 10, hold_min: 1440, seed: 7}
+    universe_floor_usd: 5000000
+    sizing: 0.1 per coin
+
+  - id: C2_pump_chase
+    tier: control
+    registered: 2026-09-26
+    rule: same trigger as S7 but long, stop -5%, target +10%, max 24h
+    params: {trigger: 0.10, stop: 0.05, target: 0.10, hold_min: 1440}
+    universe_floor_usd: 5000000
+    sizing: 0.1 of capital per trade
+
+  # ---- exploratory backlog (new methods; data needed first) ----
+  - id: X1_unlock_short
+    tier: exploratory
+    status: needs unlock calendar data
+    mechanism: scheduled supply shocks; negative drift into large unlocks
+  - id: X2_supply_concentration
+    tier: exploratory
+    status: needs top-holder share (chain explorers)
+    mechanism: insider-held floats pump and then collapse (RAVE, SIREN, LAB in our top-200 crash list)
+  - id: X3_delisting_squeeze
+    tier: exploratory
+    status: rare events; needs Binance delisting notice history with timestamps
+    mechanism: shorts forced to close before futures settlement
+  - id: X4_market_making_hv
+    tier: exploratory
+    status: needs order book simulation (bookDepth is 5-minute only)
+    mechanism: we forecast size well; spread capture sized by forecast volatility
+  - id: X5_cross_exchange_leadlag
+    tier: exploratory
+    status: needs tick data (Tardis trial has 10 days)
+    mechanism: price discovery on one venue leads others by seconds
