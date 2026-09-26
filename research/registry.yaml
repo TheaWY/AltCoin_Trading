@@ -146,6 +146,16 @@ hypotheses:
     pass: mean net per trade > 0 with 95% bootstrap CI above 0, same sign in 2025 and 2026 halves
     sizing: per trade
 
+  - id: E1b_upbit_listing_2s
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: same as E1, but the 1-minute test showed the whole move happens inside the notice minute; test a realistic fast watcher
+    rule: same events as E1; long at the first Binance perp trade at or after notice + 2 seconds (taker, plus slippage), exit at the last trade before entry + 60 minutes; latency curve 0.5-60 s reported for reference only
+    params: {latency_s: 2, hold_min: 60}
+    data: Binance futures aggTrades (data.binance.vision daily)
+    pass: mean net per trade > 0 with 95% bootstrap CI above 0, same sign in 2025 and 2026 halves
+    note: registered after seeing the 1-minute E1 result (move inside the first minute), before looking at any second-level data
+
   # ---- exploratory backlog (new methods; data needed first) ----
   - id: X1_unlock_short
     tier: exploratory
