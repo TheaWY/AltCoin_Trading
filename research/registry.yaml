@@ -108,6 +108,24 @@ hypotheses:
     universe_floor_usd: 5000000
     sizing: 0.1 of capital per trade
 
+  - id: R1_pump_ride_trail
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: pump payoffs come from a fat right tail; small fixed loss, let rare runners run
+    rule: any hour, 1h return >= +10% -> long, initial stop -5%, trailing stop 15% below the highest high since entry, max 7 days, one per coin per 24h
+    params: {trigger: 0.10, stop: 0.05, trail: 0.15, hold_min: 10080}
+    universe_floor_usd: 5000000
+    sizing: 0.1 of capital per trade
+
+  - id: R2_pump_ride_10
+    tier: confirmatory
+    registered: 2026-09-26
+    mechanism: user goal is +10% per trade, not the tail; wider stop raises the hit rate
+    rule: any hour, 1h return >= +10% -> long, target +10%, stop -10%, max 72h, one per coin per 24h
+    params: {trigger: 0.10, stop: 0.10, target: 0.10, hold_min: 4320}
+    universe_floor_usd: 5000000
+    sizing: 0.1 of capital per trade
+
   # ---- exploratory backlog (new methods; data needed first) ----
   - id: X1_unlock_short
     tier: exploratory

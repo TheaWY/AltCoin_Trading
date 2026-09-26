@@ -172,7 +172,7 @@ def trades_for(h: dict, P: pd.DataFrame, t0: int, t1: int) -> pd.DataFrame:
         t = t[t["side"] != 0]
     elif sid == "S5_breakout8":
         t = pick(day, "rv24", pr["n"], True)[cols].assign(side=0, w=0.1, kind="bo", hold=pr["hold_min"], x=pr["x"])
-    elif sid in ("S7_pump_fade", "C2_pump_chase"):
+    elif sid in ("S7_pump_fade", "C2_pump_chase", "R1_pump_ride_trail", "R2_pump_ride_10"):
         e = U[U["ret_1h"] >= pr["trigger"]].sort_values(["code", "ts"])
         keep, last = [], {}
         for r in e[["code", "ts"]].itertuples(index=False):
@@ -183,7 +183,11 @@ def trades_for(h: dict, P: pd.DataFrame, t0: int, t1: int) -> pd.DataFrame:
                 keep.append(False)
         e = e[np.array(keep, bool)]
         side = -1 if sid == "S7_pump_fade" else 1
-        t = e[cols].assign(side=side, w=0.1, kind="st", hold=pr["hold_min"], stop=pr["stop"], target=pr["target"])
+        if sid == "R1_pump_ride_trail":
+            t = e[cols].assign(side=1, w=0.1, kind="trail", hold=pr["hold_min"], stop=pr["stop"], trail=pr["trail"])
+        else:
+            t = e[cols].assign(side=side, w=0.1, kind="st", hold=pr["hold_min"], stop=pr["stop"],
+                               target=pr["target"])
     elif sid == "S9_ml_rank":
         t = ml_trades(P, pr, fl, t0, t1)
     elif sid == "C1_random_long":
@@ -288,6 +292,18 @@ def simulate_code(args) -> list[dict]:
             entry = o[i_in]
             if kind == "fixed":
                 i_out, exitp = ie, (o[ie] if reason == "time" else c[ie])
+            elif kind == "trail":                        # long only: initial stop, then trail below the peak
+                seg_h, seg_l, seg_o = h[i_in:ie], l_[i_in:ie], o[i_in:ie]
+                peak_prev = np.maximum.accumulate(np.concatenate([[entry], seg_h[:-1]]))  # highs of earlier bars only
+                lvl = np.maximum(entry * (1 - float(tr["stop"])), peak_prev * (1 - float(tr["trail"])))
+                hit = np.flatnonzero(seg_l <= lvl)
+                if len(hit):
+                    k = hit[0]
+                    i_out, exitp = i_in + k, min(lvl[k], seg_o[k])
+                    reason = "stop" if exitp < entry else "trail"
+                else:
+                    i_out = ie
+                    exitp = o[ie] if reason == "time" else c[ie]
             else:
                 stop, tgt = float(tr["stop"]), float(tr["target"])
                 sp, tp = entry * (1 - side * stop), entry * (1 + side * tgt)
@@ -488,13 +504,19 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", choices=["DEV", "OOT"], required=True)
     ap.add_argument("--force-rerun", action="store_true", help="logged in the ledger; OOT should be run once")
+    ap.add_argument("--only", default="", help="comma-separated hypothesis ids (default: all confirmatory + control)")
     a = ap.parse_args()
     reg = yaml.safe_load(REG.read_text())
     excl = set(reg["defaults"]["exclude"])
     hyps = [h for h in reg["hypotheses"] if h["tier"] in ("confirmatory", "control")]
+    if a.only:
+        keep = set(a.only.split(","))
+        hyps = [h for h in hyps if h["id"] in keep]
     led = pd.read_csv(LEDGER) if LEDGER.exists() else pd.DataFrame()
-    if a.period == "OOT" and len(led) and (led["period"] == "OOT").any() and not a.force_rerun:
-        print("OOT already run once for this registry; refusing (use --force-rerun, it will be logged)")
+    done = set(led.loc[led["period"] == "OOT", "hypothesis"]) if len(led) else set()
+    again = [h["id"] for h in hyps if h["id"] in done]
+    if a.period == "OOT" and again and not a.force_rerun:
+        print(f"OOT already run for {again}; refusing (use --force-rerun, it will be logged)")
         return 1
     p0, p1 = (int(pd.Timestamp(x).timestamp()) for x in reg["periods"][a.period])
     kdir, fdir = (ROOT / x for x in DIRS[a.period])
@@ -519,13 +541,16 @@ def main() -> int:
                 log(f"simulated {i}/{len(jobs)} coins")
     X = pd.DataFrame(res)
     OUT.mkdir(parents=True, exist_ok=True)
-    X.to_parquet(OUT / f"trades_{a.period}.parquet", index=False)
+    tag = f"{a.period}{'_' + '_'.join(sorted(h['id'].split('_')[0] for h in hyps)) if a.only else ''}"
+    X.to_parquet(OUT / f"trades_{tag}.parquet", index=False)
     days = np.arange(t0 // D_, t1 // D_ + 1)
     daily = pd.DataFrame(index=days)
     for sid, g in X.groupby("sid"):
         daily[sid] = (g["w"] * g["net"]).groupby(g["ts"] // D_).sum().reindex(days).fillna(0.0)
-    cr = carry(P, next(h for h in hyps if h["id"] == "S6_funding_carry"), fdir, t0, t1)
-    daily["S6_funding_carry"] = cr.set_index("day")["r"].reindex(days).fillna(0.0) if len(cr) else 0.0
+    h6 = next((h for h in hyps if h["id"] == "S6_funding_carry"), None)
+    if h6 is not None:
+        cr = carry(P, h6, fdir, t0, t1)
+        daily["S6_funding_carry"] = cr.set_index("day")["r"].reindex(days).fillna(0.0) if len(cr) else 0.0
     btc = P[(P["code"] == "BTCUSDT") & (P["ts"] % D_ == 0)].set_index("ts")["c"]
     btc30 = (btc / btc.shift(30) - 1)
     btc30.index = btc30.index // D_
@@ -556,10 +581,10 @@ def main() -> int:
                                 sharpe=r["sharpe"], mean_daily_net=r["daily_bps"] / 1e4, n_trades=r["trades"],
                                 note="force-rerun" if a.force_rerun else "") for r in rows])
     pd.concat([led, newled], ignore_index=True).to_csv(LEDGER, index=False)
-    S.to_csv(OUT / f"summary_{a.period}.csv", index=False)
-    daily.to_csv(OUT / f"daily_{a.period}.csv")
-    write_report(a.period, S, pb, n_led, days, X)
-    print((OUT / f"{a.period}.md").read_text())
+    S.to_csv(OUT / f"summary_{tag}.csv", index=False)
+    daily.to_csv(OUT / f"daily_{tag}.csv")
+    write_report(tag, S, pb, n_led, days, X)
+    print((OUT / f"{tag}.md").read_text())
     return 0
 
 
@@ -568,7 +593,7 @@ def write_report(period, S, pb, n_led, days, X) -> None:
     L = [f"# Formal test: {period} ({d0} to {d1}, {len(days)} days)", "",
          "Net of fees, volume-based slippage and actual funding. Entry at the next minute's open. "
          "Daily returns, Sharpe annualised with sqrt(365). CI = 95% block bootstrap of the mean daily return.",
-         f"DSR(set) uses N = 7 confirmatory strategies; DSR(ledger) uses N = {n_led} (all tests run so far).",
+         f"DSR(set) uses N = confirmatory strategies in this run; DSR(ledger) uses N = {n_led} (all tests run so far).",
          f"PBO across the confirmatory set (CSCV, 16 blocks): {pb:.2f}", "",
          "| strategy | tier | trades | gross/trade | net/trade | hit | daily bps | 95% CI | Sharpe | max DD | DSR set | DSR ledger | bull bps | bear bps | verdict |",
          "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
