@@ -31,8 +31,9 @@ LEDGER = ROOT / "research" / "trial_ledger.csv"
 OUTD = ROOT / "data" / "reports" / "b2"
 H_, D_ = 3600, 86400
 FEE = 0.0005
-T0 = int(pd.Timestamp("2025-03-08").timestamp())
-T1 = int(pd.Timestamp("2026-09-22").timestamp())
+import os
+T0 = int(pd.Timestamp("2024-03-08" if os.environ.get("B2_ERA") == "2024" else "2025-03-08").timestamp())
+T1 = int(pd.Timestamp("2025-02-26" if os.environ.get("B2_ERA") == "2024" else "2026-09-22").timestamp())
 MID = int(pd.Timestamp("2026-01-01").timestamp())
 
 

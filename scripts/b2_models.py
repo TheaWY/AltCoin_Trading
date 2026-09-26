@@ -168,6 +168,7 @@ def predict(model, X, bs=1024):
 # ------------------------------------------------------------------ run
 
 def run_set(name: str) -> list[dict]:
+    print("loading", name, flush=True)
     z = np.load(ROOT / f"data/cache/b2_ds_{name}.npz", allow_pickle=True)
     tab, seq, img = z["tab"], z["seq"], z["img"].astype(np.float32)[:, None] / 255.0
     gross, cost, ts = z["gross"], z["cost"], z["ts"]
@@ -182,20 +183,26 @@ def run_set(name: str) -> list[dict]:
     seqf = np.clip(np.nan_to_num(seq), -1, 5).copy()
     seqf[:, :3] = np.clip(seqf[:, :3] * 20, -5, 5)       # scale relative prices
     preds = {}
-    from sklearn.linear_model import LogisticRegression
-    import lightgbm as lgb
-    m = LogisticRegression(C=0.1, max_iter=2000).fit(tabf[tr], y[tr])
-    preds["M1"] = m.predict_proba(tabf)[:, 1]
-    d = lgb.train(dict(objective="binary", learning_rate=0.03, num_leaves=15, min_data_in_leaf=50,
-                       feature_fraction=0.8, bagging_fraction=0.8, bagging_freq=1, lambda_l2=5.0, verbose=-1),
-                  lgb.Dataset(tabf[tr], y[tr]), 500, valid_sets=[lgb.Dataset(tabf[va], y[va])],
-                  callbacks=[lgb.early_stopping(40, verbose=False)])
-    preds["M2"] = d.predict(tabf, num_iteration=d.best_iteration)
+    import subprocess
+    tp = ROOT / f"data/cache/b2_tree_{name}.npz"
+    subprocess.run([sys.executable, "-W", "ignore", str(Path(__file__).with_name("b2_tree.py")), name], check=True)
+    tz = np.load(tp)
+    preds["M1"], preds["M2"] = tz["M1"], tz["M2"]
+    print("M1 M2 loaded", name, flush=True)
+    if False:
+        from sklearn.linear_model import LogisticRegression
+        import lightgbm as lgb
+    pass
     preds["M3"] = predict(fit_torch(MLP(tabf.shape[1]), tabf[tr], y[tr], tabf[va], y[va]), tabf)
+    print("M3 done", name, flush=True)
     preds["M4"] = predict(fit_torch(CNN1D(), seqf[tr], y[tr], seqf[va], y[va]), seqf)
+    print("M4 done", name, flush=True)
     preds["M5"] = predict(fit_torch(GRU(), seqf[tr], y[tr], seqf[va], y[va], epochs=25), seqf)
+    print("M5 done", name, flush=True)
     preds["M6"] = predict(fit_torch(TF(), seqf[tr], y[tr], seqf[va], y[va], epochs=25), seqf)
+    print("M6 done", name, flush=True)
     preds["M7"] = predict(fit_torch(CNN2D(), img[tr], y[tr], img[va], y[va], epochs=25, bs=128), img)
+    print("M7 done", name, flush=True)
     preds["M8"] = (preds["M2"] + preds["M4"] + preds["M7"]) / 3
     rows = []
     day = ts // 86400
@@ -219,6 +226,9 @@ def run_set(name: str) -> list[dict]:
 
 
 def main() -> int:
+    if len(sys.argv) > 2 and sys.argv[1] == "--tree":
+        tree_stage(sys.argv[2])
+        return 0
     rows = []
     for name in ("pump", "dump", "brk"):
         rows += run_set(name)

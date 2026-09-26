@@ -23,6 +23,8 @@ from b2_hypotheses import FEE, events, slip  # noqa: E402
 TAB = ["ret_1h", "ret_2h", "ret_4h", "ret_24h", "ret_7d", "ret_28d", "rv24", "rv_7d", "max_7d", "ldv", "taker_1h",
        "taker_24h", "vsurge", "dhi30", "dlo30", "range_1h", "upwick_1h", "pumps_30d", "lage", "fund24",
        "btc_ret_1h", "btc_ret_24h", "breadth_pump", "hour_s", "hour_c", "weekday"]
+import os
+SUFFIX = "_2024" if os.environ.get("B2_ERA") == "2024" else ""
 SEQ = 120
 IMG_H, IMG_W = 64, 60
 
@@ -91,7 +93,7 @@ def build(name: str, fid: str) -> None:
             res += r
     idx = np.array([x[0] for x in res])
     e = e.iloc[idx]
-    np.savez_compressed(ROOT / f"data/cache/b2_ds_{name}.npz",
+    np.savez_compressed(ROOT / f"data/cache/b2_ds_{name}{SUFFIX}.npz",
                         tab=e[TAB].to_numpy(np.float32), seq=np.stack([x[1] for x in res]),
                         img=np.stack([x[2] for x in res]), gross=np.array([x[3] for x in res], np.float32),
                         cost=(2 * (FEE + slip(e["dv24"].to_numpy()))).astype(np.float32),
@@ -100,5 +102,5 @@ def build(name: str, fid: str) -> None:
 
 
 if __name__ == "__main__":
-    for name, fid in (("pump", "P1"), ("dump", "D1"), ("brk", "BH")):
+    for name, fid in ((("pump", "P1"),) if SUFFIX else (("pump", "P1"), ("dump", "D1"), ("brk", "BH"))):
         build(name, fid)

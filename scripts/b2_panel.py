@@ -16,14 +16,16 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
-K = [ROOT / "data/cache/k1m_oot", ROOT / "data/cache/k1m"]
-F = [ROOT / "data/cache/funding_oot", ROOT / "data/cache/funding"]
-OUT = ROOT / "data/cache/b2_hourly.parquet"
+import os
+_ERA = os.environ.get("B2_ERA", "main")          # "main" = 2025-03..2026-09, "2024" = 2024-03..2025-02 holdout
+K = [ROOT / "data/cache/k1m_2024"] if _ERA == "2024" else [ROOT / "data/cache/k1m_oot", ROOT / "data/cache/k1m"]
+F = [ROOT / "data/cache/funding_2024"] if _ERA == "2024" else [ROOT / "data/cache/funding_oot", ROOT / "data/cache/funding"]
+OUT = ROOT / ("data/cache/b2_hourly_2024.parquet" if _ERA == "2024" else "data/cache/b2_hourly.parquet")
 H_, D_ = 3600, 86400
 TRADFI = {"AAPL", "AMD", "AMZN", "COIN", "COPPER", "CRCL", "CRWD", "EWY", "GOOGL", "HOOD", "INTC", "KORU", "META",
           "MSFT", "MSTR", "NATGAS", "NFLX", "NVDA", "PAXG", "PLTR", "QQQ", "SOXL", "SPY", "TQQQ", "TSLA", "XAG", "XAU",
           "XAUT", "XPD", "XPT"}
-DATA_START = int(pd.Timestamp("2025-03-01").timestamp())
+DATA_START = int(pd.Timestamp("2024-03-01" if _ERA == "2024" else "2025-03-01").timestamp())
 
 
 def load_minutes(code: str) -> pd.DataFrame | None:
