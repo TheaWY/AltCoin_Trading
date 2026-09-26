@@ -1,0 +1,1106 @@
+batch: B2
+registered: '2026-09-27'
+period:
+- '2025-03-08'
+- '2026-09-22'
+execution: next-minute open after the signal hour; fixed hold; fees 0.05%/side + volume slippage + actual funding; 1 trade per coin per hypothesis
+  per 24h; universe 24h volume >= $2M, >= 3 days listed, no stock/commodity perps
+pass_rule: BH-FDR q < 0.05 over the batch AND mean net > 0 AND positive in both 2025 and 2026
+hypotheses:
+- id: B2_P1_L_1h
+  family: P1
+  side: L
+  hold_min: 60
+  trigger: 1h return >= +10%
+  mechanism: 'pump: attention/overreaction vs momentum'
+  reference: Kamps & Kleinberg 2018; La Morgia et al. 2020; Caporale & Plastun 2019
+  tier: confirmatory
+- id: B2_P1_L_4h
+  family: P1
+  side: L
+  hold_min: 240
+  trigger: 1h return >= +10%
+  mechanism: 'pump: attention/overreaction vs momentum'
+  reference: Kamps & Kleinberg 2018; La Morgia et al. 2020; Caporale & Plastun 2019
+  tier: confirmatory
+- id: B2_P1_L_24h
+  family: P1
+  side: L
+  hold_min: 1440
+  trigger: 1h return >= +10%
+  mechanism: 'pump: attention/overreaction vs momentum'
+  reference: Kamps & Kleinberg 2018; La Morgia et al. 2020; Caporale & Plastun 2019
+  tier: confirmatory
+- id: B2_P1_S_1h
+  family: P1
+  side: S
+  hold_min: 60
+  trigger: 1h return >= +10%
+  mechanism: 'pump: attention/overreaction vs momentum'
+  reference: Kamps & Kleinberg 2018; La Morgia et al. 2020; Caporale & Plastun 2019
+  tier: confirmatory
+- id: B2_P1_S_4h
+  family: P1
+  side: S
+  hold_min: 240
+  trigger: 1h return >= +10%
+  mechanism: 'pump: attention/overreaction vs momentum'
+  reference: Kamps & Kleinberg 2018; La Morgia et al. 2020; Caporale & Plastun 2019
+  tier: confirmatory
+- id: B2_P1_S_24h
+  family: P1
+  side: S
+  hold_min: 1440
+  trigger: 1h return >= +10%
+  mechanism: 'pump: attention/overreaction vs momentum'
+  reference: Kamps & Kleinberg 2018; La Morgia et al. 2020; Caporale & Plastun 2019
+  tier: confirmatory
+- id: B2_P4_L_1h
+  family: P4
+  side: L
+  hold_min: 60
+  trigger: 4h return >= +20%
+  mechanism: multi-hour pump
+  reference: same as P1
+  tier: confirmatory
+- id: B2_P4_L_4h
+  family: P4
+  side: L
+  hold_min: 240
+  trigger: 4h return >= +20%
+  mechanism: multi-hour pump
+  reference: same as P1
+  tier: confirmatory
+- id: B2_P4_L_24h
+  family: P4
+  side: L
+  hold_min: 1440
+  trigger: 4h return >= +20%
+  mechanism: multi-hour pump
+  reference: same as P1
+  tier: confirmatory
+- id: B2_P4_S_1h
+  family: P4
+  side: S
+  hold_min: 60
+  trigger: 4h return >= +20%
+  mechanism: multi-hour pump
+  reference: same as P1
+  tier: confirmatory
+- id: B2_P4_S_4h
+  family: P4
+  side: S
+  hold_min: 240
+  trigger: 4h return >= +20%
+  mechanism: multi-hour pump
+  reference: same as P1
+  tier: confirmatory
+- id: B2_P4_S_24h
+  family: P4
+  side: S
+  hold_min: 1440
+  trigger: 4h return >= +20%
+  mechanism: multi-hour pump
+  reference: same as P1
+  tier: confirmatory
+- id: B2_P24_L_1h
+  family: P24
+  side: L
+  hold_min: 60
+  trigger: 24h return >= +30%
+  mechanism: daily pump; short-term reversal vs daily momentum
+  reference: Liu & Tsyvinski 2021 (momentum); Dobrynskaya 2023 (reversal)
+  tier: confirmatory
+- id: B2_P24_L_4h
+  family: P24
+  side: L
+  hold_min: 240
+  trigger: 24h return >= +30%
+  mechanism: daily pump; short-term reversal vs daily momentum
+  reference: Liu & Tsyvinski 2021 (momentum); Dobrynskaya 2023 (reversal)
+  tier: confirmatory
+- id: B2_P24_L_24h
+  family: P24
+  side: L
+  hold_min: 1440
+  trigger: 24h return >= +30%
+  mechanism: daily pump; short-term reversal vs daily momentum
+  reference: Liu & Tsyvinski 2021 (momentum); Dobrynskaya 2023 (reversal)
+  tier: confirmatory
+- id: B2_P24_S_1h
+  family: P24
+  side: S
+  hold_min: 60
+  trigger: 24h return >= +30%
+  mechanism: daily pump; short-term reversal vs daily momentum
+  reference: Liu & Tsyvinski 2021 (momentum); Dobrynskaya 2023 (reversal)
+  tier: confirmatory
+- id: B2_P24_S_4h
+  family: P24
+  side: S
+  hold_min: 240
+  trigger: 24h return >= +30%
+  mechanism: daily pump; short-term reversal vs daily momentum
+  reference: Liu & Tsyvinski 2021 (momentum); Dobrynskaya 2023 (reversal)
+  tier: confirmatory
+- id: B2_P24_S_24h
+  family: P24
+  side: S
+  hold_min: 1440
+  trigger: 24h return >= +30%
+  mechanism: daily pump; short-term reversal vs daily momentum
+  reference: Liu & Tsyvinski 2021 (momentum); Dobrynskaya 2023 (reversal)
+  tier: confirmatory
+- id: B2_D1_L_1h
+  family: D1
+  side: L
+  hold_min: 60
+  trigger: 1h return <= -10%
+  mechanism: 'dump: liquidation overshoot rebound vs continuation'
+  reference: Caporale & Plastun 2019 overreaction
+  tier: confirmatory
+- id: B2_D1_L_4h
+  family: D1
+  side: L
+  hold_min: 240
+  trigger: 1h return <= -10%
+  mechanism: 'dump: liquidation overshoot rebound vs continuation'
+  reference: Caporale & Plastun 2019 overreaction
+  tier: confirmatory
+- id: B2_D1_L_24h
+  family: D1
+  side: L
+  hold_min: 1440
+  trigger: 1h return <= -10%
+  mechanism: 'dump: liquidation overshoot rebound vs continuation'
+  reference: Caporale & Plastun 2019 overreaction
+  tier: confirmatory
+- id: B2_D1_S_1h
+  family: D1
+  side: S
+  hold_min: 60
+  trigger: 1h return <= -10%
+  mechanism: 'dump: liquidation overshoot rebound vs continuation'
+  reference: Caporale & Plastun 2019 overreaction
+  tier: confirmatory
+- id: B2_D1_S_4h
+  family: D1
+  side: S
+  hold_min: 240
+  trigger: 1h return <= -10%
+  mechanism: 'dump: liquidation overshoot rebound vs continuation'
+  reference: Caporale & Plastun 2019 overreaction
+  tier: confirmatory
+- id: B2_D1_S_24h
+  family: D1
+  side: S
+  hold_min: 1440
+  trigger: 1h return <= -10%
+  mechanism: 'dump: liquidation overshoot rebound vs continuation'
+  reference: Caporale & Plastun 2019 overreaction
+  tier: confirmatory
+- id: B2_D24_L_1h
+  family: D24
+  side: L
+  hold_min: 60
+  trigger: 24h return <= -25%
+  mechanism: daily crash
+  reference: overreaction / capitulation literature
+  tier: confirmatory
+- id: B2_D24_L_4h
+  family: D24
+  side: L
+  hold_min: 240
+  trigger: 24h return <= -25%
+  mechanism: daily crash
+  reference: overreaction / capitulation literature
+  tier: confirmatory
+- id: B2_D24_L_24h
+  family: D24
+  side: L
+  hold_min: 1440
+  trigger: 24h return <= -25%
+  mechanism: daily crash
+  reference: overreaction / capitulation literature
+  tier: confirmatory
+- id: B2_D24_S_1h
+  family: D24
+  side: S
+  hold_min: 60
+  trigger: 24h return <= -25%
+  mechanism: daily crash
+  reference: overreaction / capitulation literature
+  tier: confirmatory
+- id: B2_D24_S_4h
+  family: D24
+  side: S
+  hold_min: 240
+  trigger: 24h return <= -25%
+  mechanism: daily crash
+  reference: overreaction / capitulation literature
+  tier: confirmatory
+- id: B2_D24_S_24h
+  family: D24
+  side: S
+  hold_min: 1440
+  trigger: 24h return <= -25%
+  mechanism: daily crash
+  reference: overreaction / capitulation literature
+  tier: confirmatory
+- id: B2_BH_L_1h
+  family: BH
+  side: L
+  hold_min: 60
+  trigger: close breaks prior 30d closing high and 24h return > +5%
+  mechanism: trend breakout (Donchian)
+  reference: Hudson & Urquhart 2021 technical rules in crypto
+  tier: confirmatory
+- id: B2_BH_L_4h
+  family: BH
+  side: L
+  hold_min: 240
+  trigger: close breaks prior 30d closing high and 24h return > +5%
+  mechanism: trend breakout (Donchian)
+  reference: Hudson & Urquhart 2021 technical rules in crypto
+  tier: confirmatory
+- id: B2_BH_L_24h
+  family: BH
+  side: L
+  hold_min: 1440
+  trigger: close breaks prior 30d closing high and 24h return > +5%
+  mechanism: trend breakout (Donchian)
+  reference: Hudson & Urquhart 2021 technical rules in crypto
+  tier: confirmatory
+- id: B2_BH_S_1h
+  family: BH
+  side: S
+  hold_min: 60
+  trigger: close breaks prior 30d closing high and 24h return > +5%
+  mechanism: trend breakout (Donchian)
+  reference: Hudson & Urquhart 2021 technical rules in crypto
+  tier: confirmatory
+- id: B2_BH_S_4h
+  family: BH
+  side: S
+  hold_min: 240
+  trigger: close breaks prior 30d closing high and 24h return > +5%
+  mechanism: trend breakout (Donchian)
+  reference: Hudson & Urquhart 2021 technical rules in crypto
+  tier: confirmatory
+- id: B2_BH_S_24h
+  family: BH
+  side: S
+  hold_min: 1440
+  trigger: close breaks prior 30d closing high and 24h return > +5%
+  mechanism: trend breakout (Donchian)
+  reference: Hudson & Urquhart 2021 technical rules in crypto
+  tier: confirmatory
+- id: B2_BL_L_1h
+  family: BL
+  side: L
+  hold_min: 60
+  trigger: close breaks prior 30d closing low and 24h return < -5%
+  mechanism: breakdown
+  reference: Hudson & Urquhart 2021
+  tier: confirmatory
+- id: B2_BL_L_4h
+  family: BL
+  side: L
+  hold_min: 240
+  trigger: close breaks prior 30d closing low and 24h return < -5%
+  mechanism: breakdown
+  reference: Hudson & Urquhart 2021
+  tier: confirmatory
+- id: B2_BL_L_24h
+  family: BL
+  side: L
+  hold_min: 1440
+  trigger: close breaks prior 30d closing low and 24h return < -5%
+  mechanism: breakdown
+  reference: Hudson & Urquhart 2021
+  tier: confirmatory
+- id: B2_BL_S_1h
+  family: BL
+  side: S
+  hold_min: 60
+  trigger: close breaks prior 30d closing low and 24h return < -5%
+  mechanism: breakdown
+  reference: Hudson & Urquhart 2021
+  tier: confirmatory
+- id: B2_BL_S_4h
+  family: BL
+  side: S
+  hold_min: 240
+  trigger: close breaks prior 30d closing low and 24h return < -5%
+  mechanism: breakdown
+  reference: Hudson & Urquhart 2021
+  tier: confirmatory
+- id: B2_BL_S_24h
+  family: BL
+  side: S
+  hold_min: 1440
+  trigger: close breaks prior 30d closing low and 24h return < -5%
+  mechanism: breakdown
+  reference: Hudson & Urquhart 2021
+  tier: confirmatory
+- id: B2_VS_L_1h
+  family: VS
+  side: L
+  hold_min: 60
+  trigger: hourly volume >= 5x its 7d average with |1h return| < 2%
+  mechanism: high-volume return premium / accumulation
+  reference: Gervais, Kaniel & Mingelgrin 2001
+  tier: confirmatory
+- id: B2_VS_L_4h
+  family: VS
+  side: L
+  hold_min: 240
+  trigger: hourly volume >= 5x its 7d average with |1h return| < 2%
+  mechanism: high-volume return premium / accumulation
+  reference: Gervais, Kaniel & Mingelgrin 2001
+  tier: confirmatory
+- id: B2_VS_L_24h
+  family: VS
+  side: L
+  hold_min: 1440
+  trigger: hourly volume >= 5x its 7d average with |1h return| < 2%
+  mechanism: high-volume return premium / accumulation
+  reference: Gervais, Kaniel & Mingelgrin 2001
+  tier: confirmatory
+- id: B2_VS_S_1h
+  family: VS
+  side: S
+  hold_min: 60
+  trigger: hourly volume >= 5x its 7d average with |1h return| < 2%
+  mechanism: high-volume return premium / accumulation
+  reference: Gervais, Kaniel & Mingelgrin 2001
+  tier: confirmatory
+- id: B2_VS_S_4h
+  family: VS
+  side: S
+  hold_min: 240
+  trigger: hourly volume >= 5x its 7d average with |1h return| < 2%
+  mechanism: high-volume return premium / accumulation
+  reference: Gervais, Kaniel & Mingelgrin 2001
+  tier: confirmatory
+- id: B2_VS_S_24h
+  family: VS
+  side: S
+  hold_min: 1440
+  trigger: hourly volume >= 5x its 7d average with |1h return| < 2%
+  mechanism: high-volume return premium / accumulation
+  reference: Gervais, Kaniel & Mingelgrin 2001
+  tier: confirmatory
+- id: B2_SQ_L_1h
+  family: SQ
+  side: L
+  hold_min: 60
+  trigger: volatility compression (24h vol <= 0.6 x 7d vol) then a >= 3% 1h move; trade in the move direction (L=up move, S=down move)
+  mechanism: squeeze breakout
+  reference: practitioner (Bollinger squeeze)
+  tier: confirmatory
+- id: B2_SQ_L_4h
+  family: SQ
+  side: L
+  hold_min: 240
+  trigger: volatility compression (24h vol <= 0.6 x 7d vol) then a >= 3% 1h move; trade in the move direction (L=up move, S=down move)
+  mechanism: squeeze breakout
+  reference: practitioner (Bollinger squeeze)
+  tier: confirmatory
+- id: B2_SQ_L_24h
+  family: SQ
+  side: L
+  hold_min: 1440
+  trigger: volatility compression (24h vol <= 0.6 x 7d vol) then a >= 3% 1h move; trade in the move direction (L=up move, S=down move)
+  mechanism: squeeze breakout
+  reference: practitioner (Bollinger squeeze)
+  tier: confirmatory
+- id: B2_SQ_S_1h
+  family: SQ
+  side: S
+  hold_min: 60
+  trigger: volatility compression (24h vol <= 0.6 x 7d vol) then a >= 3% 1h move; trade in the move direction (L=up move, S=down move)
+  mechanism: squeeze breakout
+  reference: practitioner (Bollinger squeeze)
+  tier: confirmatory
+- id: B2_SQ_S_4h
+  family: SQ
+  side: S
+  hold_min: 240
+  trigger: volatility compression (24h vol <= 0.6 x 7d vol) then a >= 3% 1h move; trade in the move direction (L=up move, S=down move)
+  mechanism: squeeze breakout
+  reference: practitioner (Bollinger squeeze)
+  tier: confirmatory
+- id: B2_SQ_S_24h
+  family: SQ
+  side: S
+  hold_min: 1440
+  trigger: volatility compression (24h vol <= 0.6 x 7d vol) then a >= 3% 1h move; trade in the move direction (L=up move, S=down move)
+  mechanism: squeeze breakout
+  reference: practitioner (Bollinger squeeze)
+  tier: confirmatory
+- id: B2_BT_L_1h
+  family: BT
+  side: L
+  hold_min: 60
+  trigger: 'BTC 1h >= +2% (L: 5 liquid laggards) or <= -2% (S: 5 liquid laggards)'
+  mechanism: 'BTC leads alts: price-delay catch-up'
+  reference: Hou & Moskowitz 2005 price delay; crypto BTC lead-lag studies
+  tier: confirmatory
+- id: B2_BT_L_4h
+  family: BT
+  side: L
+  hold_min: 240
+  trigger: 'BTC 1h >= +2% (L: 5 liquid laggards) or <= -2% (S: 5 liquid laggards)'
+  mechanism: 'BTC leads alts: price-delay catch-up'
+  reference: Hou & Moskowitz 2005 price delay; crypto BTC lead-lag studies
+  tier: confirmatory
+- id: B2_BT_L_24h
+  family: BT
+  side: L
+  hold_min: 1440
+  trigger: 'BTC 1h >= +2% (L: 5 liquid laggards) or <= -2% (S: 5 liquid laggards)'
+  mechanism: 'BTC leads alts: price-delay catch-up'
+  reference: Hou & Moskowitz 2005 price delay; crypto BTC lead-lag studies
+  tier: confirmatory
+- id: B2_BT_S_1h
+  family: BT
+  side: S
+  hold_min: 60
+  trigger: 'BTC 1h >= +2% (L: 5 liquid laggards) or <= -2% (S: 5 liquid laggards)'
+  mechanism: 'BTC leads alts: price-delay catch-up'
+  reference: Hou & Moskowitz 2005 price delay; crypto BTC lead-lag studies
+  tier: confirmatory
+- id: B2_BT_S_4h
+  family: BT
+  side: S
+  hold_min: 240
+  trigger: 'BTC 1h >= +2% (L: 5 liquid laggards) or <= -2% (S: 5 liquid laggards)'
+  mechanism: 'BTC leads alts: price-delay catch-up'
+  reference: Hou & Moskowitz 2005 price delay; crypto BTC lead-lag studies
+  tier: confirmatory
+- id: B2_BT_S_24h
+  family: BT
+  side: S
+  hold_min: 1440
+  trigger: 'BTC 1h >= +2% (L: 5 liquid laggards) or <= -2% (S: 5 liquid laggards)'
+  mechanism: 'BTC leads alts: price-delay catch-up'
+  reference: Hou & Moskowitz 2005 price delay; crypto BTC lead-lag studies
+  tier: confirmatory
+- id: B2_FU_L_1h
+  family: FU
+  side: L
+  hold_min: 60
+  trigger: trailing 24h funding (8h-normalised) >= +0.10% (S) or <= -0.10% (L)
+  mechanism: 'crowding: extreme funding reverses'
+  reference: He, Manela, Ross & von Wachter 2022 perpetual futures
+  tier: confirmatory
+- id: B2_FU_L_4h
+  family: FU
+  side: L
+  hold_min: 240
+  trigger: trailing 24h funding (8h-normalised) >= +0.10% (S) or <= -0.10% (L)
+  mechanism: 'crowding: extreme funding reverses'
+  reference: He, Manela, Ross & von Wachter 2022 perpetual futures
+  tier: confirmatory
+- id: B2_FU_L_24h
+  family: FU
+  side: L
+  hold_min: 1440
+  trigger: trailing 24h funding (8h-normalised) >= +0.10% (S) or <= -0.10% (L)
+  mechanism: 'crowding: extreme funding reverses'
+  reference: He, Manela, Ross & von Wachter 2022 perpetual futures
+  tier: confirmatory
+- id: B2_FU_S_1h
+  family: FU
+  side: S
+  hold_min: 60
+  trigger: trailing 24h funding (8h-normalised) >= +0.10% (S) or <= -0.10% (L)
+  mechanism: 'crowding: extreme funding reverses'
+  reference: He, Manela, Ross & von Wachter 2022 perpetual futures
+  tier: confirmatory
+- id: B2_FU_S_4h
+  family: FU
+  side: S
+  hold_min: 240
+  trigger: trailing 24h funding (8h-normalised) >= +0.10% (S) or <= -0.10% (L)
+  mechanism: 'crowding: extreme funding reverses'
+  reference: He, Manela, Ross & von Wachter 2022 perpetual futures
+  tier: confirmatory
+- id: B2_FU_S_24h
+  family: FU
+  side: S
+  hold_min: 1440
+  trigger: trailing 24h funding (8h-normalised) >= +0.10% (S) or <= -0.10% (L)
+  mechanism: 'crowding: extreme funding reverses'
+  reference: He, Manela, Ross & von Wachter 2022 perpetual futures
+  tier: confirmatory
+- id: B2_TK_L_1h
+  family: TK
+  side: L
+  hold_min: 60
+  trigger: taker-buy share of the hour >= 65% (L) or <= 35% (S) with volume >= 3x
+  mechanism: order-flow imbalance persists
+  reference: Chordia & Subrahmanyam 2004 order imbalance
+  tier: confirmatory
+- id: B2_TK_L_4h
+  family: TK
+  side: L
+  hold_min: 240
+  trigger: taker-buy share of the hour >= 65% (L) or <= 35% (S) with volume >= 3x
+  mechanism: order-flow imbalance persists
+  reference: Chordia & Subrahmanyam 2004 order imbalance
+  tier: confirmatory
+- id: B2_TK_L_24h
+  family: TK
+  side: L
+  hold_min: 1440
+  trigger: taker-buy share of the hour >= 65% (L) or <= 35% (S) with volume >= 3x
+  mechanism: order-flow imbalance persists
+  reference: Chordia & Subrahmanyam 2004 order imbalance
+  tier: confirmatory
+- id: B2_TK_S_1h
+  family: TK
+  side: S
+  hold_min: 60
+  trigger: taker-buy share of the hour >= 65% (L) or <= 35% (S) with volume >= 3x
+  mechanism: order-flow imbalance persists
+  reference: Chordia & Subrahmanyam 2004 order imbalance
+  tier: confirmatory
+- id: B2_TK_S_4h
+  family: TK
+  side: S
+  hold_min: 240
+  trigger: taker-buy share of the hour >= 65% (L) or <= 35% (S) with volume >= 3x
+  mechanism: order-flow imbalance persists
+  reference: Chordia & Subrahmanyam 2004 order imbalance
+  tier: confirmatory
+- id: B2_TK_S_24h
+  family: TK
+  side: S
+  hold_min: 1440
+  trigger: taker-buy share of the hour >= 65% (L) or <= 35% (S) with volume >= 3x
+  mechanism: order-flow imbalance persists
+  reference: Chordia & Subrahmanyam 2004 order imbalance
+  tier: confirmatory
+- id: B2_NL_L_1h
+  family: NL
+  side: L
+  hold_min: 60
+  trigger: new perp listing, 24 hours after the first trade
+  mechanism: 'new listings: hedging supply vs hype'
+  reference: IPO/listing underperformance analogues
+  tier: confirmatory
+- id: B2_NL_L_4h
+  family: NL
+  side: L
+  hold_min: 240
+  trigger: new perp listing, 24 hours after the first trade
+  mechanism: 'new listings: hedging supply vs hype'
+  reference: IPO/listing underperformance analogues
+  tier: confirmatory
+- id: B2_NL_L_24h
+  family: NL
+  side: L
+  hold_min: 1440
+  trigger: new perp listing, 24 hours after the first trade
+  mechanism: 'new listings: hedging supply vs hype'
+  reference: IPO/listing underperformance analogues
+  tier: confirmatory
+- id: B2_NL_S_1h
+  family: NL
+  side: S
+  hold_min: 60
+  trigger: new perp listing, 24 hours after the first trade
+  mechanism: 'new listings: hedging supply vs hype'
+  reference: IPO/listing underperformance analogues
+  tier: confirmatory
+- id: B2_NL_S_4h
+  family: NL
+  side: S
+  hold_min: 240
+  trigger: new perp listing, 24 hours after the first trade
+  mechanism: 'new listings: hedging supply vs hype'
+  reference: IPO/listing underperformance analogues
+  tier: confirmatory
+- id: B2_NL_S_24h
+  family: NL
+  side: S
+  hold_min: 1440
+  trigger: new perp listing, 24 hours after the first trade
+  mechanism: 'new listings: hedging supply vs hype'
+  reference: IPO/listing underperformance analogues
+  tier: confirmatory
+- id: B2_RV_L_1h
+  family: RV
+  side: L
+  hold_min: 60
+  trigger: two consecutive hours each >= +5%
+  mechanism: persistent buying pressure vs exhaustion
+  reference: momentum/overreaction
+  tier: confirmatory
+- id: B2_RV_L_4h
+  family: RV
+  side: L
+  hold_min: 240
+  trigger: two consecutive hours each >= +5%
+  mechanism: persistent buying pressure vs exhaustion
+  reference: momentum/overreaction
+  tier: confirmatory
+- id: B2_RV_L_24h
+  family: RV
+  side: L
+  hold_min: 1440
+  trigger: two consecutive hours each >= +5%
+  mechanism: persistent buying pressure vs exhaustion
+  reference: momentum/overreaction
+  tier: confirmatory
+- id: B2_RV_S_1h
+  family: RV
+  side: S
+  hold_min: 60
+  trigger: two consecutive hours each >= +5%
+  mechanism: persistent buying pressure vs exhaustion
+  reference: momentum/overreaction
+  tier: confirmatory
+- id: B2_RV_S_4h
+  family: RV
+  side: S
+  hold_min: 240
+  trigger: two consecutive hours each >= +5%
+  mechanism: persistent buying pressure vs exhaustion
+  reference: momentum/overreaction
+  tier: confirmatory
+- id: B2_RV_S_24h
+  family: RV
+  side: S
+  hold_min: 1440
+  trigger: two consecutive hours each >= +5%
+  mechanism: persistent buying pressure vs exhaustion
+  reference: momentum/overreaction
+  tier: confirmatory
+- id: B2_BR_L_1h
+  family: BR
+  side: L
+  hold_min: 60
+  trigger: 'alt-season burst: >= 15 liquid coins up >= 5% in the same hour; L = 5 liquid laggards'
+  mechanism: rotation catch-up
+  reference: lead-lag / attention spillover
+  tier: confirmatory
+- id: B2_BR_L_4h
+  family: BR
+  side: L
+  hold_min: 240
+  trigger: 'alt-season burst: >= 15 liquid coins up >= 5% in the same hour; L = 5 liquid laggards'
+  mechanism: rotation catch-up
+  reference: lead-lag / attention spillover
+  tier: confirmatory
+- id: B2_BR_L_24h
+  family: BR
+  side: L
+  hold_min: 1440
+  trigger: 'alt-season burst: >= 15 liquid coins up >= 5% in the same hour; L = 5 liquid laggards'
+  mechanism: rotation catch-up
+  reference: lead-lag / attention spillover
+  tier: confirmatory
+- id: B2_P1_L_4h_liq
+  family: P1
+  side: L
+  hold_min: 240
+  slice: liq
+  trigger: 1h return >= +10% and trailing 24h volume >= $20M
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_liq
+  family: P1
+  side: S
+  hold_min: 240
+  slice: liq
+  trigger: 1h return >= +10% and trailing 24h volume >= $20M
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_illiq
+  family: P1
+  side: L
+  hold_min: 240
+  slice: illiq
+  trigger: 1h return >= +10% and trailing 24h volume $2-5M
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_illiq
+  family: P1
+  side: S
+  hold_min: 240
+  slice: illiq
+  trigger: 1h return >= +10% and trailing 24h volume $2-5M
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_first
+  family: P1
+  side: L
+  hold_min: 240
+  slice: first
+  trigger: 1h return >= +10% and no +10% hour in the prior 30 days
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_first
+  family: P1
+  side: S
+  hold_min: 240
+  slice: first
+  trigger: 1h return >= +10% and no +10% hour in the prior 30 days
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_repeat
+  family: P1
+  side: L
+  hold_min: 240
+  slice: repeat
+  trigger: 1h return >= +10% and >= 1 prior +10% hour in 30 days
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_repeat
+  family: P1
+  side: S
+  hold_min: 240
+  slice: repeat
+  trigger: 1h return >= +10% and >= 1 prior +10% hour in 30 days
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_btcup
+  family: P1
+  side: L
+  hold_min: 240
+  slice: btcup
+  trigger: 1h return >= +10% and BTC 24h return > 0
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_btcup
+  family: P1
+  side: S
+  hold_min: 240
+  slice: btcup
+  trigger: 1h return >= +10% and BTC 24h return > 0
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_btcdn
+  family: P1
+  side: L
+  hold_min: 240
+  slice: btcdn
+  trigger: 1h return >= +10% and BTC 24h return <= 0
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_btcdn
+  family: P1
+  side: S
+  hold_min: 240
+  slice: btcdn
+  trigger: 1h return >= +10% and BTC 24h return <= 0
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_fundneg
+  family: P1
+  side: L
+  hold_min: 240
+  slice: fundneg
+  trigger: 1h return >= +10% and funding < 0 (shorts crowded)
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_fundneg
+  family: P1
+  side: S
+  hold_min: 240
+  slice: fundneg
+  trigger: 1h return >= +10% and funding < 0 (shorts crowded)
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_L_4h_vs10
+  family: P1
+  side: L
+  hold_min: 240
+  slice: vs10
+  trigger: 1h return >= +10% and hour volume >= 10x the 7d average
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+- id: B2_P1_S_4h_vs10
+  family: P1
+  side: S
+  hold_min: 240
+  slice: vs10
+  trigger: 1h return >= +10% and hour volume >= 10x the 7d average
+  mechanism: which pumps continue vs fade
+  reference: La Morgia et al. 2023; Kamps & Kleinberg 2018
+  tier: confirmatory
+notice_hypotheses:
+- id: B2_N1_upbit_warning_short
+  trigger: Upbit trading-caution (거래 유의 종목 지정) notice
+  rule: short Binance perp at first trade >= notice+2s, exit +60m
+  mechanism: Korean holders dump; Binance follows Upbit
+  reference: E1b analogue
+  tier: confirmatory
+- id: B2_N2_upbit_delist_short
+  trigger: Upbit 거래지원 종료 notice
+  rule: short at notice+2s, exit +60m
+  mechanism: forced Korean selling
+  reference: E1b analogue
+  tier: confirmatory
+- id: B2_N3_binance_spot_listing_long
+  trigger: '"Binance Will List" notice for a coin with a live perp'
+  rule: long at notice+2s, exit +60m
+  mechanism: global listing demand shock
+  reference: exchange listing effect studies
+  tier: confirmatory
+- id: B2_N4_new_perp_short_72h
+  trigger: new Binance perp, 1 hour after first trade
+  rule: short at next minute, hold 72h
+  mechanism: airdrop/early holders hedge with perp shorts
+  reference: listing underperformance analogues
+  tier: confirmatory
+- id: B2_N5_upbit_warning_lifted_long
+  trigger: Upbit 유의 종목 해제 notice
+  rule: long at notice+2s, exit +60m
+  mechanism: relief buying
+  reference: E1b analogue
+  tier: confirmatory
+model_hypotheses:
+- id: B2_M1_pump
+  model: logistic regression on event features
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (linear baseline)
+  tier: confirmatory
+- id: B2_M2_pump
+  model: LightGBM on event features
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (trees); Jaquart et al. 2021
+  tier: confirmatory
+- id: B2_M3_pump
+  model: MLP on event features
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (neural nets)
+  tier: confirmatory
+- id: B2_M4_pump
+  model: 1D-CNN on the 120 one-minute bars before the event
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: temporal CNN literature
+  tier: confirmatory
+- id: B2_M5_pump
+  model: GRU on the 120 one-minute bars
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Fischer & Krauss 2018 (LSTM)
+  tier: confirmatory
+- id: B2_M6_pump
+  model: Transformer encoder on the 120 one-minute bars
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Vaswani et al. 2017; time-series transformers
+  tier: confirmatory
+- id: B2_M7_pump
+  model: CNN on 60-minute OHLC+volume chart images
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Jiang, Kelly & Xiu 2023 (Re-)Imag(in)ing Price Trends
+  tier: confirmatory
+- id: B2_M8_pump
+  model: average of M2, M4, M7 probabilities
+  events: every 1h >= +10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: ensemble
+  tier: confirmatory
+- id: B2_M1_dump
+  model: logistic regression on event features
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (linear baseline)
+  tier: confirmatory
+- id: B2_M2_dump
+  model: LightGBM on event features
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (trees); Jaquart et al. 2021
+  tier: confirmatory
+- id: B2_M3_dump
+  model: MLP on event features
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (neural nets)
+  tier: confirmatory
+- id: B2_M4_dump
+  model: 1D-CNN on the 120 one-minute bars before the event
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: temporal CNN literature
+  tier: confirmatory
+- id: B2_M5_dump
+  model: GRU on the 120 one-minute bars
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Fischer & Krauss 2018 (LSTM)
+  tier: confirmatory
+- id: B2_M6_dump
+  model: Transformer encoder on the 120 one-minute bars
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Vaswani et al. 2017; time-series transformers
+  tier: confirmatory
+- id: B2_M7_dump
+  model: CNN on 60-minute OHLC+volume chart images
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Jiang, Kelly & Xiu 2023 (Re-)Imag(in)ing Price Trends
+  tier: confirmatory
+- id: B2_M8_dump
+  model: average of M2, M4, M7 probabilities
+  events: every 1h <= -10% event
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: ensemble
+  tier: confirmatory
+- id: B2_M1_brk
+  model: logistic regression on event features
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (linear baseline)
+  tier: confirmatory
+- id: B2_M2_brk
+  model: LightGBM on event features
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (trees); Jaquart et al. 2021
+  tier: confirmatory
+- id: B2_M3_brk
+  model: MLP on event features
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Gu, Kelly & Xiu 2020 (neural nets)
+  tier: confirmatory
+- id: B2_M4_brk
+  model: 1D-CNN on the 120 one-minute bars before the event
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: temporal CNN literature
+  tier: confirmatory
+- id: B2_M5_brk
+  model: GRU on the 120 one-minute bars
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Fischer & Krauss 2018 (LSTM)
+  tier: confirmatory
+- id: B2_M6_brk
+  model: Transformer encoder on the 120 one-minute bars
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Vaswani et al. 2017; time-series transformers
+  tier: confirmatory
+- id: B2_M7_brk
+  model: CNN on 60-minute OHLC+volume chart images
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: Jiang, Kelly & Xiu 2023 (Re-)Imag(in)ing Price Trends
+  tier: confirmatory
+- id: B2_M8_brk
+  model: average of M2, M4, M7 probabilities
+  events: every 30d-high breakout event (BH)
+  target: sign of the 4h return from the next-minute open
+  split: train 2025-03..2025-11, validate 2025-12, test 2026-01..2026-09 (untouched by fitting)
+  trade: long if p >= validation 70th pct, short if p <= 30th pct, hold 4h, net of costs
+  pass_rule: test mean net > 0 with 95% bootstrap CI above 0 and test AUC > 0.5 (bootstrap CI)
+  reference: ensemble
+  tier: confirmatory
+- id: B2_G1_xs_mlp
+  model: MLP on 14 cross-sectional characteristics (Gu-Kelly-Xiu style)
+  events: daily 00 UTC cross-section, 24h volume >= $20M
+  target: rank of next 24h return
+  split: same
+  trade: long top 10 / short bottom 10 daily, hold 24h
+  pass_rule: test mean daily net > 0 with CI above 0
+  reference: Gu, Kelly & Xiu 2020
+  tier: confirmatory
