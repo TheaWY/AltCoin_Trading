@@ -1,0 +1,15 @@
+# Forward (paper) tests of what survived the confirmatory layers. Paper only, no orders.
+registered: 2026-09-27
+tests:
+  - id: F1_upbit_krw_listing
+    source: [E1b (2025-03..2026-09 pass), B3_E1b_2024 (2024 holdout pass)]
+    object: scripts/upbit_listing_watcher.py (launchd com.altcoin.upbitlisting)
+    rule: poll Upbit announcements ~1/s; new KRW listing with a live Binance USDT perp -> paper long at the Binance best ask at detection; exit at best bid +15m and +60m
+    measures: detection lag vs first_listed_at (the key unknown), realised net at +15m/+60m
+    decision: after >= 15 listings, keep only if median detection lag <= 1.5 s AND mean net60 > 0; warning - 2026 median at +2 s was already negative
+    secondary: delisting notices -> paper short (B2_N2), same logging
+  - id: F2_pump_cnn
+    source: [B2_M7_pump (2026 test +0.75%/trade), B3_M7_pump_2024 (+0.58%), 6-seed check (12/12 positive)]
+    object: scripts/pump_cnn_paper.py with frozen data/models/pump_cnn (launchd com.altcoin.pumpcnn, minute 2 hourly)
+    rule: every +10% hour (24h volume >= $2M, >= 72h listed); 6-seed mean probability; long >= Dec-2025 70th pct, short <= 30th; hold 4h
+    decision: after >= 300 paper trades (about 6-8 weeks), keep only if mean net > 0 with day-clustered 95% CI above 0
