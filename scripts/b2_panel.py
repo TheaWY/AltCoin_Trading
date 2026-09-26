@@ -18,8 +18,10 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 import os
 _ERA = os.environ.get("B2_ERA", "main")          # "main" = 2025-03..2026-09, "2024" = 2024-03..2025-02 holdout
-K = [ROOT / "data/cache/k1m_2024"] if _ERA == "2024" else [ROOT / "data/cache/k1m_oot", ROOT / "data/cache/k1m"]
-F = [ROOT / "data/cache/funding_2024"] if _ERA == "2024" else [ROOT / "data/cache/funding_oot", ROOT / "data/cache/funding"]
+_KS = {"2024": ["k1m_2024"], "main": ["k1m_oot", "k1m"], "all": ["k1m_2024", "k1m_oot", "k1m"]}[_ERA]
+_FS = {"2024": ["funding_2024"], "main": ["funding_oot", "funding"], "all": ["funding_2024", "funding_oot", "funding"]}[_ERA]
+K = [ROOT / "data/cache" / k for k in _KS]
+F = [ROOT / "data/cache" / k for k in _FS]
 OUT = ROOT / ("data/cache/b2_hourly_2024.parquet" if _ERA == "2024" else "data/cache/b2_hourly.parquet")
 H_, D_ = 3600, 86400
 TRADFI = {"AAPL", "AMD", "AMZN", "COIN", "COPPER", "CRCL", "CRWD", "EWY", "GOOGL", "HOOD", "INTC", "KORU", "META",
