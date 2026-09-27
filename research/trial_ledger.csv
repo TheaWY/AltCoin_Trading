@@ -198,3 +198,4 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-09-27T07:55:15,B6-1790495715,B6_3_meta_pump_fade_S,confirmatory,oos 2024-12..2026-09,,-0.00354,5770,FAIL
 2026-09-27T07:55:15,B6-1790495715,B6_3_meta_pump_follow_L,confirmatory,oos 2024-12..2026-09,,0.00314,5770,FAIL ci crosses 0
 2026-09-27T07:55:15,B6-1790495715,B6_4_paper_trades,indicative,2026-07..09,,,111,auc=0.506 ci=[0.40;0.62]; skip>0.6 removed 4 trades that netted +26
+2026-09-27T08:08:56,C1-1790496536,C1_holdout_2024,confirmatory,2024-04..2024-11,,0.0858,204,FAIL ci=[-0.012;0.153] only 9 crash days; control -0.0085 (n=85)

@@ -234,6 +234,7 @@ PAIRS_MAX_HOLD_HOURS = float(os.getenv("PAIRS_MAX_HOLD_HOURS", str(30 * 24)))
 # Strategy LAB: race pairs config variants in parallel, each an isolated book, so
 # live track records accumulate SEPARATELY for honest comparison (src/engine/pairs_lab.py).
 PAIRS_LAB_ENABLED = os.getenv("PAIRS_LAB_ENABLED", "false").lower() == "true"
+PAIRS_LAB_NO_NEW_ENTRIES = os.getenv("PAIRS_LAB_NO_NEW_ENTRIES", "false").lower() == "true"  # wind-down: exits only
 PAIRS_LAB_STARTING = float(os.getenv("PAIRS_LAB_STARTING", "714.285714"))
 
 # --- Analysis thresholds (not hardcoded in analyzer) ---

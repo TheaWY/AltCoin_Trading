@@ -142,7 +142,9 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
                 cash = _close_lab(storage, t, now, reason, margin_frac, cash); closed += 1
         # entries: top-K of the shared selection, |z|>=2, gross cap
         open_keys = {(t["symbol"], t["hedge_symbol"]) for t in _open_positions(storage, name)}
-        for p in selection[:cfg["k"]]:
+        # wind-down mode: keep managing exits, open nothing new (B6: pairs lost 74% of real exits)
+        entry_pool = [] if getattr(config, "PAIRS_LAB_NO_NEW_ENTRIES", False) else selection[:cfg["k"]]
+        for p in entry_pool:
             key = (p["a"], p["b"])
             if key in open_keys:
                 continue
