@@ -38,3 +38,9 @@
 3. **Binance spot listing announcements for coins that already have perps**: large but only 19 holdout events.
 
 **Pending:** B13 order-book depth (download running) and B8_4 exploratory short-history sources.
+
+## B13 order-book depth precursors (run 2026-09-28, holdout AUC, matched case-control)
+- Depth at +-1% relative to 24h volume (thin book), LOW before pumps: 0.749 (CI 0.735-0.763), and before dumps: 0.766 (CI 0.679-0.856). This is the strongest precursor found so far. It says a big move is coming, not which way. Volume sits in the denominator, so it partly overlaps a volume surge.
+- Both sides of the book deepening over 24h before dumps: ask 0.595, bid 0.595. Bid-ask imbalance at 1% (6h mean): pumps 0.549, dumps 0.612.
+- Depth change before pumps: no signal (0.50).
+- 6 of 8 pass (BH q=0.10, CI > 0.5). Short history before 2026-03 comes from the hourly bookDepth backfill.
