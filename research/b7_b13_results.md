@@ -44,3 +44,9 @@
 - Both sides of the book deepening over 24h before dumps: ask 0.595, bid 0.595. Bid-ask imbalance at 1% (6h mean): pumps 0.549, dumps 0.612.
 - Depth change before pumps: no signal (0.50).
 - 6 of 8 pass (BH q=0.10, CI > 0.5). Short history before 2026-03 comes from the hourly bookDepth backfill.
+
+## B15_2 / B15_3 / B15_4 pump lifecycle (run 2026-09-28, holdout 2025-09..2026-09)
+- B15_4 coordinated pumps (>=2 unrelated coins pumping within +-3 min): dump depth at +6h is SHALLOWER than matched single-coin pumps (-5.7% vs -11.2%, diff CI 1.7-7.1pp; same in discovery). Driven by market-wide bursts (>=10 coins at once); excluding bursts, no difference (CI -1.2..+0.9pp). Shorting coordinated pumps: -3.3% net, CI crosses 0. No trade.
+- B15_2 shape clusters (DTW k-medoids on first 60 min, k=3, silhouette 0.17): clusters differ strongly in 24h outcome (slow-start/continuing cluster +5.8% net from m0+10, others -3.5%/-4.6%), but labels use minutes 1-60 so this is descriptive. 1D-CNN from first 10 min: accuracy 44.7% vs 41.8% majority (gap CI 1.6-4.0pp) - real but small. Trade on predicted cluster: -0.3%/trade, CI -1.5..+0.7%. FAIL.
+- B15_3 tick onset fingerprint (aggTrades, 450 discovery + 598 holdout pumps): pumps whose onset is dominated by a few huge trades (top concentration tercile) do worse for longs (-1.4% vs +4.3% bottom tercile holdout; -2.2% vs +3.5% discovery) and dump deeper (-12.6% vs -7.5% at +6h), but CIs cross 0. Tick features lift AUC for "long loses" 0.47 -> 0.67, gain CI -0.03..+0.30, p=0.19. FAIL (sample too small to confirm; direction consistent across periods).
+- Net: pump detection works, pump trading does not survive costs. The one consistent hint: organic, broad-based onsets (many small trades) continue better than whale-driven onsets.

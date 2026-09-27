@@ -342,3 +342,6 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-09-27T21:25:00,B15_2-1,B15_2a:cluster 24h outcome differ (KW),confirmatory,hold,,,13931,"PASS p<1e-6 k=3 silhouette 0.17; descriptive (labels use min 1-60)"
 2026-09-27T21:25:00,B15_2-1,B15_2b:1D-CNN 10min cluster acc vs majority,confirmatory,hold,,0.0284,13931,"PASS acc 0.447 vs 0.418 ci=[0.016,0.040]"
 2026-09-27T21:25:00,B15_2-1,B15_2c:trade long best/short worst predicted cluster,confirmatory,hold,,-0.0029,9211,"FAIL ci=[-0.0145,0.0072]"
+2026-09-27T21:45:00,B15_3-1,B15_3:T1 onset concentration tercile spread long,confirmatory,hold,,-0.0562,598,"FAIL top -1.4% vs bottom +4.3% ci=[-0.068,0.037]; same direction in discovery (-2.2% vs +3.5%)"
+2026-09-27T21:45:00,B15_3-1,B15_3:T1 onset concentration tercile spread short,confirmatory,hold,,0.0568,598,"FAIL ci=[-0.036,0.069]"
+2026-09-27T21:45:00,B15_3-1,B15_3:T2 tick features AUC gain (P long loses),confirmatory,hold,,0.2000,598,"FAIL auc 0.467->0.667 gain ci=[-0.025,0.300] p=0.19"
