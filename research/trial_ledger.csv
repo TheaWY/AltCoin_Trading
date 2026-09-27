@@ -191,3 +191,10 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-09-27T03:14:38,B4-1790446478,B4_C9_korea_open_fade,confirmatory,2024-03..2026-09,,-0.0004695690469565,4630.0,per-trade mean
 2026-09-27T03:50:31,B5-1790448631,B5_JKX_I20_R5,confirmatory,test 2025-10..2026-09,,0.0009702561845433506,50.0,auc=0.590
 2026-09-27T03:50:31,B5-1790448631,B5_JKX_I60h_R24,confirmatory,test 2025-10..2026-09,,0.0004096800959689352,355.0,auc=0.546
+2026-09-27T07:55:15,B6-1790495715,B6_1_lossml_auc,confirmatory,oos 2024-12..2026-09,,,1393144,FAIL blend auc=0.5385 ci=[0.525;0.550] within-time 0.529
+2026-09-27T07:55:15,B6-1790495715,B6_2_calibration,report,oos 2024-12..2026-09,,-0.00136,148738,best decile loss rate 0.47 vs 0.59 worst; best decile net still <0
+2026-09-27T07:55:15,B6-1790495715,B6_3_meta_breakout30d_L,confirmatory,oos 2024-12..2026-09,,-0.00162,10725,FAIL
+2026-09-27T07:55:15,B6-1790495715,B6_3_meta_crash_rebound_L,confirmatory,oos 2024-12..2026-09,,0.03146,3007,PASS ci=[0.0076;0.0531]; ex top-5 days +0.97pp; keeps market-wide crashes
+2026-09-27T07:55:15,B6-1790495715,B6_3_meta_pump_fade_S,confirmatory,oos 2024-12..2026-09,,-0.00354,5770,FAIL
+2026-09-27T07:55:15,B6-1790495715,B6_3_meta_pump_follow_L,confirmatory,oos 2024-12..2026-09,,0.00314,5770,FAIL ci crosses 0
+2026-09-27T07:55:15,B6-1790495715,B6_4_paper_trades,indicative,2026-07..09,,,111,auc=0.506 ci=[0.40;0.62]; skip>0.6 removed 4 trades that netted +26

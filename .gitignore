@@ -14,3 +14,4 @@ data/health_probe.json
 data/ngrok.url
 data/*.db
 b2_keys.txt
+catboost_info/
