@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 from scipy.stats import kruskal
 
+if sys.argv[1:] == ["2b"]:
+    import torch  # noqa: F401  (load torch's OpenMP before lightgbm's; segfault otherwise on macOS)
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import b15_models as M  # noqa: E402
