@@ -32,7 +32,11 @@ def day(sym, d):
         df = pd.read_csv(z.open(z.namelist()[0]))
         if df.empty:
             return None
-        t = pd.to_datetime(df["create_time"]).astype("int64") // 10**9
+        ct = df["create_time"]
+        if pd.api.types.is_numeric_dtype(ct):
+            t = (ct.astype("int64") // 1000) if ct.iloc[0] > 1e11 else ct.astype("int64")
+        else:
+            t = (pd.to_datetime(ct, utc=True) - pd.Timestamp(0, tz="UTC")) // pd.Timedelta("1s")
         out = pd.DataFrame({"t": t, "oi": df["sum_open_interest"], "oi_usd": df["sum_open_interest_value"],
                             "ls_top_acct": df["count_toptrader_long_short_ratio"],
                             "ls_top_pos": df["sum_toptrader_long_short_ratio"],

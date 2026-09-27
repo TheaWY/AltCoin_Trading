@@ -50,7 +50,7 @@ def market(m, start_ts):
     if not rows:
         return None
     df = pd.DataFrame(rows)
-    t = pd.to_datetime(df["candle_date_time_utc"], utc=True).astype("int64") // 10**9 + 3600
+    t = (pd.to_datetime(df["candle_date_time_utc"], utc=True) - pd.Timestamp(0, tz="UTC")) // pd.Timedelta("1s") + 3600
     return pd.DataFrame({"ts": t, "o": df["opening_price"], "h": df["high_price"], "l": df["low_price"],
                          "c": df["trade_price"], "value_krw": df["candle_acc_trade_price"]}).drop_duplicates("ts").sort_values("ts")
 

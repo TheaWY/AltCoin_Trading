@@ -80,8 +80,14 @@ def bithumb1h():
 
 # ------------------------------------------------------------------ DL4 Binance spot 1h (vision monthly + daily)
 def _vision_klines(url):
-    r = requests.get(url, timeout=60, headers=UA)
-    if r.status_code != 200:
+    r = None
+    for k in range(4):
+        try:
+            r = requests.get(url, timeout=60, headers=UA)
+            break
+        except requests.RequestException:
+            time.sleep(5 * (k + 1))
+    if r is None or r.status_code != 200:
         return None
     z = zipfile.ZipFile(io.BytesIO(r.content))
     d = pd.read_csv(z.open(z.namelist()[0]), header=None)
