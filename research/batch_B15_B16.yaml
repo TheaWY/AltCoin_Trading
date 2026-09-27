@@ -1,0 +1,54 @@
+# B15: pump lifecycle (how far, when it turns) and B16: exit / stop-loss policy (손절) for positions.
+# Registered 2026-09-28 BEFORE the pump-path table or any exit simulation is built.
+registered: 2026-09-28
+common:
+  periods: {discovery: 2024-04-01..2025-08-31, holdout: 2025-09-01..2026-09-23}   # holdout touched once per test
+  uncertainty: day-clustered bootstrap 95% CI; Benjamini-Hochberg q=0.10 within each experiment
+  costs: 0.05%/side + volume slippage + funding; every exit executes at the NEXT minute open after the rule fires
+  slices: regime state (B14_5 HMM), liquidity tercile, korean_listed, pump size bucket (10-15 / 15-25 / 25%+), cause (exchange notice within 24h vs none), year third
+
+B15_pump_lifecycle:
+  event_table (data/cache/b15/pumps.parquet, one row per pump, stable pump_id):
+    onset: first minute m0 where close(m0)/close(m0-60) - 1 >= +10%, universe dv24 >= $2M, >= 72h listed, 6h cooldown per coin
+    path: minute bars m0-60 .. m0+1440 (return, volume, taker share, range), hourly OI/L-S/funding, Korean and spot volume share
+    tick_window (B15_3 only): aggTrades from m0-5min to m0+15min for a stratified sample (600 discovery + 600 holdout, by size bucket)
+    outcomes: max further gain after m0 (and its minute), time to peak, drawdown from peak at +1h/+6h/+24h, 24h net for long and short entered at m0+1
+  B15_1_survival:
+    method: discrete-time hazard model (LightGBM, one row per pump-minute for minutes 1..240 after onset) for "peak occurs within the next 5 minutes";
+            features at each minute = minutes since onset, gain so far, last-5m return, volume decay ratio, taker share 5m, OI change since onset, spot share, funding, pump size bucket, regime
+    metrics: time-dependent AUC on holdout at horizons 5/15/60 min; calibration
+    trade rule: long at m0+1, exit when predicted 5-min peak hazard > threshold fixed on discovery (the hazard quantile that maximised discovery net); compare with fixed exits at +15m/+60m/+4h/+24h
+    pass: holdout net mean > 0 with CI > 0 AND beats the best fixed-time exit with CI > 0 AND slice rules (regime >= 2/3, no size bucket with CI < 0)
+  B15_2_shape_clusters:
+    method: DTW k-medoids (k chosen on discovery by silhouette, 3..6) on the first 60 minutes after onset (z-scored cumulative return, volume); then a 1D-CNN classifier trained to recognise the cluster from the FIRST 10 minutes only
+    tests: (a) clusters differ in 24h outcome on holdout (Kruskal-Wallis + pairwise CI); (b) 10-minute classifier accuracy > majority class with CI;
+           (c) trade: go long at m0+10 only when the predicted cluster is the best-outcome cluster of discovery; short when predicted worst; net CI > 0
+  B15_3_tick_onset_fingerprint:
+    method: from aggTrades in [m0-5m, m0+2m]: largest single trade / 1h median trade, buy-initiated share, trade-size Gini, number of trades per second at onset, first-second imbalance
+    tests: case-control on 24h outcome (top vs bottom tercile of "onset concentration"), plus adding these to B15_1 features; pass if holdout AUC gain CI > 0 or the concentration tercile spread has net CI > 0
+  B15_4_coordinated_pumps:
+    method: pumps whose onset lies within +-3 minutes of >= 2 other pumps in unrelated coins (different CoinGecko category) = coordinated; test dump depth (drawdown from peak at +6h) coordinated vs organic, matched on size and liquidity
+  B15_5_post_peak_dump_model:
+    trigger: first 3-minute drawdown >= 3% from the running high after onset (peak confirmed)
+    target: retrace >= 50% of the pump within 24h of the trigger
+    method: LightGBM with pump features, OI change during pump, funding flip, Korean share, notice flag, late-vs-early taker flow (minutes 20-60 vs 0-5)
+    trade: short at trigger+1 when P(retrace) > discovery-calibrated threshold; exit +24h or when 50% retrace reached
+    pass: holdout AUC > 0.6 with CI > 0.55 AND short net mean > 0 with CI > 0 AND slice rules
+
+B16_exit_policy:
+  entry_sets (each tested separately; exits compared on the SAME entries):
+    E1: signal_xs-style entries (top-quintile of the B7 known-factor composite, 24h rebalance) - the only paper strategy making money
+    E2: pump follow long at m0+1 (B15 table)
+    E3: crash rebound long (C1 rule)
+    E4: 유리's own real-exit paper trades (123) - indicative only
+    E5: random entries (universe coin-hours at 00/08/16 UTC) - control: an exit rule that "works" here is just a market-timing artefact
+  exit_policies (parameters fixed on discovery per entry set, evaluated once on holdout):
+    P0 fixed time (24h)  |  P1 fixed stop -k% (k in 2,3,5,8)  |  P2 ATR stop (k x 24h realised vol, k in 1,1.5,2)  |  P3 trailing stop (k x ATR from running high)
+    P4 time + stop combo |  P5 learned exit: at each hour, LightGBM P(position ends the next 24h below its current level) using the B14 tensor at that hour + position age + unrealised P&L; exit when P > threshold fixed on discovery
+    P6 quantile exit: exit when the B14_3 q10 forecast for the coin turns below -cost (the "confidence has left" rule)
+  metrics per (entry set, policy): mean net per trade, CI; mean loss on losing trades; hit rate; max drawdown of the equity path; average holding time; turnover cost
+  primary question: does any policy beat P0 on mean net with CI > 0 on E1-E3 AND fail to beat P0 on E5 (control)?
+  secondary: loss-cutting efficiency = share of trades that end as losers whose loss was reduced by >= 50% by the policy, minus share of eventual winners it cut early
+  pass: a policy that beats P0 with CI > 0 on >= 2 of E1-E3, does NOT beat P0 on E5 with CI > 0, and has positive loss-cutting efficiency on holdout
+  position_tracker (product, not a test): scripts/position_tracker.py reads data/positions.yaml (manual entries) and applies the best passing policy
+    (or P0 until one passes) to live prices, logging alerts to position_alerts; paper/advisory only, never places orders
