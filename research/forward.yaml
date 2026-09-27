@@ -13,3 +13,10 @@ tests:
     object: scripts/pump_cnn_paper.py with frozen data/models/pump_cnn (launchd com.altcoin.pumpcnn, minute 2 hourly)
     rule: every +10% hour (24h volume >= $2M, >= 72h listed); 6-seed mean probability; long >= Dec-2025 70th pct, short <= 30th; hold 4h
     decision: after >= 300 paper trades (about 6-8 weeks), keep only if mean net > 0 with day-clustered 95% CI above 0
+  - id: F3_crash_rebound
+    registered: 2026-09-27
+    source: [B6_3 crash_rebound_L meta-label pass (post-hoc), C1 rule in research/batch_C1.yaml]
+    object: scripts/crash_rebound_paper.py (launchd com.altcoin.crashrebound, minute 3 hourly)
+    rule: coin 24h <= -25%, BTC 24h <= -3%, close below prior 30d closing low, 24h vol >= $2M, >= 72h listed -> paper long; entry open T+60s, exit open T+60s+24h; 24h cooldown per coin
+    also_logged: crashes that fail the BTC or 30d-low filter (control arm, side=0)
+    decision: rare events (market-wide crashes), so review after >= 30 trades or 6 months; keep only if mean net > 0 with day-clustered CI above 0 AND beats the control arm
