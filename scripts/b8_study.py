@@ -35,6 +35,8 @@ def aligned(folder, codes, ts, cols, keymap):
         if j is None:
             continue
         d = pd.read_parquet(f)
+        if d.empty or not set(cols) <= set(d.columns):
+            continue
         pos = np.searchsorted(ts, d["ts"].to_numpy())
         ok = (pos < len(ts)) & (ts[np.minimum(pos, len(ts) - 1)] == d["ts"].to_numpy())
         for c in cols:

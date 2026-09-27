@@ -173,10 +173,11 @@ def b9():
                 continue
             rows.append(dict(j=j, code=codes[j], t=t, tokens=float(sum(e.get("noOfTokens") or [0])), circ=float(cval[k])))
     E = pd.DataFrame(rows)
-    E = E.groupby(["j", "code", E["t"] // D_]).agg(t=("t", "min"), tokens=("tokens", "sum"), circ=("circ", "first")).reset_index(drop=False)
+    E["day"] = E["t"] // D_
+    E = E.groupby(["j", "code", "day"]).agg(t=("t", "min"), tokens=("tokens", "sum"), circ=("circ", "first")).reset_index()
     E["size"] = E["tokens"] / E["circ"]
     E = E[(E["size"] >= 0.01) & (E["t"] >= L.DISC[0]) & (E["t"] < L.HOLD[1] - 3 * D_)].sort_values("t")
-    E = E.groupby("j", group_keys=False).apply(lambda g: g[g["t"].diff().fillna(1e9) >= D_])
+    E = E[E.groupby("j")["t"].diff().fillna(1e9) >= D_].reset_index(drop=True)
     c, f8 = X["c"], X["f8"]
 
     def trade(j, t):
