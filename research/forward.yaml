@@ -20,3 +20,23 @@ tests:
     rule: coin 24h <= -25%, BTC 24h <= -3%, close below prior 30d closing low, 24h vol >= $2M, >= 72h listed -> paper long; entry open T+60s, exit open T+60s+24h; 24h cooldown per coin
     also_logged: crashes that fail the BTC or 30d-low filter (control arm, side=0)
     decision: rare events (market-wide crashes), so review after >= 30 trades or 6 months; keep only if mean net > 0 with day-clustered CI above 0 AND beats the control arm
+  - id: F4_short_spot_led_pumps
+    registered: 2026-09-28
+    source: [B11_2 (post-hoc reversal: long spot-led +10% pumps lost 1.9%/24h in discovery AND holdout, CI below 0 in both)]
+    object: scripts/spot_led_paper.py (launchd com.altcoin.spotled, minute 4 hourly)
+    rule: >
+      hour T close: Binance perp 1h return >= +10%, 24h quote volume >= $2M, >= 72h listed, 24h cooldown per coin;
+      S1 = spot quote-volume share of (spot + perp) over the last 6h minus the same share over the last 168h (Binance REST klines);
+      S1 >= 0.01999 (discovery top-tercile threshold, frozen) -> paper SHORT perp at the open of the minute T+60s, exit open T+60s+24h;
+      pumps with S1 < 0.01999 or no spot market are logged as control (side 0) with the same hypothetical short outcome
+    costs: 0.05%/side fee + volume slippage; funding added at settlement from the funding table (shorts receive positive funding)
+    decision: after >= 100 shorts (about 3 months): keep only if mean net > 0 with day-clustered 95% CI above 0 AND beats the control arm
+  - id: F5_short_into_unlocks
+    registered: 2026-09-28
+    source: [B9_1 (+1.25% disc n=200, +1.34% holdout n=137, beats placebo in both; CI crossed 0)]
+    object: scripts/unlock_short_paper.py (launchd com.altcoin.unlockshort, minute 6 hourly; refreshes DefiLlama emissions daily)
+    rule: >
+      cliff unlock (DefiLlama emissions metadata.events unlockType=cliff) of >= 1% of circulating supply (circulating = cumulative
+      documented unlocked the day before), coin has a Binance USDT perp; same-day events summed; open paper SHORT at the first hourly run
+      at or after unlock time - 72h (skip if already later than unlock - 60h), exit at unlock + 24h
+    decision: after >= 60 trades (about 4-6 months): keep only if mean net > 0 with day-clustered CI above 0
