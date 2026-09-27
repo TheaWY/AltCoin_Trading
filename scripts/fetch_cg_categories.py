@@ -1,27 +1,21 @@
-"""Fetch CoinGecko sector categories for mapped coins (for B15_4 'unrelated coin' test).
-Out: data/cache/cg_categories.json {symbol: [categories]}. Free API, polite backoff, resumable."""
-import json, time, pathlib, requests
+"""Sector tags per coin for B15_4 'unrelated coin' test.
+CoinGecko per-coin endpoint is rate-limited to near zero on the free tier, so tags come from Binance's public product list
+(one call). Non-sector tags (zones, launchpool, seed, monitoring, pos, mining) are dropped.
+Out: data/cache/cg_categories.json {FUTURES_CODE: [tags]} (e.g. 1000PEPEUSDT -> PEPE tags)."""
+import json, pathlib, re
+import pandas as pd, requests
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-IDS = json.load(open(ROOT / "data/cache/coingecko_ids.json"))
-OUT = ROOT / "data/cache/cg_categories.json"
-done = json.load(open(OUT)) if OUT.exists() else {}
-s = requests.Session()
-for i, (sym, cid) in enumerate(IDS.items()):
-    if sym in done:
-        continue
-    for attempt in range(6):
-        try:
-            r = s.get(f"https://api.coingecko.com/api/v3/coins/{cid}",
-                      params={"localization": "false", "tickers": "false", "market_data": "false",
-                              "community_data": "false", "developer_data": "false"}, timeout=30)
-            if r.status_code == 429:
-                time.sleep(30 * (attempt + 1)); continue
-            done[sym] = r.json().get("categories", []) if r.ok else []
-            break
-        except Exception:
-            time.sleep(10)
-    if i % 20 == 0:
-        json.dump(done, open(OUT, "w")); print(i, len(done), flush=True)
-    time.sleep(2.2)
-json.dump(done, open(OUT, "w")); print("done", len(done))
+DROP = {"mining-zone", "innovation-zone", "Launchpool", "Launchpad", "Seed", "Monitoring", "pos", "pow", "storage-zone",
+        "newListing", "Alpha", "Megadrop", "HODLer Airdrops", "RWA-zone"}
+d = requests.get("https://www.binance.com/bapi/asset/v2/public/asset-service/product/get-products",
+                 params={"includeEtf": "true"}, timeout=30).json()["data"]
+base = {}
+for x in d:
+    base.setdefault(x["b"], set()).update(t for t in (x.get("tags") or []) if t not in DROP)
+out = {}
+for code in sorted(pd.read_parquet(ROOT / "data/cache/b15/pumps.parquet", columns=["code"])["code"].unique()):
+    b = code[:-4] if code.endswith("USDT") else code
+    out[code] = sorted(base.get(b) or base.get(re.sub(r"^(1000000|1000|1M)", "", b)) or [])
+json.dump(out, open(ROOT / "data/cache/cg_categories.json", "w"))
+print(len(out), sum(1 for v in out.values() if v), "with tags")

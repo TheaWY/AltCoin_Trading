@@ -5,7 +5,7 @@
 Out: data/reports/b15/b15_{4,2}.json, data/cache/b15/clusters.parquet
 
 Implementation notes fixed before running (not visible holdout results):
- - B15_4 category source: CoinGecko categories (data/cache/cg_categories.json). Two pumps are 'related' if their coins share any
+ - B15_4 category source: Binance product sector tags (data/cache/cg_categories.json; CoinGecko free tier rate-limited, changed before any B15_4 run). Two pumps are 'related' if their coins share any
    category; a coin with no category data counts as unrelated. Primary = spec (>=2 unrelated other pumps within +-3 min).
    Secondary: (i) category-agnostic (>=2 other coins), (ii) primary excluding market bursts (>=10 pumps within +-3 min = market-wide move).
    Matching: each coordinated pump vs mean of organic pumps in the same size_bucket x liquidity tercile x period stratum;
@@ -44,7 +44,7 @@ def dump(name, obj):
 def exp4():
     P = M.pump_context()
     cats = json.load(open(C / "cg_categories.json"))
-    catmap = {k.replace("/", ""): set(v or []) for k, v in cats.items()}
+    catmap = {k: set(v or []) for k, v in cats.items()}
     P["period"] = np.where(P["hold"], "holdout", "discovery")
     ts, code = P["ts"].to_numpy(), P["code"].to_numpy()
     order = np.argsort(ts)
