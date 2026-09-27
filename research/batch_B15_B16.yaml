@@ -52,3 +52,12 @@ B16_exit_policy:
   pass: a policy that beats P0 with CI > 0 on >= 2 of E1-E3, does NOT beat P0 on E5 with CI > 0, and has positive loss-cutting efficiency on holdout
   position_tracker (product, not a test): scripts/position_tracker.py reads data/positions.yaml (manual entries) and applies the best passing policy
     (or P0 until one passes) to live prices, logging alerts to position_alerts; paper/advisory only, never places orders
+
+# Registered 2026-09-28 after B15_3 (which failed but showed a consistent direction in both periods), BEFORE any new tick data is fetched.
+B15_3b_confirmation:
+  sample: FRESH pumps not in the B15_3 sample, 500 per size bucket per period (all if fewer), seed 1531
+  frozen: feature definitions, windows, concentration = mean rank of big_ratio and gini (ranks + tercile cutoffs fit on all discovery tick samples)
+  hypothesis (directional, from B15_3): pumps with concentrated (whale-driven) onsets have worse 24h long net than diffuse (crowd-driven) onsets
+  tests on NEW holdout pumps only (BH q=0.10 over 4): T1 top-minus-bottom long net < 0; T2 tick features raise holdout AUC for P(long net < 0);
+         L long bottom tercile net > 0; S short top tercile net > 0. Secondary: pooled holdout (original + new), slices.
+  pass: T1 or T2 passes BH; a trade (L or S) additionally needs slice rules (no size bucket / regime with CI < 0)

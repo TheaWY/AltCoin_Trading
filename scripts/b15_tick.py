@@ -37,13 +37,31 @@ RNG = np.random.default_rng(153)
 TICK = ["big_ratio", "buy_share", "gini", "tps_onset", "tps_ratio", "sec_imb"]
 
 
-def sample():
+CONFIRM = "--confirm" in sys.argv
+FEAT0 = FEAT
+if CONFIRM:
+    FEAT = ROOT / "data/cache/b15/tick_features_confirm.parquet"
+
+
+def sample(confirm=CONFIRM):
+    """Original: 200 per size bucket per period (seed 153).
+    B15_3b confirmation (registered 2026-09-28 after B15_3): FRESH pumps not in the original sample,
+    500 per size bucket per period (all available if fewer), seed 1531."""
     P = M.pump_context()
     out = []
     for per in (False, True):
         for b in ("10-15", "15-25", "25+"):
             g = P[(P["hold"] == per) & (P["size_bucket"] == b)]
             out.append(g.sample(min(200, len(g)), random_state=153))
+    S0 = pd.concat(out)
+    if not confirm:
+        return S0
+    R = P[~P["pump_id"].isin(S0["pump_id"])]
+    out = []
+    for per in (False, True):
+        for b in ("10-15", "15-25", "25+"):
+            g = R[(R["hold"] == per) & (R["size_bucket"] == b)]
+            out.append(g.sample(min(500, len(g)), random_state=1531))
     return pd.concat(out)
 
 
@@ -207,5 +225,79 @@ def test():
     print(json.dumps(res, indent=1, default=float))
 
 
+def _diff_ci(top, bot, col, reps=4000):
+    """Day-cluster bootstrap of mean(top) - mean(bottom); returns CI and one-sided p for H1: diff < 0."""
+    X = pd.concat([top.assign(g=1), bot.assign(g=0)])
+    days = X["day"].unique()
+    idx = {d: np.where(X["day"].to_numpy() == d)[0] for d in days}
+    v, g = X[col].to_numpy(), X["g"].to_numpy()
+    b = []
+    for _ in range(reps):
+        ii = np.concatenate([idx[d] for d in RNG.choice(days, len(days))])
+        vi, gi = v[ii], g[ii]
+        if gi.sum() and (1 - gi).sum():
+            b.append(vi[gi == 1].mean() - vi[gi == 0].mean())
+    b = np.array(b)
+    return [float(x) for x in np.percentile(b, [2.5, 97.5])], float((b >= 0).mean())
+
+
+def test_confirm():
+    """B15_3b (registered before the confirmation fetch): directional hypothesis from B15_3 = onset concentration top tercile
+    has WORSE 24h long net than bottom tercile. Concentration ranks and tercile cutoffs and the T2 model are fit on ALL
+    discovery tick samples (original 450 + new); primary evaluation on the NEW holdout pumps only (never seen);
+    secondary = pooled holdout (original + new). Tests (BH q=0.10 over 4, primary sample):
+      T1 spread long_net top - bottom < 0 (one-sided p, day-cluster bootstrap)
+      T2 AUC gain of tick features for P(long net < 0) > 0
+      L  long bottom-tercile net > 0      S  short top-tercile net > 0"""
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import roc_auc_score
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    old = sample(False).merge(pd.read_parquet(FEAT0), on="pump_id")
+    new = sample(True).merge(pd.read_parquet(FEAT), on="pump_id")
+    A = pd.concat([old.assign(src="orig"), new.assign(src="new")], ignore_index=True)
+    A["lbig"] = np.log(A["big_ratio"].clip(1e-3)); A["ltps"] = np.log1p(A["tps_ratio"]); A["ldv"] = np.log(A["dv24"])
+    A["long_net"] = A["ret24_from_entry"] - A["cost"]; A["short_net"] = -A["ret24_from_entry"] - A["cost"]
+    D = A[~A["hold"]]
+    ref = {c: np.sort(D[c].dropna().to_numpy()) for c in ("big_ratio", "gini")}
+    A["conc"] = np.mean([np.searchsorted(ref[c], A[c].to_numpy()) / len(ref[c]) for c in ref], 0)
+    D = A[~A["hold"]]
+    q1, q2 = np.quantile(D["conc"], [1 / 3, 2 / 3])
+    base = ["pump_size", "gain_5m", "vol_ratio_0_5", "taker_0_5", "ldv"]
+    full = base + ["lbig", "buy_share", "gini", "ltps", "sec_imb"]
+    mk = lambda: make_pipeline(StandardScaler(), LogisticRegression(C=0.5, max_iter=2000))
+    yd = (D["long_net"] < 0).astype(int)
+    m0, m1 = mk().fit(D[base].fillna(0), yd), mk().fit(D[full].fillna(0), yd)
+    res = {"n_disc": int(len(D)), "cutoffs": [float(q1), float(q2)]}
+    for name, H in (("primary_new_holdout", A[A["hold"] & (A["src"] == "new")]), ("pooled_holdout", A[A["hold"]]),
+                    ("discovery_in_sample", D)):
+        top, bot = H[H["conc"] >= q2], H[H["conc"] < q1]
+        ci, p1 = _diff_ci(top, bot, "long_net")
+        yh = (H["long_net"] < 0).astype(int)
+        p0, pf = m0.predict_proba(H[base].fillna(0))[:, 1], m1.predict_proba(H[full].fillna(0))[:, 1]
+        gci, gp = _auc_gain_ci(yh.to_numpy(), p0, pf, H["day"].to_numpy())
+        lb = bot["long_net"].to_numpy(); st = top["short_net"].to_numpy()
+        lci, sci = M.day_ci(lb, bot["day"].to_numpy()), M.day_ci(st, top["day"].to_numpy())
+        pl = float((np.array([np.mean(RNG.choice(lb, len(lb))) for _ in range(4000)]) <= 0).mean())
+        ps = float((np.array([np.mean(RNG.choice(st, len(st))) for _ in range(4000)]) <= 0).mean())
+        r = dict(n=int(len(H)), n_top=int(len(top)), n_bottom=int(len(bot)),
+                 T1=dict(top_long=float(top["long_net"].mean()), bottom_long=float(bot["long_net"].mean()), diff_ci=ci, p=p1,
+                         dd6h_top=float(top["dd_6h"].mean()), dd6h_bottom=float(bot["dd_6h"].mean())),
+                 T2=dict(auc_base=float(roc_auc_score(yh, p0)), auc_full=float(roc_auc_score(yh, pf)), gain_ci=gci, p=gp / 2),
+                 L_long_bottom=dict(mean=float(lb.mean()), ci=lci, p=pl),
+                 S_short_top=dict(mean=float(st.mean()), ci=sci, p=ps))
+        if name == "primary_new_holdout":
+            pv = {"T1": p1, "T2": gp / 2, "L": pl, "S": ps}
+            names = sorted(pv, key=pv.get)
+            last = max([k for k, nm in enumerate(names) if pv[nm] <= 0.10 * (k + 1) / len(names)], default=-1)
+            r["bh_pass"] = {nm: k <= last for k, nm in enumerate(names)}
+            r["slices_long_bottom"] = M.slices(bot.assign(net=bot["long_net"]), "net")
+            r["slices_short_top"] = M.slices(top.assign(net=top["short_net"]), "net")
+        res[name] = r
+    json.dump(res, open(M.OUT / "b15_3b.json", "w"), indent=1, default=float)
+    print(json.dumps({k: {kk: vv for kk, vv in v.items() if not kk.startswith("slices")} if isinstance(v, dict) else v
+                      for k, v in res.items()}, indent=1, default=float))
+
+
 if __name__ == "__main__":
-    {"fetch": fetch, "test": test}[sys.argv[1]]()
+    {"fetch": fetch, "test": test, "test_confirm": test_confirm}[sys.argv[1]]()
