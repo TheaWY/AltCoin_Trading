@@ -248,20 +248,25 @@ def cc():
     res["lead_profile"] = prof
     # joint conditional logit on passing features (holdout), if any
     if res["passed"]:
-        try:
-            from statsmodels.discrete.conditional_models import ConditionalLogit
-            rows = []
-            for e in np.flatnonzero(ev["hold"]):
-                sub = ctl[ctl["ev"] == e]
-                rows.append([e, 1] + [F[k][ev.at[e, "i"], ev.at[e, "j"]] for k in res["passed"]])
-                for r in sub.itertuples():
-                    rows.append([e, 0] + [F[k][r.i, r.j] for k in res["passed"]])
-            D = pd.DataFrame(rows, columns=["g", "y"] + res["passed"]).dropna()
-            Z = (D[res["passed"]] - D[res["passed"]].mean()) / D[res["passed"]].std()
-            fit = ConditionalLogit(D["y"], Z, groups=D["g"]).fit(disp=0)
-            res["joint_clogit"] = dict(coef=fit.params.round(3).to_dict(), p=fit.pvalues.round(4).to_dict(), n=int(len(D)))
-        except Exception as ex:
-            res["joint_clogit"] = str(ex)
+        from statsmodels.discrete.conditional_models import ConditionalLogit
+        nonk = [k for k in res["passed"] if not k.startswith("K")]
+        for tag, cols in (("all_events_nonK_plus_price", nonk + PRICE), ("upbit_events_all_plus_price", res["passed"] + PRICE)):
+            try:
+                rows = []
+                for e in np.flatnonzero(ev["hold"]):
+                    sub = ctl[ctl["ev"] == e]
+                    rows.append([e, 1] + [F[k][ev.at[e, "i"], ev.at[e, "j"]] for k in cols])
+                    for r in sub.itertuples():
+                        rows.append([e, 0] + [F[k][r.i, r.j] for k in cols])
+                D = pd.DataFrame(rows, columns=["g", "y"] + cols).replace([np.inf, -np.inf], np.nan).dropna()
+                D = D[D.groupby("g")["y"].transform("sum") == 1]
+                Z = (D[cols] - D[cols].mean()) / D[cols].std()
+                Z = Z.clip(-5, 5)
+                fit = ConditionalLogit(D["y"], Z, groups=D["g"]).fit(disp=0)
+                res[f"joint_{tag}"] = dict(coef=fit.params.round(3).to_dict(), p=fit.pvalues.round(4).to_dict(),
+                                           n_rows=int(len(D)), n_events=int(D["g"].nunique()))
+            except Exception as ex:
+                res[f"joint_{tag}"] = str(ex)
     json.dump(res, open(OUT / "b8_cc.json", "w"), indent=1, default=float)
     print("PASSED", res["passed"])
 
