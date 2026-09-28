@@ -32,6 +32,7 @@ C, OUT, B = M.C, ROOT / "data/reports/b17", ROOT / "data/cache/b17"
 RNG = np.random.default_rng(1708)
 VAL0 = 1767225600
 M0, STOP, HZ, SLIP = 60, 0.05, 240, 0.002
+COL = "net_exact"     # primary return column once b17_f08_exact.py has run (exact minute-high stop); falls back to net_cons
 
 
 def short_leg(r, rg, e):
@@ -170,20 +171,21 @@ def portfolio(T, w, cap):
         open_ = still
         if cap and len(open_) >= cap:
             skipped += 1; continue
-        open_.append((r["t_out"], w(r) * eq, r["net_cons"]))
+        open_.append((r["t_out_x"], w(r) * eq, r[COL]))
     for (to, notional, ret) in sorted(open_):
         eq += notional * ret; pnl_day[to // 86400] = pnl_day.get(to // 86400, 0) + notional * ret; curve.append(eq)
     curve = np.array([1.0] + curve); dd = float((curve / np.maximum.accumulate(curve) - 1).min())
-    d0, d1 = int(ev["t_in"].min() // 86400), int(ev["t_out"].max() // 86400)
+    d0, d1 = int(ev["t_in"].min() // 86400), int(ev["t_out_x"].max() // 86400)
     daily = np.array([pnl_day.get(d, 0.0) for d in range(d0, d1 + 1)])
     sh = float(daily.mean() / daily.std() * np.sqrt(365)) if daily.std() > 0 else 0.0
     return dict(total=float(eq - 1), sharpe=sh, maxdd=dd, n=int(len(ev) - skipped), skipped=float(skipped / len(ev)), days=int(d1 - d0 + 1))
 
 
 def f10():
-    T = pd.read_parquet(B / "f08_trades.parquet"); T = T[T["trig"] == "oi_drop3"]
+    T = pd.read_parquet(B / "f08_trades.parquet"); T = T[T["trig"] == "oi_drop3"].dropna(subset=[COL]).copy()
+    T["t_out_x"] = T["t_in"] + 60 * T["held_exact"].fillna(HZ).astype(int) if COL == "net_exact" else T["t_out"]
     D, V = T[~T["val"]], T[T["val"]]
-    mu, var = D["net_cons"].mean(), D["net_cons"].var(); kelly = float(np.clip(0.25 * mu / var, 0, 0.5)) if mu > 0 else 0.0
+    mu, var = D[COL].mean(), D[COL].var(); kelly = float(np.clip(0.25 * mu / var, 0, 0.5)) if mu > 0 else 0.0
     rv_med = float(D["rv"].median())
     SCH = {"fixed10": lambda r: 0.10, "voltarget": lambda r: float(np.clip(0.10 * rv_med / max(r["rv"], 1e-6), 0.03, 0.30)), "qkelly": lambda r: kelly}
     res = {"kelly_quarter": kelly, "rv_median": rv_med, "tests": {}}
@@ -207,7 +209,9 @@ if __name__ == "__main__":
     if cmd in ("f08", "all"):
         T = pd.read_parquet(B / "f08_trades.parquet")
         f08(T, "net")                 # F04 stop model, for comparison (printed only)
-        f08(T, "net_cons")            # primary = conservative stop; this call writes f08.json
+        f08(T, "net_cons")            # conservative bound (printed only)
+        if "net_exact" in T:
+            f08(T.dropna(subset=["net_exact"]), "net_exact")   # primary; last call writes f08.json
     if cmd in ("f10", "all"):
         f10()
     print("F08_F10_DONE", flush=True)
