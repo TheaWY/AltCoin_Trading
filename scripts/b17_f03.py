@@ -60,7 +60,6 @@ def leg(A, pid, e_min, exit_, stop=None, side=1):
         return np.nan, np.nan, np.nan
     horizon = {"t1h": 60, "t4h": 240, "t24h": 1440 - e_min, "trail3": 1440 - e_min}[exit_]
     path = path[:horizon] * side
-    mae = -np.nanmin(np.r_[0, path])
     out_i = len(path) - 1; out = path[-1]
     if exit_ == "trail3":
         run = np.maximum.accumulate(np.r_[0, path])[1:]
@@ -71,6 +70,7 @@ def leg(A, pid, e_min, exit_, stop=None, side=1):
         k = np.flatnonzero(path <= -stop)
         if len(k) and k[0] <= out_i:
             out_i = k[0]; out = max(path[k[0]], -stop - 0.002)   # slippage past the stop
+    mae = -np.nanmin(np.r_[0, path[:out_i + 1]])   # adverse excursion up to the exit (fixed 2026-09-28: was over the whole horizon, overstating MAE for stopped trades)
     return float(out), float(mae), int(out_i)
 
 
