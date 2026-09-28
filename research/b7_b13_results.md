@@ -91,3 +91,11 @@
 - F04 dump shorts: one trigger stands out. Short when 5-minute open interest has fallen 3% from its post-onset high (median ~4.5h after onset), exit +4h, 5-10% stop: validation +0.78% per trade (CI 0.58-0.97), discovery +0.37% (0.09-0.61), positive in every HMM regime and every third of 2026, 6,732 validation trades; recomputed independently. It was the only BH survivor and failed only the MAE-p90 rule, which turned out to be measured past the stop (bug); re-run pending. Every other trigger/stop/exit cell averages -0.9%.
 - F05 squeeze abstention: predicting >20% adverse excursion on post-peak shorts has AUC 0.63; abstaining does not turn the short positive (+0.2% vs +0.1%). 0/6.
 - F18: OI +10% during the pump predicts CONTINUATION, not a deeper dump (short -4.4%, CI < 0): pumps financed by new longs keep going. Pre-settlement pumps shorted at funding settlement +1.2% (CI crosses 0). Liquidation-based statements had no eligible events (Binance liquidation table too sparse per 5-minute window). 0/7.
+
+## B17 F12b: onset-proximity models vs hard negatives (run 2026-09-28; validation 2026)
+
+- 45 model cells (lgbm, hawkes, tcn, gru, transformer x 5/15/60m lookback x y1/y2/y3). Detection AUC 0.82-0.91 for y1 (+5% in 15m), 0.55-0.60 for y2/y3.
+- The raw report listed 4 BH passes. They are an artifact: the near-miss hard negatives were chosen as hours that rose 4-10%, and each window ends inside that hour, so their forward returns are positive by construction (+0.9-1.0% after cost). Volatile-neighbour and quiet negatives sit at about minus cost.
+- Recomputed without near-miss negatives: 0 passes. The three y2 cells turn negative; transformer 60m y1 g15 CI [-0.33%, +2.6%].
+- Lead: 60m-lookback y1 models fire on 0.4-2.7% of unbiased negatives, and those flagged negatives rise too (hawkes 60m y1 g60 net_real +2.1% [0.4, 3.6]). Only 10-16 flagged negatives, below the pre-registered 20. Next step F12c: 10k random-hour null windows not selected on outcome.
+- Fix for future samples: any negative set must be drawn without reference to the forward window.
