@@ -60,3 +60,6 @@ main_book:
   object: scripts/main_book.py (launchd com.altcoin.mainbook, every 60 s); strategies f2_pump_cnn / f6_oi_short in paper_trades; state main_book_map
   sizing: B17_F10 - 10% of equity per trade, max 3 open; entries at the latest 1-minute close when first seen (<= 15 min after the planned entry)
   note: the F2/F6 forward-test tables stay the clean evidence; the main book adds execution delay and the position cap. PAPER ONLY, LIVE_TRADING=false.
+  amended_2026-09-29: SOURCE INVALIDATED. The backtest used Vision metrics OI stamped ~5 min before it was measured (look-ahead).
+        With correct timing the rule loses (validation -0.22%, discovery -0.32%). The live service uses real-time OI, so the forward
+        result is honest but is now expected to be negative. Keep only as a check, or stop it.

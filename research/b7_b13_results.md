@@ -115,3 +115,11 @@
 - Direct estimate (no base-rate weighting, since the random sample already contains pumps at their natural frequency): flagged random windows return +0.05% to +1.4% at 60 minutes on n = 7-28 and are negative at 15 minutes. No demonstrated edge.
 - Correction to earlier write-ups: the 0.5% base rate used for net_real in F02 and F12 overstates P(pump | flag) for a scanner evaluated every minute; the natural rate of a +5%/15m move per random window is 0.25%, and lower per evaluation. Those net_real figures were optimistic.
 - F12 closed. Reopening it would need about 60k random windows or a live paper scanner.
+
+## B17 queue results + OI look-ahead (run 2026-09-29)
+
+- **Look-ahead in the only B17 pass.** Binance Vision `metrics` rows stamped `create_time` T contain the open interest measured about 5 minutes later (the value equals REST `openInterestHist` at T+300 s exactly, 288/288 rows on three coins, and that REST value matches live OI sampled 0-60 s before its own timestamp). F04 therefore shorted about 4 minutes before the OI drop was observable. With OI shifted to when it is known, the oi_drop3 short loses: validation -0.22% [-0.39, -0.05], discovery -0.32% [-0.55, -0.12]; F04 is 0/102. F08, F10 and F11 conclusions about this short are void. The live F6 paper service reads real-time OI, so its forward test is honest; expect it to lose.
+- F14 learned exits 0/4 (a look-ahead in the joint entry filter was found and fixed first; +2.1% became +0.51% with a CI crossing zero).
+- F09 coordination 0/4 runnable, F13 changepoint/shape triggers 0/9, F20 on-chain 0/5 runnable, F11 execution 0/4 runnable, F18 re-run 0.
+- B17 now has **no surviving hypothesis**. Every earlier B17 figure that used 5-minute OI (F02 oi trigger, F04, F05, F08, F10, F11, F18) must be read with the corrected timing.
+- To audit next: other Vision `metrics` users (metrics1h in B8/B14 panels), for the same create_time convention.
