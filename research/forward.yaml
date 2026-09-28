@@ -40,3 +40,13 @@ tests:
       documented unlocked the day before), coin has a Binance USDT perp; same-day events summed; open paper SHORT at the first hourly run
       at or after unlock time - 72h (skip if already later than unlock - 60h), exit at unlock + 24h
     decision: after >= 60 trades (about 4-6 months): keep only if mean net > 0 with day-clustered CI above 0
+
+F6_oi_drop_short:
+  registered: 2026-09-28
+  source: B17_F04 oi_drop3|s5|t4h (validation +0.78%/trade CI [0.58,0.97], discovery +0.37% CI [0.11,0.62], 6,732 + 10,005 trades, all regimes positive)
+  rule: after a live pump onset (close/close_60m_ago - 1 >= +10%, dv24 >= $2M, >= 72h listed, 6h cooldown per coin), track 5-minute open interest;
+        when OI falls 3% below its post-onset high (within 24h), SHORT at the next minute close; exit at +4h or a 5% hard stop (+0.2% slippage past the stop);
+        cost 0.05%/side + liquidity slippage; paper only.
+  sample_size: 100 events minimum before any verdict; stop date 2026-11-15 (whichever first)
+  pass: mean net > 0 with day-clustered CI > 0; MAE p90 < 8%; no regime with mean < -0.5%
+  implementation: scripts/oi_drop_short_paper.py (launchd com.altcoin.oidropshort) - to be written; table oi_drop_short_paper
