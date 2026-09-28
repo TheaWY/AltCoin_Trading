@@ -53,6 +53,9 @@ F6_oi_drop_short:
   amended_2026-09-28: backtest stop re-simulated on real minute highs -> validation +0.39%/trade CI [0.19,0.58], discovery +0.16% CI [-0.10,0.41] (edge
         halved; F04 close-only stop was optimistic). Pass criteria unchanged. Settle now fills gap-opens above the stop at the open. Sizing for any
         later live use (B17_F10): 10% notional per trade, max 3 concurrent. F08: no regime filter.
+  amended_2026-09-29: SOURCE INVALIDATED. The backtest used Vision metrics OI stamped ~5 min before it was measured (look-ahead).
+        With correct timing the rule loses (validation -0.22%, discovery -0.32%). The live service uses real-time OI, so the forward
+        result is honest but is now expected to be negative. Keep only as a check, or stop it.
 
 main_book:
   started: 2026-09-28 (after the paper portfolio reset to 1,000 USDT; backup data/backups/paper_reset_20260928_2344)
@@ -60,6 +63,3 @@ main_book:
   object: scripts/main_book.py (launchd com.altcoin.mainbook, every 60 s); strategies f2_pump_cnn / f6_oi_short in paper_trades; state main_book_map
   sizing: B17_F10 - 10% of equity per trade, max 3 open; entries at the latest 1-minute close when first seen (<= 15 min after the planned entry)
   note: the F2/F6 forward-test tables stay the clean evidence; the main book adds execution delay and the position cap. PAPER ONLY, LIVE_TRADING=false.
-  amended_2026-09-29: SOURCE INVALIDATED. The backtest used Vision metrics OI stamped ~5 min before it was measured (look-ahead).
-        With correct timing the rule loses (validation -0.22%, discovery -0.32%). The live service uses real-time OI, so the forward
-        result is honest but is now expected to be negative. Keep only as a check, or stop it.
