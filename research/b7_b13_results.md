@@ -56,3 +56,8 @@
 - T2 tick features for "long loses": AUC 0.557 -> 0.581, gain CI -0.06..+0.08. FAIL.
 - Trades: long crowd-driven +2.6% (CI -2.2..+6.1%), short whale-driven -1.2%. Both FAIL.
 - What does replicate in all three samples: whale-driven onsets dump deeper at +6h (-12.5% vs -7.9% new holdout; -9.1% vs -6.4% discovery). A risk marker (size down / tighter watch), not a return edge.
+
+## B15_6 short whale-driven pumps after confirmed peak (run 2026-09-28)
+- Rule: after a confirmed 3% drop from the running high, short; take profit at 50% retrace of the pump, else exit at +24h.
+- Fresh holdout, whale-driven: wins 68% of the time (median +2%/trade) but mean net is negative - 10% of trades run +35% against the short and the worst 1% run +190%. FAIL; pooled holdout also negative (CI entirely < 0).
+- Whale-driven is no better than crowd-driven for this short (-1.8pp, CI crosses 0). The deeper dump is real but it comes with fatter squeeze tails.

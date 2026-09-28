@@ -349,3 +349,5 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-09-28T00:45:00,B15_3b-1,B15_3b:T2 tick features AUC gain (fresh holdout),confirmatory,hold,,0.0235,1090,"FAIL auc 0.557->0.581 ci=[-0.057,0.079]"
 2026-09-28T00:45:00,B15_3b-1,B15_3b:L long crowd-driven (bottom tercile),confirmatory,hold,,0.0256,339,"FAIL day-clustered ci=[-0.022,0.061]"
 2026-09-28T00:45:00,B15_3b-1,B15_3b:S short whale-driven (top tercile),confirmatory,hold,,-0.0120,375,"FAIL ci=[-0.049,0.024]"
+2026-09-28T01:10:00,B15_6-1,B15_6:P1 short whale-driven pumps after confirmed peak (fresh holdout),confirmatory,hold,,,375,"FAIL loses money; see b15_6.json (win rate 68% but rare squeezes of +35%..+189% wipe gains)"
+2026-09-28T01:10:00,B15_6-1,B15_6:P2 whale minus crowd post-peak short,confirmatory,hold,,-0.0185,375,"FAIL ci=[-0.048,0.007]"
