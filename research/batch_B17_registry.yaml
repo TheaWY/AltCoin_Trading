@@ -37,10 +37,12 @@ data_sources:
   unlocks: have
   kimchi: have (upbit1h vs binance)
 counts:
-  total: 841
-  runnable_now: 334
+  total: 905
+  runnable_now: 398
   by_family:
     F01_precursor_long: 45
+    F01b_flag_then_dip: 40
+    F01c_model_sweep: 24
     F02_onset_long: 330
     F03_continuation_filter: 90
     F04_dump_short: 144
@@ -916,6 +918,1239 @@ hypotheses:
   horizon: 24h
   metric: mean net/trade
   runnable_now: true
+- id: B17_F01b_flag_then_dip_001
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 6h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 6h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_002
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 6h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 6h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_003
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 6h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 6h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_004
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 12h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 12h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_005
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 12h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 12h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_006
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 12h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 12h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_007
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 24h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 24h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_008
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 24h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 24h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_009
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 3% dip from the flag price within 24h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -3% within 24h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 3%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_010
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 6h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 6h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_011
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 6h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 6h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_012
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 6h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 6h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_013
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 12h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 12h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_014
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 12h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 12h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_015
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 12h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 12h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_016
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 24h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 24h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_017
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 24h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 24h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_018
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 5% dip from the flag price within 24h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -5% within 24h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 5%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_019
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 6h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 6h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_020
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 6h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 6h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_021
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 6h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 6h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 6h
+- id: B17_F01b_flag_then_dip_022
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 12h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 12h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_023
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 12h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 12h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_024
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 12h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 12h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 12h
+- id: B17_F01b_flag_then_dip_025
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 24h, then long at the next hourly open; take-profit +10%
+    else +24h. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 24h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_026
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 24h, then long at the next hourly open; exit +24h. Beats
+    (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 24h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_027
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a top-0.5% precursor flag (best F01 model), wait for a 8% dip from the flag price within 24h, then long at the next hourly open; trail 2x 1h ATR
+    from running high. Beats (a) F01 immediate entry and (b) random control, paired by flag.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then -8% within 24h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+  dip: 8%
+  wait: 24h
+- id: B17_F01b_flag_then_dip_028
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 6h (re-break after a dip), long; take-profit +10% else +24h.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 6h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_029
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 6h (re-break after a dip), long; exit +24h.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 6h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_030
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 6h (re-break after a dip), long; trail 2x 1h ATR from running high.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 6h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_031
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 12h (re-break after a dip), long; take-profit +10% else +24h.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 12h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_032
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 12h (re-break after a dip), long; exit +24h.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 12h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_033
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 12h (re-break after a dip), long; trail 2x 1h ATR from running high.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 12h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_034
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 24h (re-break after a dip), long; take-profit +10% else +24h.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 24h
+  exit: take-profit +10% else +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_035
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 24h (re-break after a dip), long; exit +24h.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 24h
+  exit: exit +24h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_036
+  family: F01b_flag_then_dip
+  stage: pre-onset
+  statement: After a flag, wait for the first hourly close ABOVE the flag-hour high within 24h (re-break after a dip), long; trail 2x 1h ATR from running high.
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: flag then re-break within 24h
+  exit: trail 2x 1h ATR from running high
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_037
+  family: F01b_flag_then_dip
+  stage: onset
+  statement: After a flag, enter ONLY at the B15 onset trigger (+10%/60m) inside the next 24h, m0+1; exit +15m. Conditional-on-precursor onset entry vs unconditional
+    B15 onset entry (paired by onset).
+  data:
+  - k1m
+  resolution: 1m
+  side: long
+  entry: flag then onset
+  exit: exit +15m
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_038
+  family: F01b_flag_then_dip
+  stage: onset
+  statement: After a flag, enter ONLY at the B15 onset trigger (+10%/60m) inside the next 24h, m0+1; exit +1h. Conditional-on-precursor onset entry vs unconditional
+    B15 onset entry (paired by onset).
+  data:
+  - k1m
+  resolution: 1m
+  side: long
+  entry: flag then onset
+  exit: exit +1h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_039
+  family: F01b_flag_then_dip
+  stage: onset
+  statement: After a flag, enter ONLY at the B15 onset trigger (+10%/60m) inside the next 24h, m0+1; exit +4h. Conditional-on-precursor onset entry vs unconditional
+    B15 onset entry (paired by onset).
+  data:
+  - k1m
+  resolution: 1m
+  side: long
+  entry: flag then onset
+  exit: exit +4h
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01b_flag_then_dip_040
+  family: F01b_flag_then_dip
+  stage: onset
+  statement: After a flag, enter ONLY at the B15 onset trigger (+10%/60m) inside the next 24h, m0+1; B15_1 hazard exit. Conditional-on-precursor onset entry vs unconditional
+    B15 onset entry (paired by onset).
+  data:
+  - k1m
+  resolution: 1m
+  side: long
+  entry: flag then onset
+  exit: B15_1 hazard exit
+  stop: none
+  horizon: null
+  metric: mean net/trade
+  runnable_now: true
+- id: B17_F01c_model_sweep_001
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'logit on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: logit top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: logit
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_002
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'logit on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: logit top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: logit
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_003
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'logit on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: logit top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: logit
+  threshold: top 2%
+- id: B17_F01c_model_sweep_004
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'lgbm on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: lgbm top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: lgbm
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_005
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'lgbm on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: lgbm top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: lgbm
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_006
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'lgbm on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry trade net
+    on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: lgbm top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: lgbm
+  threshold: top 2%
+- id: B17_F01c_model_sweep_007
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'catboost on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: catboost top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: catboost
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_008
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'catboost on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: catboost top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: catboost
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_009
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'catboost on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: catboost top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: catboost
+  threshold: top 2%
+- id: B17_F01c_model_sweep_010
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'mlp on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: mlp top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: mlp
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_011
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'mlp on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: mlp top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: mlp
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_012
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'mlp on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry trade net
+    on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: mlp top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: mlp
+  threshold: top 2%
+- id: B17_F01c_model_sweep_013
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'gru on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: gru top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: gru
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_014
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'gru on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: gru top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: gru
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_015
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'gru on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry trade net
+    on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: gru top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: gru
+  threshold: top 2%
+- id: B17_F01c_model_sweep_016
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'tcn on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: tcn top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: tcn
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_017
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'tcn on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry trade
+    net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: tcn top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: tcn
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_018
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'tcn on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry trade net
+    on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: tcn top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: tcn
+  threshold: top 2%
+- id: B17_F01c_model_sweep_019
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'transformer on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry
+    trade net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: transformer top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: transformer
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_020
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'transformer on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry
+    trade net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: transformer top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: transformer
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_021
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'transformer on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry
+    trade net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: transformer top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: transformer
+  threshold: top 2%
+- id: B17_F01c_model_sweep_022
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'stack(lgbm+gru) on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.1% coin-hours; AUC, precision, and the F01b best-entry
+    trade net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: stack(lgbm+gru) top 0.1%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: stack(lgbm+gru)
+  threshold: top 0.1%
+- id: B17_F01c_model_sweep_023
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'stack(lgbm+gru) on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 0.5% coin-hours; AUC, precision, and the F01b best-entry
+    trade net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: stack(lgbm+gru) top 0.5%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: stack(lgbm+gru)
+  threshold: top 0.5%
+- id: B17_F01c_model_sweep_024
+  family: F01c_model_sweep
+  stage: pre-onset
+  statement: 'stack(lgbm+gru) on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = top 2% coin-hours; AUC, precision, and the F01b best-entry
+    trade net on validation.'
+  data:
+  - k1m
+  - metrics1h
+  - bookDepth
+  - kimchi
+  resolution: 1h
+  side: long
+  entry: stack(lgbm+gru) top 2%
+  exit: F01b best
+  stop: none
+  horizon: null
+  metric: AUC, precision@thr, net
+  runnable_now: true
+  model: stack(lgbm+gru)
+  threshold: top 2%
 - id: B17_F02_onset_long_001
   family: F02_onset_long
   stage: onset

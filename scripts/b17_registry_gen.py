@@ -53,6 +53,23 @@ for hz, model, ex in itertools.product(["1h", "3h", "6h", "12h", "24h"], ["logit
     add("F01_precursor_long", "pre-onset", f"Composite of the 21 passing precursors ({model}) trained on P(pump within {hz}); "
         f"long when P > discovery threshold (top 0.5% coin-hours), size 1/n concurrent; exit {EXITS_L[ex]}. Beats random-entry control.",
         ["k1m", "metrics1h", "bookDepth", "kimchi", "bigquery"], "1h", "long", f"P(pump<{hz}) > thr", EXITS_L[ex], horizon=hz)
+# F01b (added 2026-09-28 after F01 logit/lgbm: flags detect pumps (AUC 0.74-0.87) but the flagged coin is mid-dump when it pumps,
+#       so the trade loses). Registered BEFORE running: enter after the flag only on a dip / re-break, plus a full model sweep.
+for d, w, ex in itertools.product(["3%", "5%", "8%"], ["6h", "12h", "24h"], ["tp10", "t24h", "trail2"]):
+    add("F01b_flag_then_dip", "pre-onset", f"After a top-0.5% precursor flag (best F01 model), wait for a {d} dip from the flag price within {w}, "
+        f"then long at the next hourly open; {EXITS_L[ex]}. Beats (a) F01 immediate entry and (b) random control, paired by flag.",
+        ["k1m", "metrics1h", "bookDepth", "kimchi"], "1h", "long", f"flag then -{d} within {w}", EXITS_L[ex], extra={"dip": d, "wait": w})
+for w, ex in itertools.product(["6h", "12h", "24h"], ["tp10", "t24h", "trail2"]):
+    add("F01b_flag_then_dip", "pre-onset", f"After a flag, wait for the first hourly close ABOVE the flag-hour high within {w} (re-break after a dip), long; {EXITS_L[ex]}.",
+        ["k1m", "metrics1h", "bookDepth", "kimchi"], "1h", "long", f"flag then re-break within {w}", EXITS_L[ex])
+for ex in ["t15m", "t1h", "t4h", "hazard"]:
+    add("F01b_flag_then_dip", "onset", f"After a flag, enter ONLY at the B15 onset trigger (+10%/60m) inside the next 24h, m0+1; {EXITS_L[ex]}. "
+        "Conditional-on-precursor onset entry vs unconditional B15 onset entry (paired by onset).", ["k1m"], "1m", "long", "flag then onset", EXITS_L[ex])
+for mdl in ["logit", "lgbm", "catboost", "mlp", "gru", "tcn", "transformer", "stack(lgbm+gru)"]:
+    for thr in ["top 0.1%", "top 0.5%", "top 2%"]:
+        add("F01c_model_sweep", "pre-onset", f"{mdl} on the 22 precursors (sequence models: 24h history) for P(pump < 6h); flag = {thr} coin-hours; "
+            "AUC, precision, and the F01b best-entry trade net on validation.", ["k1m", "metrics1h", "bookDepth", "kimchi"], "1h", "long", f"{mdl} {thr}", "F01b best",
+            metric="AUC, precision@thr, net", extra={"model": mdl, "threshold": thr})
 # F02 onset detection at second-level resolution
 TRIG = {"tps": "trades/sec > 8x 1h baseline", "taker": "taker-buy share 15s > 0.8 with volume 5x", "spread": "bookTicker spread collapse + ask size drop 70%",
         "sweep": "ask side +1% swept (bookDepth delta) within 60s", "liq": "short liquidation cascade >= 3 forceOrders in 30s",
