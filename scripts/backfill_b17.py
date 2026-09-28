@@ -172,7 +172,8 @@ def metrics5m():
                 try:
                     with zipfile.ZipFile(fp) as z, z.open(z.namelist()[0]) as fh:
                         x = pd.read_csv(fh)
-                    x["create_time"] = pd.to_datetime(x["create_time"]).astype("int64") // 10**9
+                    ct = x["create_time"]
+                    x["create_time"] = (pd.to_datetime(ct, unit="ms") if pd.api.types.is_numeric_dtype(ct) else pd.to_datetime(ct)).astype("int64") // 10**9
                     parts.append(x)
                 except Exception:
                     pass
