@@ -115,8 +115,10 @@ def _spot_day(code, day):
 
 def run_events(kind):
     TMP.mkdir(parents=True, exist_ok=True)
-    S = pd.read_parquet(B / "sample.parquet")
-    out = B / {"sec1": "sec1", "bybit": "bybit1s", "spot1s": "spot1s"}[kind]; out.mkdir(exist_ok=True)
+    S = pd.read_parquet(B / ("sample_null.parquet" if kind == "sec1_null" else "sample.parquet"))
+    out = B / {"sec1": "sec1", "bybit": "bybit1s", "spot1s": "spot1s", "sec1_null": "sec1_null"}[kind]; out.mkdir(exist_ok=True)
+    if kind == "sec1_null":
+        S = S.assign(pump_id=-S["pump_id"]); kind = "sec1"
     todo = S[~S["pump_id"].apply(lambda i: (out / f"{i}.parquet").exists())]
     print(kind, "todo", len(todo), flush=True)
 
@@ -182,4 +184,4 @@ def metrics5m():
 
 
 if __name__ == "__main__":
-    {"sample": sample, "sec1": lambda: run_events("sec1"), "bybit": lambda: run_events("bybit"), "spot1s": lambda: run_events("spot1s"), "metrics5m": metrics5m}[sys.argv[1]]()
+    {"sample": sample, "sec1": lambda: run_events("sec1"), "sec1_null": lambda: run_events("sec1_null"), "bybit": lambda: run_events("bybit"), "spot1s": lambda: run_events("spot1s"), "metrics5m": metrics5m}[sys.argv[1]]()
