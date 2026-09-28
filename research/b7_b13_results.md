@@ -61,3 +61,9 @@
 - Rule: after a confirmed 3% drop from the running high, short; take profit at 50% retrace of the pump, else exit at +24h.
 - Fresh holdout, whale-driven: wins 68% of the time (median +2%/trade) but mean net is negative - 10% of trades run +35% against the short and the worst 1% run +190%. FAIL; pooled holdout also negative (CI entirely < 0).
 - Whale-driven is no better than crowd-driven for this short (-1.8pp, CI crosses 0). The deeper dump is real but it comes with fatter squeeze tails.
+
+## B17 F01 / F01b / F01c precursor anticipation (run 2026-09-28 after the onset-label fix; validation = 2026-01..09; 109 tests)
+- Detection: 7 models on the 22 precursors, P(pump within 6h). Validation AUC: LightGBM 0.883, CatBoost 0.877, TCN 0.873, transformer 0.869, GRU 0.859, MLP 0.841, logit 0.762. Horizon sweep (LightGBM): 0.91 at 1h down to 0.86 at 24h. At the top-0.5% flag rate about a third of flagged coin-hours pump within 6h (base rate 2.8%) and ~62% within 24h.
+- Path after a flag (top 0.5%, every model): the coin drifts to roughly -0.5..-1% over 24h on average; the pump arrives after a median 6h and the coin first draws down ~10% (median) before it. The flag is right about the pump and wrong about the level.
+- Trades (per model: immediate / dip 3-8% within 6-24h / re-break of the flag high / enter only at the onset trigger, x 3 exits, x 3 flag rates): 0 of 109 pass. Best cells are +0.3..+0.9% with CIs of +-2-3% and MAE p90 30-45%; none beats the random control after cost. Immediate entries are negative for every model (-0.1% to -3.3%).
+- Reading: knowing a pump is coming is not enough because it comes from a lower price and the exact timing (hour) is unknown; the entries that wait for the dip or the trigger give back the edge to volatility and costs. This closes the "enter before the pump on precursors" idea at hourly resolution; the second-level onset family (F02) is the remaining route.
