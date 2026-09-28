@@ -50,3 +50,9 @@
 - B15_2 shape clusters (DTW k-medoids on first 60 min, k=3, silhouette 0.17): clusters differ strongly in 24h outcome (slow-start/continuing cluster +5.8% net from m0+10, others -3.5%/-4.6%), but labels use minutes 1-60 so this is descriptive. 1D-CNN from first 10 min: accuracy 44.7% vs 41.8% majority (gap CI 1.6-4.0pp) - real but small. Trade on predicted cluster: -0.3%/trade, CI -1.5..+0.7%. FAIL.
 - B15_3 tick onset fingerprint (aggTrades, 450 discovery + 598 holdout pumps): pumps whose onset is dominated by a few huge trades (top concentration tercile) do worse for longs (-1.4% vs +4.3% bottom tercile holdout; -2.2% vs +3.5% discovery) and dump deeper (-12.6% vs -7.5% at +6h), but CIs cross 0. Tick features lift AUC for "long loses" 0.47 -> 0.67, gain CI -0.03..+0.30, p=0.19. FAIL (sample too small to confirm; direction consistent across periods).
 - Net: pump detection works, pump trading does not survive costs. The one consistent hint: organic, broad-based onsets (many small trades) continue better than whale-driven onsets.
+
+## B15_3b tick fingerprint confirmation (run 2026-09-28, 1,662 fresh pumps; primary = 1,090 new holdout pumps)
+- T1 whale-driven vs crowd-driven onset, 24h long net: +0.7% vs +2.6%. Same direction as B15_3 but the gap shrank (5.6pp -> 1.8pp); CI -6.6..+4.1pp. FAIL.
+- T2 tick features for "long loses": AUC 0.557 -> 0.581, gain CI -0.06..+0.08. FAIL.
+- Trades: long crowd-driven +2.6% (CI -2.2..+6.1%), short whale-driven -1.2%. Both FAIL.
+- What does replicate in all three samples: whale-driven onsets dump deeper at +6h (-12.5% vs -7.9% new holdout; -9.1% vs -6.4% discovery). A risk marker (size down / tighter watch), not a return edge.
