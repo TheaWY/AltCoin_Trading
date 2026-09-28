@@ -30,6 +30,7 @@ C, OUT, B = M.C, ROOT / "data/reports/b17", ROOT / "data/cache/b17"
 RNG = np.random.default_rng(1704)
 VAL0 = 1767225600
 M0 = 60
+OI_LAG = 300          # seconds; see oi_series()
 
 
 def whale_flag(P):
@@ -52,7 +53,9 @@ def oi_series(P):
         if not fp.exists():
             continue
         d = pd.read_parquet(fp, columns=["create_time", "sum_open_interest"]).sort_values("create_time")
-        t, oi = d["create_time"].to_numpy(), d["sum_open_interest"].to_numpy(float)
+        # Vision metrics: the row stamped create_time T holds the OI measured at ~T+5min (verified 2026-09-29: it equals REST
+        # openInterestHist at T+300s exactly, and that matches live OI taken 0-60 s before its own stamp). Shift to the time it is KNOWN.
+        t, oi = d["create_time"].to_numpy() + OI_LAG, d["sum_open_interest"].to_numpy(float)
         for pid, ts in zip(g["pump_id"], g["ts"]):
             i0, i1 = np.searchsorted(t, ts - 3600), np.searchsorted(t, ts + 86400)
             if i1 - i0 > 12:
