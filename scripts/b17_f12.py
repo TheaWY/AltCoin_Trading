@@ -16,6 +16,7 @@ net_real = p * net_pump + (1-p) * net_null with p = P(pump | flagged) from the f
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,6 +31,9 @@ import b15_models as M  # noqa: E402
 
 B = ROOT / "data/cache/b17"
 OUT = ROOT / "data/reports/b17"
+# F12c (clean random null): F12C=1 writes f12c_* files, adds the random windows (never used for training, only scored), BH/pass on them.
+F12C = os.environ.get("F12C") == "1"; PFX = "f12c" if F12C else "f12"
+ONLY = os.environ.get("F12_ONLY")            # e.g. "60m:y1" restricts fitting to one lookback/target
 RNG = np.random.default_rng(1712)
 VAL0 = 1767225600
 R0 = 300
@@ -70,11 +74,12 @@ def hawkes_feats(Xs):
 
 def features():
     S = pd.concat([pd.read_parquet(B / "sample.parquet").assign(is_pump=1, src="pump"), pd.read_parquet(B / "sample_null.parquet").assign(is_pump=0, src="quiet")]
-                  + ([pd.read_parquet(B / "sample_hard.parquet").assign(is_pump=0, src="hard")] if (B / "sample_hard.parquet").exists() else []))
+                  + ([pd.read_parquet(B / "sample_hard.parquet").assign(is_pump=0, src="hard")] if (B / "sample_hard.parquet").exists() else [])
+                  + ([pd.read_parquet(B / "sample_rand.parquet").assign(is_pump=0, src="rand")] if F12C else []))
     paths = np.load(M.C / "b15/paths.npy", mmap_mode="r")
     meta, seq, tab, hk = [], {k: [] for k in LOOK}, {k: [] for k in LOOK}, {k: [] for k in LOOK}
     for pid, code, ts, is_pump, dv, src in zip(S["pump_id"], S["code"], S["ts"], S["is_pump"], S["dv24"], S["src"]):
-        fp = B / {"pump": f"sec1/{pid}.parquet", "quiet": f"sec1_null/{-pid}.parquet", "hard": f"sec1_hard/{-pid}.parquet"}[src]
+        fp = B / {"pump": f"sec1/{pid}.parquet", "quiet": f"sec1_null/{-pid}.parquet", "hard": f"sec1_hard/{-pid}.parquet", "rand": f"sec1_rand/{-pid}.parquet"}[src]
         if not fp.exists():
             continue
         d = pd.read_parquet(fp)
@@ -101,8 +106,8 @@ def features():
             meta.append(dict(pump_id=int(pid), code=code, ts=int(ts), is_pump=int(is_pump), src=src, look=lk, y1=y1, y2=y2, y3=y3, g15=g15, g60=g60, mae15=mae15,
                              cost=2 * (M.L.FEE + float(M.slip(np.array([dv]))[0])), day=int(ts // 86400), val=int(ts >= VAL0)))
     for lk in LOOK:
-        np.save(B / f"f12_seq_{lk}.npy", np.stack(seq[lk])); np.save(B / f"f12_tab_{lk}.npy", np.stack(tab[lk])); np.save(B / f"f12_hk_{lk}.npy", np.stack(hk[lk]))
-    pd.DataFrame(meta).to_parquet(B / "f12_meta.parquet", index=False)
+        np.save(B / f"{PFX}_seq_{lk}.npy", np.stack(seq[lk])); np.save(B / f"{PFX}_tab_{lk}.npy", np.stack(tab[lk])); np.save(B / f"{PFX}_hk_{lk}.npy", np.stack(hk[lk]))
+    pd.DataFrame(meta).to_parquet(B / f"{PFX}_meta.parquet", index=False)
     print("windows", len(meta) // 3, "labels", pd.DataFrame(meta).groupby("look")[["y1", "y2"]].mean().round(3).to_dict())
 
 
@@ -116,23 +121,25 @@ def folds(meta):
 
 def fit_tab(model):
     import lightgbm as lgb
-    meta = pd.read_parquet(B / "f12_meta.parquet")
+    meta = pd.read_parquet(B / f"{PFX}_meta.parquet")
     for lk in LOOK:
         m = meta[meta["look"] == lk].reset_index(drop=True)
-        X = np.load(B / f"f12_tab_{lk}.npy")
+        X = np.load(B / f"{PFX}_tab_{lk}.npy")
         if model == "hawkes":
-            X = np.hstack([X, np.load(B / f"f12_hk_{lk}.npy")])
+            X = np.hstack([X, np.load(B / f"{PFX}_hk_{lk}.npy")])
         for tgt in ("y1", "y2", "y3"):
+            if ONLY and f"{lk}:{tgt}" != ONLY:
+                continue
             y = m[tgt].to_numpy(); ok = y >= 0
             P = np.full(len(m), np.nan, np.float32); thr = np.full(len(m), np.nan, np.float32)
             for tr, te in folds(m):
-                tr = tr[ok[tr]]
+                tr = tr[ok[tr] & (m["src"].to_numpy()[tr] != "rand")]
                 if y[tr].sum() < 30:
                     continue
                 clf = lgb.LGBMClassifier(n_estimators=300, learning_rate=0.03, num_leaves=31, min_child_samples=50, subsample=0.8, subsample_freq=1, colsample_bytree=0.8,
                                          reg_lambda=5, verbose=-1, n_jobs=6).fit(X[tr], y[tr])
                 thr[te] = np.quantile(clf.predict_proba(X[tr])[:, 1], 0.90); P[te] = clf.predict_proba(X[te])[:, 1]
-            np.save(B / f"f12_p_{model}_{lk}_{tgt}.npy", np.stack([P, thr], 1))
+            np.save(B / f"{PFX}_p_{model}_{lk}_{tgt}.npy", np.stack([P, thr], 1))
             print(model, lk, tgt, "done", flush=True)
 
 
@@ -158,20 +165,22 @@ def fit_seq(model):
             s.enc = nn.TransformerEncoder(nn.TransformerEncoderLayer(48, 4, 96, 0.1, batch_first=True), 2); s.o = nn.Linear(48, 1)
         def forward(s, x): return s.o(s.enc(s.inp(x) + s.pos)[:, -1]).squeeze(-1)
 
-    meta = pd.read_parquet(B / "f12_meta.parquet")
+    meta = pd.read_parquet(B / f"{PFX}_meta.parquet")
     for lk in LOOK:
         m = meta[meta["look"] == lk].reset_index(drop=True)
-        X = np.load(B / f"f12_seq_{lk}.npy"); X = np.clip(X / (X.reshape(-1, 6).std(0) + 1e-6), -8, 8).astype(np.float32)
+        X = np.load(B / f"{PFX}_seq_{lk}.npy"); X = np.clip(X / (X.reshape(-1, 6).std(0) + 1e-6), -8, 8).astype(np.float32)
         if lk == "60m":
             X = X[:, ::4]        # 720 -> 180 steps for the sequence models
         Xt = torch.tensor(X)
         for tgt in ("y1", "y2", "y3"):
-            if (B / f"f12_p_{model}_{lk}_{tgt}.npy").exists():   # resume after interruption
+            if ONLY and f"{lk}:{tgt}" != ONLY:
+                continue
+            if (B / f"{PFX}_p_{model}_{lk}_{tgt}.npy").exists():   # resume after interruption
                 print(model, lk, tgt, "cached", flush=True); continue
             y = m[tgt].to_numpy(); ok = y >= 0
             P = np.full(len(m), np.nan, np.float32); thr = np.full(len(m), np.nan, np.float32)
             for tr, te in folds(m):
-                tr = tr[ok[tr]]
+                tr = tr[ok[tr] & (m["src"].to_numpy()[tr] != "rand")]
                 if y[tr].sum() < 30:
                     continue
                 net = {"gru": GRU, "tcn": TCN, "transformer": lambda: Trans(X.shape[1])}[model]().to(dev)
@@ -194,16 +203,16 @@ def fit_seq(model):
                 with torch.no_grad():
                     ptr = torch.sigmoid(net(Xt[tr].to(dev))).cpu().numpy(); P[te] = torch.sigmoid(net(Xt[te].to(dev))).cpu().numpy()
                 thr[te] = np.quantile(ptr, 0.90)
-            np.save(B / f"f12_p_{model}_{lk}_{tgt}.npy", np.stack([P, thr], 1))
+            np.save(B / f"{PFX}_p_{model}_{lk}_{tgt}.npy", np.stack([P, thr], 1))
             print(model, lk, tgt, "done", flush=True)
 
 
 def report():
     from sklearn.metrics import average_precision_score, roc_auc_score
-    meta = pd.read_parquet(B / "f12_meta.parquet")
+    meta = pd.read_parquet(B / f"{PFX}_meta.parquet")
     res = {"tests": {}}; pv = {}
-    for fp in sorted(B.glob("f12_p_*.npy")):
-        model, lk, tgt = fp.stem.replace("f12_p_", "").rsplit("_", 2)
+    for fp in sorted(B.glob(f"{PFX}_p_*.npy")):
+        model, lk, tgt = fp.stem.replace(f"{PFX}_p_", "").rsplit("_", 2)
         m = meta[meta["look"] == lk].reset_index(drop=True); PT = np.load(fp); P, thr = PT[:, 0], PT[:, 1]
         v = (m["val"] == 1) & np.isfinite(P) & (m[tgt] >= 0)
         if v.sum() < 50 or m.loc[v, tgt].nunique() < 2:
@@ -214,7 +223,7 @@ def report():
                    fire_pump=float((flag & (m["is_pump"] == 1)).sum() / max(1, (v & (m["is_pump"] == 1)).sum())),
                    fire_null=float((flag & (m["is_pump"] == 0)).sum() / max(1, (v & (m["is_pump"] == 0)).sum())))
         src = m["src"] if "src" in m else pd.Series(np.where(m["is_pump"] == 1, "pump", "quiet"), index=m.index)
-        for negset, negmask in (("all_neg", m["is_pump"] == 0), ("hard_only", src == "hard")):
+        for negset, negmask in (("all_neg", m["is_pump"] == 0), ("hard_only", src == "hard"), ("rand", src == "rand")):
             n_neg = int((v & negmask).sum())
             if n_neg == 0:
                 continue
@@ -230,14 +239,14 @@ def report():
                 out[key] = dict(p_pump_given_flag=float(p), n_flag_pump=int(len(gp)), n_flag_neg=int(len(gn)), net_pump=float(np_.mean()), net_neg=float(nn_.mean()),
                                 net_real=float(p * np_.mean() + (1 - p) * nn_.mean()), ci=[float(x) for x in np.percentile(bo, [2.5, 97.5])], p_value=float((bo <= 0).mean()),
                                 mae15_p90_neg=float(gn["mae15"].quantile(0.9)) if len(gn) else None)
-                if negset == "hard_only" and len(gn) >= 20:
+                if negset == ("rand" if F12C else "hard_only") and len(gn) >= 20:
                     pv[f"{model}|{lk}|{tgt}|{hz}"] = out[key]["p_value"]
         res["tests"][f"{model}|{lk}|{tgt}"] = out
     names = sorted(pv, key=pv.get)
     last = max([k for k, nm in enumerate(names) if pv[nm] <= 0.10 * (k + 1) / len(names)], default=-1)
     res["bh_pass"] = [nm for k, nm in enumerate(names) if k <= last]
-    res["pass"] = [nm for nm in res["bh_pass"] if res["tests"][nm.rsplit("|", 1)[0]][f"trade_{nm.rsplit('|', 1)[1]}_hard_only"]["ci"][0] > 0]
-    OUT.mkdir(parents=True, exist_ok=True); json.dump(res, open(OUT / "f12.json", "w"), indent=1, default=float)
+    res["pass"] = [nm for nm in res["bh_pass"] if res["tests"][nm.rsplit("|", 1)[0]][f"trade_{nm.rsplit('|', 1)[1]}_{'rand' if F12C else 'hard_only'}"]["ci"][0] > 0]
+    OUT.mkdir(parents=True, exist_ok=True); json.dump(res, open(OUT / f"{PFX}.json", "w"), indent=1, default=float)
     print("F12 PASS", res["pass"])
     for k, v in sorted(res["tests"].items(), key=lambda kv: -kv[1]["auc"])[:15]:
         t = v.get("trade_g60_hard_only", {}); print(k, "auc", round(v["auc"], 3), "fire pump/quiet/hard", round(v["fire_pump"], 3), round(v["fire_null"], 4), round(v.get("fire_hard_only", np.nan), 4),
