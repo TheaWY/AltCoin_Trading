@@ -69,11 +69,12 @@ def hawkes_feats(Xs):
 
 
 def features():
-    S = pd.concat([pd.read_parquet(B / "sample.parquet").assign(is_pump=1), pd.read_parquet(B / "sample_null.parquet").assign(is_pump=0)])
+    S = pd.concat([pd.read_parquet(B / "sample.parquet").assign(is_pump=1, src="pump"), pd.read_parquet(B / "sample_null.parquet").assign(is_pump=0, src="quiet")]
+                  + ([pd.read_parquet(B / "sample_hard.parquet").assign(is_pump=0, src="hard")] if (B / "sample_hard.parquet").exists() else []))
     paths = np.load(M.C / "b15/paths.npy", mmap_mode="r")
     meta, seq, tab, hk = [], {k: [] for k in LOOK}, {k: [] for k in LOOK}, {k: [] for k in LOOK}
-    for pid, code, ts, is_pump, dv in zip(S["pump_id"], S["code"], S["ts"], S["is_pump"], S["dv24"]):
-        fp = B / (f"sec1/{pid}.parquet" if is_pump else f"sec1_null/{-pid}.parquet")
+    for pid, code, ts, is_pump, dv, src in zip(S["pump_id"], S["code"], S["ts"], S["is_pump"], S["dv24"], S["src"]):
+        fp = B / {"pump": f"sec1/{pid}.parquet", "quiet": f"sec1_null/{-pid}.parquet", "hard": f"sec1_hard/{-pid}.parquet"}[src]
         if not fp.exists():
             continue
         d = pd.read_parquet(fp)
@@ -97,7 +98,7 @@ def features():
             g15 = c[min(t + 900, 7499)] / e - 1; g60 = c[min(t + 3600, 7499)] / e - 1
             mae15 = 1 - np.nanmin(l[t + 1:t + 901]) / e
             seq[lk].append(block); tab[lk].append(tab_feats(block)); hk[lk].append(hawkes_feats(block))
-            meta.append(dict(pump_id=int(pid), code=code, ts=int(ts), is_pump=int(is_pump), look=lk, y1=y1, y2=y2, y3=y3, g15=g15, g60=g60, mae15=mae15,
+            meta.append(dict(pump_id=int(pid), code=code, ts=int(ts), is_pump=int(is_pump), src=src, look=lk, y1=y1, y2=y2, y3=y3, g15=g15, g60=g60, mae15=mae15,
                              cost=2 * (M.L.FEE + float(M.slip(np.array([dv]))[0])), day=int(ts // 86400), val=int(ts >= VAL0)))
     for lk in LOOK:
         np.save(B / f"f12_seq_{lk}.npy", np.stack(seq[lk])); np.save(B / f"f12_tab_{lk}.npy", np.stack(tab[lk])); np.save(B / f"f12_hk_{lk}.npy", np.stack(hk[lk]))
@@ -210,26 +211,35 @@ def report():
         out = dict(auc=float(auc), pr_auc=float(ap), base_rate=float(m.loc[v, tgt].mean()), n_flag=int(flag.sum()),
                    fire_pump=float((flag & (m["is_pump"] == 1)).sum() / max(1, (v & (m["is_pump"] == 1)).sum())),
                    fire_null=float((flag & (m["is_pump"] == 0)).sum() / max(1, (v & (m["is_pump"] == 0)).sum())))
-        for hz in ("g15", "g60"):
-            gp = m[flag & (m["is_pump"] == 1)]; gn = m[flag & (m["is_pump"] == 0)]
-            if len(gp) < 20 or len(gn) < 20:
+        src = m["src"] if "src" in m else pd.Series(np.where(m["is_pump"] == 1, "pump", "quiet"), index=m.index)
+        for negset, negmask in (("all_neg", m["is_pump"] == 0), ("hard_only", src == "hard")):
+            n_neg = int((v & negmask).sum())
+            if n_neg == 0:
                 continue
-            p = BASE_RATE * out["fire_pump"] / (BASE_RATE * out["fire_pump"] + (1 - BASE_RATE) * out["fire_null"]) if out["fire_null"] > 0 else 1.0
-            np_, nn_ = (gp[hz] - gp["cost"]).to_numpy(), (gn[hz] - gn["cost"]).to_numpy()
-            bo = np.array([p * np.mean(RNG.choice(np_, len(np_))) + (1 - p) * np.mean(RNG.choice(nn_, len(nn_))) for _ in range(2000)])
-            out[f"trade_{hz}"] = dict(p_pump_given_flag=float(p), net_pump=float(np_.mean()), net_null=float(nn_.mean()), net_real=float(p * np_.mean() + (1 - p) * nn_.mean()),
-                                      ci=[float(x) for x in np.percentile(bo, [2.5, 97.5])], p_value=float((bo <= 0).mean()), mae15_p90_null=float(gn["mae15"].quantile(0.9)))
-            pv[f"{model}|{lk}|{tgt}|{hz}"] = out[f"trade_{hz}"]["p_value"]
+            fn = float((flag & negmask).sum() / n_neg); out[f"fire_{negset}"] = fn; out[f"n_{negset}"] = n_neg; out[f"nflag_{negset}"] = int((flag & negmask).sum())
+            for hz in ("g15", "g60"):
+                gp = m[flag & (m["is_pump"] == 1)]; gn = m[flag & negmask]
+                if len(gp) < 20:
+                    continue
+                p = BASE_RATE * out["fire_pump"] / (BASE_RATE * out["fire_pump"] + (1 - BASE_RATE) * fn) if fn > 0 else 1.0
+                np_ = (gp[hz] - gp["cost"]).to_numpy(); nn_ = (gn[hz] - gn["cost"]).to_numpy() if len(gn) else np.array([0.0])
+                bo = np.array([p * np.mean(RNG.choice(np_, len(np_))) + (1 - p) * np.mean(RNG.choice(nn_, len(nn_))) for _ in range(2000)])
+                key = f"trade_{hz}_{negset}"
+                out[key] = dict(p_pump_given_flag=float(p), n_flag_pump=int(len(gp)), n_flag_neg=int(len(gn)), net_pump=float(np_.mean()), net_neg=float(nn_.mean()),
+                                net_real=float(p * np_.mean() + (1 - p) * nn_.mean()), ci=[float(x) for x in np.percentile(bo, [2.5, 97.5])], p_value=float((bo <= 0).mean()),
+                                mae15_p90_neg=float(gn["mae15"].quantile(0.9)) if len(gn) else None)
+                if negset == "hard_only" and len(gn) >= 20:
+                    pv[f"{model}|{lk}|{tgt}|{hz}"] = out[key]["p_value"]
         res["tests"][f"{model}|{lk}|{tgt}"] = out
     names = sorted(pv, key=pv.get)
     last = max([k for k, nm in enumerate(names) if pv[nm] <= 0.10 * (k + 1) / len(names)], default=-1)
     res["bh_pass"] = [nm for k, nm in enumerate(names) if k <= last]
-    res["pass"] = [nm for nm in res["bh_pass"] if res["tests"][nm.rsplit("|", 1)[0]][f"trade_{nm.rsplit('|', 1)[1]}"]["ci"][0] > 0]
+    res["pass"] = [nm for nm in res["bh_pass"] if res["tests"][nm.rsplit("|", 1)[0]][f"trade_{nm.rsplit('|', 1)[1]}_hard_only"]["ci"][0] > 0]
     OUT.mkdir(parents=True, exist_ok=True); json.dump(res, open(OUT / "f12.json", "w"), indent=1, default=float)
     print("F12 PASS", res["pass"])
     for k, v in sorted(res["tests"].items(), key=lambda kv: -kv[1]["auc"])[:15]:
-        t = v.get("trade_g15", {}); print(k, "auc", round(v["auc"], 3), "pr", round(v["pr_auc"], 3), "base", round(v["base_rate"], 3), "fire p/n", round(v["fire_pump"], 3), round(v["fire_null"], 3),
-                                          "real15", round(t.get("net_real", np.nan), 4), t.get("ci"))
+        t = v.get("trade_g60_hard_only", {}); print(k, "auc", round(v["auc"], 3), "fire pump/quiet/hard", round(v["fire_pump"], 3), round(v["fire_null"], 4), round(v.get("fire_hard_only", np.nan), 4),
+                                                   "nflag_hard", v.get("nflag_hard_only"), "p(pump|flag)", round(t.get("p_pump_given_flag", np.nan), 3), "real60", round(t.get("net_real", np.nan), 4), t.get("ci"))
 
 
 if __name__ == "__main__":
