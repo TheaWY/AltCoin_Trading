@@ -207,7 +207,7 @@ def f06():
     for c, g in P.groupby("code"):
         t = g["ts"].to_numpy(); ser[g.index] = (np.searchsorted(t, t) - np.searchsorted(t, t - 30 * 86400)) >= 2   # >= 2 earlier pumps in the prior 30d
     P["serial"] = ser
-    retrace100 = np.asarray(A[:len(P), M0 + 1440, 0], np.float32) <= 0
+    retrace100 = np.asarray(A[:, M0 + 1440, 0], np.float32)[P["pump_id"].to_numpy()] <= 0
     unl = C / "unlocks_live"
     STAT = {
         "serial_pumper_next_onset_long": (P["serial"].to_numpy(), 0, 1, 24),
@@ -224,7 +224,8 @@ def f06():
     res = {"tests": {}}; pv = {}
     for name, (mask, off, side, hz) in STAT.items():
         e = h0 + off; ok = (e + hz < len(ts_h)) & np.isfinite(lc[np.clip(e, 0, len(ts_h) - 1), j])
-        g = side * (lc[np.clip(e + hz, 0, len(ts_h) - 1), j] - lc[np.clip(e, 0, len(ts_h) - 1), j]) - cost
+        # simple returns, not log: for shorts E[-log(1+x)] > -E[x] under pump skew and overstated the first run by ~2pp
+        g = side * (np.exp(lc[np.clip(e + hz, 0, len(ts_h) - 1), j] - lc[np.clip(e, 0, len(ts_h) - 1), j]) - 1) - cost
         out = {}
         for per, sel in (("discovery", ~val), ("validation", val)):
             a = sel & ok & np.nan_to_num(mask.astype(float)).astype(bool); b = sel & ok & ~np.nan_to_num(mask.astype(float)).astype(bool)
