@@ -108,7 +108,8 @@ def settle(st, now: int) -> int:
             continue
         p0 = float(px["open"].iloc[0]); hit = px[(px["ts"] > e0) & (px["high"] >= p0 * (1 + STOP))]
         if len(hit):
-            p1, t1, stopped = p0 * (1 + STOP + 0.002), int(hit["ts"].iloc[0]), 1
+            lvl = p0 * (1 + STOP); fill = max(float(hit["open"].iloc[0]), lvl)          # gap-open above the stop fills at the open (matches b17_f08_exact)
+            p1, t1, stopped = fill + 0.002 * p0, int(hit["ts"].iloc[0]), 1
         else:
             p1, t1, stopped = float(px["open"].iloc[-1]), int(px["ts"].iloc[-1]), 0
         fr = q(st, "SELECT COALESCE(SUM(funding_rate),0) AS f FROM funding_rates WHERE symbol=? AND timestamp > ? AND timestamp <= ?", (r.symbol, e0, t1))

@@ -99,3 +99,10 @@
 - Recomputed without near-miss negatives: 0 passes. The three y2 cells turn negative; transformer 60m y1 g15 CI [-0.33%, +2.6%].
 - Lead: 60m-lookback y1 models fire on 0.4-2.7% of unbiased negatives, and those flagged negatives rise too (hawkes 60m y1 g60 net_real +2.1% [0.4, 3.6]). Only 10-16 flagged negatives, below the pre-registered 20. Next step F12c: 10k random-hour null windows not selected on outcome.
 - Fix for future samples: any negative set must be drawn without reference to the forward window.
+
+## B17 F04 stop audit, F08 regime conditioning, F10 sizing (run 2026-09-28)
+
+- Stop audit of the only B17 pass (oi_drop3 short, 5% stop, exit +4h). F04 checked the stop on minute closes and capped the loss at 5.2%, which misses intrabar spikes. Re-simulated with real minute highs: validation +0.39% [0.19, 0.58] (reported +0.78%), discovery +0.16% [-0.10, 0.41] (reported +0.37%). 42% of trades get stopped. Still a validation pass, but the edge is half the size and discovery alone is not significant. The forward paper test F6 is now the deciding evidence; expected mean about +0.4%/trade.
+- F04 taker_flip was mis-specified (centred taker channel); the corrected trigger loses (-0.2% to -0.8%).
+- F08: none of HMM state (previous day), BTC 24h trend, funding, KST 6h block or weekend improves the short on validation. Trade it unconditionally.
+- F10: fixed 10% notional with at most 3 open positions is selected on discovery and holds on validation (Sharpe 2.15, max DD -24%, 39% of signals skipped). Uncapped sizing had -75% to -85% drawdowns in discovery. Compounded backtest, no capacity model.
