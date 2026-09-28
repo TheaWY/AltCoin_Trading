@@ -7,7 +7,7 @@ minute close (as B15_1); forced exit at +240m. Continuation value Q_hold(s_k) is
   001 'cql'  : conservative continuation = mean - 0.5 x residual std of its k-bucket (penalises uncertain holding)
   002 'iql'  : upper-expectile proxy = LightGBM quantile(0.7) continuation (IQL-style optimistic in-sample value)
   003 'cvar' : squeeze-averse = 0.5 x mean + 0.5 x quantile(0.1) continuation (CVaR-10 flavoured)
-  004 'joint': 'cql' exit + entry filter: take the trade only if Q_hold(s_1) > cost (entry decided at m0+1 from state at k=1)
+  004 'joint': 'cql' exit + entry filter decided at k=1: enter at the k=1 close only if Q_hold(s_1) - gain(s_1) > cost
 Baseline: best fixed exit (15m/60m/4h) chosen on discovery (the registry says 'vs hazard exit'; B15_1's hazard exit did not beat the best
 fixed exit on holdout, so the fixed exit is the stronger comparator). Paired day-clustered bootstrap of policy - baseline on validation.
 Features at k (all known at k): k, gain, 5-min return, volume decay, taker share, range, drawdown from high since entry, pump size at onset,
@@ -125,7 +125,10 @@ def main():
         ex, q = fqi(variant, X, G, R, Rf, disc)
         v, held = realise(ex, R, Rf); net = v - cost
         if variant == "joint":
-            take = q[:, 0] - cost > 0
+            # entry is decided from the state at k=1 (one minute after m0+1), so the trade is entered at THAT price (G[:, 0]),
+            # not at m0+1 (fixed 2026-09-29: the first run booked the k=1 minute's move as profit -> look-ahead)
+            take = q[:, 0] - G[:, 0] - cost > 0                 # expected continuation over the price at decision time
+            net = (1 + v) / (1 + G[:, 0]) - 1 - cost
             net_t = np.where(take, net, 0.0)                    # per-pump P&L incl. skipped (0) for the paired comparison
             d = net_t[val] - base[val]
             out = dict(take_rate_val=float(take[val].mean()), taken_val=stats(net[val & take], day[val & take]) if (val & take).sum() > 30 else None,
