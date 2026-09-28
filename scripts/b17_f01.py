@@ -62,8 +62,11 @@ def labels(ts, codes):
     ci = {c: j for j, c in enumerate(codes)}
     onset = np.zeros((len(ts), len(codes)), bool)
     t0 = int(ts[0])
+    # panel row i is the bar (ts[i]-1h, ts[i]]; the bar CONTAINING minute m0 is row (m0-t0)//H_ + 1.
+    # (Bug fixed 2026-09-28: the first run used //H_ without +1, which put the onset one row early -> label leakage
+    #  and pre-pump entries. Every F01/F01b/F01c result before this fix is void and was re-run.)
     for c, t in zip(P["code"], P["ts"]):
-        i = (int(t) - t0) // H_
+        i = (int(t) - t0) // H_ + 1
         if c in ci and 0 <= i < len(ts):
             onset[i, ci[c]] = True
     Y = {}

@@ -352,3 +352,4 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-09-28T01:10:00,B15_6-1,B15_6:P1 short whale-driven pumps after confirmed peak (fresh holdout),confirmatory,hold,,,375,"FAIL loses money; see b15_6.json (win rate 68% but rare squeezes of +35%..+189% wipe gains)"
 2026-09-28T01:10:00,B15_6-1,B15_6:P2 whale minus crowd post-peak short,confirmatory,hold,,-0.0185,375,"FAIL ci=[-0.048,0.007]"
 2026-09-28T03:20:00,B17_F01-logit,B17_F01 precursor long (22 precursors; logit; top 0.5% coin-hours) 15 h x exit tests,confirmatory,val2026,,-0.0101,11227,"FAIL all 15: AUC 0.72-0.74 and 65% of flags pump within 24h, but long net -1.0% (tp10) to -2.9% (trail) vs control -0.3%; flagged coins are mid-dump when they pump"
+2026-09-28T03:45:00,B17_F01-logit,VOID: label off by one hour (leakage) in the F01 logit row above and the first F01b/F01c chain; results moved to data/reports/b17/void_leak; re-run after fix,confirmatory,val2026,,,,"bug fix commit"
