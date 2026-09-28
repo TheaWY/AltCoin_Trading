@@ -173,7 +173,10 @@ def metrics5m():
                     with zipfile.ZipFile(fp) as z, z.open(z.namelist()[0]) as fh:
                         x = pd.read_csv(fh)
                     ct = x["create_time"]
-                    x["create_time"] = (pd.to_datetime(ct, unit="ms") if pd.api.types.is_numeric_dtype(ct) else pd.to_datetime(ct)).astype("int64") // 10**9
+                    if pd.api.types.is_numeric_dtype(ct):
+                        x["create_time"] = (ct // 1000 if ct.iloc[0] > 1e12 else ct).astype("int64")
+                    else:
+                        x["create_time"] = pd.to_datetime(ct).astype("int64") // 10**9
                     parts.append(x)
                 except Exception:
                     pass
