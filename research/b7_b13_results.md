@@ -106,3 +106,12 @@
 - F04 taker_flip was mis-specified (centred taker channel); the corrected trigger loses (-0.2% to -0.8%).
 - F08: none of HMM state (previous day), BTC 24h trend, funding, KST 6h block or weekend improves the short on validation. Trade it unconditionally.
 - F10: fixed 10% notional with at most 3 open positions is selected on discovery and holds on validation (Sharpe 2.15, max DD -24%, 39% of signals skipped). Uncapped sizing had -75% to -85% drawdowns in discovery. Compounded backtest, no capacity model.
+
+## B17 F12c: clean random null for the F12b lead (run 2026-09-29)
+
+- 10,200 random coin-minutes (3,400 random coin-days x 3, dv24 >= $2M, not selected on outcome), 1-second bars, scored by the same five 60m-lookback y1 models (random windows never used in training).
+- Sanity: mean net over all random windows is -0.30%, exactly minus cost. The null is clean.
+- The models are very selective: they flag 31-42% of pump windows but only 0.2-0.9% of random windows. That leaves 7-28 flagged random windows in the 2026 validation slice, too few to test (only the transformer reached the pre-registered 20, and its CI crosses zero). 0/10 pass.
+- Direct estimate (no base-rate weighting, since the random sample already contains pumps at their natural frequency): flagged random windows return +0.05% to +1.4% at 60 minutes on n = 7-28 and are negative at 15 minutes. No demonstrated edge.
+- Correction to earlier write-ups: the 0.5% base rate used for net_real in F02 and F12 overstates P(pump | flag) for a scanner evaluated every minute; the natural rate of a +5%/15m move per random window is 0.25%, and lower per evaluation. Those net_real figures were optimistic.
+- F12 closed. Reopening it would need about 60k random windows or a live paper scanner.
