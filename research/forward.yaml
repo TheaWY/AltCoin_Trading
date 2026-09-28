@@ -49,4 +49,4 @@ F6_oi_drop_short:
         cost 0.05%/side + liquidity slippage; paper only.
   sample_size: 100 events minimum before any verdict; stop date 2026-11-15 (whichever first)
   pass: mean net > 0 with day-clustered CI > 0; MAE p90 < 8%; no regime with mean < -0.5%
-  implementation: scripts/oi_drop_short_paper.py (launchd com.altcoin.oidropshort) - to be written; table oi_drop_short_paper
+  implementation: scripts/oi_drop_short_paper.py (launchd com.altcoin.oidropshort, every 5 min; OI polled from Binance REST); table oi_drop_short_paper; started 2026-09-28
