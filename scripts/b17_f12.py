@@ -166,6 +166,8 @@ def fit_seq(model):
             X = X[:, ::4]        # 720 -> 180 steps for the sequence models
         Xt = torch.tensor(X)
         for tgt in ("y1", "y2", "y3"):
+            if (B / f"f12_p_{model}_{lk}_{tgt}.npy").exists():   # resume after interruption
+                print(model, lk, tgt, "cached", flush=True); continue
             y = m[tgt].to_numpy(); ok = y >= 0
             P = np.full(len(m), np.nan, np.float32); thr = np.full(len(m), np.nan, np.float32)
             for tr, te in folds(m):
