@@ -110,5 +110,43 @@ def run():
         print(k, "p(pump|fire)", round(v["p_pump_given_fire"], 3), "net_pump", round(v["net_pump"], 4), "net_null", round(v["net_null"], 4), "real", round(v["net_real"], 4), [round(x, 4) for x in v["ci"]])
 
 
+
+
+def sample_hard():
+    """F12b (registered 2026-09-28 after F12 showed 0 firings in 1,126 quiet windows): HARD negative windows for the same coins.
+    (a) near-miss hours: hourly high / previous close - 1 in [4%, 10%) with no +10%/60m onset within +-2h  (1,500)
+    (b) volatile neighbourhood: random hours within +-3 days of a pump of the same coin, >= 2h from any onset      (1,500)
+    ids -100001.. ; 'ts' = the hour's open time minus 5 min so the window baseline/decision points line up with sec1 (window = [ts-65m, ts+60m])."""
+    import b7_lib as L
+    S = pd.read_parquet(B / "sample.parquet"); P = pd.read_parquet(M.C / "b15/pumps.parquet", columns=["code", "ts"])
+    on = {c: np.sort(g["ts"].to_numpy()) for c, g in P.groupby("code")}
+    ts_h, codes, X = L.data(); ci = {c: j for j, c in enumerate(codes)}
+    h, c = X["h"], X["c"]
+    rows = []; k = 0
+    for code in S["code"].unique():
+        if code not in ci or code not in on:
+            continue
+        j = ci[code]; t = on[code]
+        gain = h[1:, j] / c[:-1, j] - 1
+        near = np.flatnonzero((gain >= 0.04) & (gain < 0.10)) + 1
+        for i in near:
+            t0 = int(ts_h[i]) - 3600            # hour open time
+            d = np.abs(t - t0).min() if len(t) else 1e12
+            if d >= 7200 and RNG.random() < 0.35:
+                k += 1; rows.append(dict(pump_id=-100000 - k, code=code, ts=t0, hold=t0 >= M.DISC1, size_bucket="near", dv24=float(X["dv24"][i, j])))
+    n_near = len(rows)
+    for pid, code, ts in zip(S["pump_id"], S["code"], S["ts"]):
+        if code not in on:
+            continue
+        t = on[code]
+        for _ in range(20):
+            cand = int(ts + RNG.integers(-3, 4) * 86400 + RNG.integers(0, 24) * 3600)
+            if np.abs(t - cand).min() >= 7200:
+                k += 1; rows.append(dict(pump_id=-100000 - k, code=code, ts=cand, hold=cand >= M.DISC1, size_bucket="volnbr", dv24=float(S.loc[S["pump_id"] == pid, "dv24"].iloc[0]))); break
+    N = pd.DataFrame(rows)
+    N = pd.concat([N[N["size_bucket"] == "near"].sample(min(1500, n_near), random_state=1), N[N["size_bucket"] == "volnbr"].sample(min(1500, len(N) - n_near), random_state=1)])
+    N.to_parquet(B / "sample_hard.parquet"); print("hard windows", N["size_bucket"].value_counts().to_dict())
+
+
 if __name__ == "__main__":
-    {"sample": sample, "run": run}[sys.argv[1]]()
+    {"sample": sample, "run": run, "sample_hard": sample_hard}[sys.argv[1]]()
