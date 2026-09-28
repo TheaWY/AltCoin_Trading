@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+if sys.argv[1:2] == ["seq"]:
+    import torch  # noqa: F401  (torch's OpenMP must load before lightgbm's on macOS; b15_models imports lightgbm)
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import b15_models as M  # noqa: E402
