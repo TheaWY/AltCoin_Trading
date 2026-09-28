@@ -176,7 +176,7 @@ def metrics5m():
                     if pd.api.types.is_numeric_dtype(ct):
                         x["create_time"] = (ct // 1000 if ct.iloc[0] > 1e12 else ct).astype("int64")
                     else:
-                        x["create_time"] = pd.to_datetime(ct).astype("int64") // 10**9
+                        x["create_time"] = pd.to_datetime(ct).astype("datetime64[s]").astype("int64")   # pandas>=3 infers unit; force seconds
                     parts.append(x)
                 except Exception:
                     pass
