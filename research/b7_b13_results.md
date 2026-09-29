@@ -123,3 +123,11 @@
 - F09 coordination 0/4 runnable, F13 changepoint/shape triggers 0/9, F20 on-chain 0/5 runnable, F11 execution 0/4 runnable, F18 re-run 0.
 - B17 now has **no surviving hypothesis**. Every earlier B17 figure that used 5-minute OI (F02 oi trigger, F04, F05, F08, F10, F11, F18) must be read with the corrected timing.
 - To audit next: other Vision `metrics` users (metrics1h in B8/B14 panels), for the same create_time convention.
+
+### Timestamp audit (2026-09-29)
+- Vision `metrics` 5-min rows: create_time T = OI measured about T+5 min. Only the 5-min OI users were exposed (B17 F04/F05/F08/F10/F11/F18; fixed with +300 s).
+- metrics1h cache (B8 study, B14 tensor, B15 pump context, b7 panels): hourly aggregate takes the last 5-min row (stamped HH:55, measured ~HH+1:00) and stamps it at the hour close -> aligned.
+- src/research/alpha_lab.py: same hour-close stamping -> aligned. src/research/deep_search.py: reads 5-min rows up to 1 min before the decision -> at most ~1 min early (negligible at hourly resolution).
+- futures_metrics table (scripts/load_metrics.py): stamps the hour START with the hour's last sample -> 1 hour early, but no code reads that table.
+- coinalyze_1h: ts = bar open (return correlation 0.99 at +1h vs 0.02 at 0) -> must add 3600 before joining with close-stamped data.
+- upbit1h_hist / bithumb1h_hist / spot1h_hist: ts = bar close (aligned). kr1m_hist and b2 1m klines: both minute-open stamped.
