@@ -131,3 +131,9 @@
 - futures_metrics table (scripts/load_metrics.py): stamps the hour START with the hour's last sample -> 1 hour early, but no code reads that table.
 - coinalyze_1h: ts = bar open (return correlation 0.99 at +1h vs 0.02 at 0) -> must add 3600 before joining with close-stamped data.
 - upbit1h_hist / bithumb1h_hist / spot1h_hist: ts = bar close (aligned). kr1m_hist and b2 1m klines: both minute-open stamped.
+
+## B17 F07 / F16 / F19 (run 2026-09-29)
+- F07 venue lead-lag: 0/24 runnable cells. Coinalyze hourly bars are stamped at the OPEN (checked; shifted +1h). Korean minute prices lag the perp rather than lead it. Perp-to-perp 5% divergences within an hour almost never happen.
+- F16 Korea: 0/11 runnable statements.
+- F19_004 announcements: 0/4, but same sign in both periods (delisting short +1h: +3.4% val / +0.9% disc; listing long +1h: +2.2% / +2.0%) on 29-73 events per cell. Too few events to confirm; the live F1 service already paper-logs delisting shorts.
+- B17 summary: 0 surviving hypotheses out of every runnable cell. Still open: F17 (order-book history from about mid-November), F19 (keys), spot/Bybit sub-hour F07 cells (1m backfill).
