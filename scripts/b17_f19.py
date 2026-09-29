@@ -52,7 +52,7 @@ def main():
     N = N[(N["ts"] >= 1709251200 + 3 * 86400) & (N["ts"] <= 1790294400 - 86400)]
     ev = [(int(r.ts), r.cls, code, r.title) for r in N.itertuples(index=False) for code in tickers(r.title, universe)]
     E = pd.DataFrame(ev, columns=["ts", "cls", "code", "title"]).drop_duplicates(["code", "cls", "ts"])
-    E = E.sort_values("ts").groupby(["code", "cls"], group_keys=False).apply(lambda g: g[g["ts"].diff().fillna(1e9) > 86400])   # 1 event/coin/day
+    E = E.sort_values("ts"); E = E[E.groupby(["code", "cls"])["ts"].diff().fillna(1e9) > 86400]      # 1 event per coin/class per day
     rows = []
     for code, g in E.groupby("code"):
         d = bp.load_minutes(code)

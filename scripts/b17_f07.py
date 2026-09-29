@@ -64,7 +64,10 @@ def hourly_cells():
             code = perp_code(base) if venue != "spot" else (fp.stem if fp.stem in ci else perp_code(base))
             if code is None:
                 continue
-            x = pd.read_parquet(fp, columns=["ts", "c"]).drop_duplicates("ts").set_index("ts")["c"].astype(float)
+            x = pd.read_parquet(fp)
+            if "c" not in x.columns or x.empty:                                           # placeholder file: no market on this venue
+                continue
+            x = x[["ts", "c"]].drop_duplicates("ts").set_index("ts")["c"].astype(float)
             v = np.log(x.where(x > 0).reindex(ts_h).to_numpy()); j = ci[code]
             p = X["lc"][:, j].astype(float); p[~X["U"][:, j]] = np.nan
             rows += [(venue, "1h", code) + r for r in scan(v, p, X["dv24"][:, j], ts_h, 1)]
