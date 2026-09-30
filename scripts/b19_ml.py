@@ -186,7 +186,7 @@ def fit_predict(model, target, Ftr, ytr, gtr, Fte, seq_tr=None, seq_te=None):
             return CatBoostClassifier(**kw).fit(Ftr, ytr).predict_proba(Fte)[:, 1]
         return CatBoostRegressor(**kw).fit(Ftr, ytr).predict(Fte)
     import torch
-    torch.set_num_threads(6); torch.manual_seed(7)
+    torch.set_num_threads(1); torch.manual_seed(7)   # >1 thread deadlocks when lightgbm's libomp is loaded in the same process (hung 2026-10-01)
     dev = "cpu"                                                                 # MPS caused a kernel panic on 2026-09-29
     k = Ftr.shape[-1]
     if model == "mlp":
