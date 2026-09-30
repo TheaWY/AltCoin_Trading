@@ -6,6 +6,8 @@ Everything still open from B17 and the discovery engine, plus the main-book loss
 |---|---|---|---|
 | B18_F2FIX | pre-registered filters for the pump CNN (tight p, short-only, breadth, BTC, 24h cooldown, vol sizing) | done 2026-09-30: 0/6 pass | - |
 | B18_DISC2 | slow (72h / 168h) hold-band L/S on the residual Korea volume share and OI/volume, plus a combo | done 2026-10-01: 0/18 pass (Upbit share 168h +0.46%/+0.41% per week, CI incl. 0) | - |
+| B19 | 100 ML hypotheses (targets x feature sets x models, walk-forward) | done 2026-10-01: 0/100 pass; IC +0.10..0.15, AUC 0.76-0.79, but quintile L/S loses to costs | - |
+| B20_COSTAWARE | turn the B19 predictions into a cost-aware book: trade only when predicted edge > round-trip cost, turnover-penalised weights, BTC-hedged, CatBoost xs72 + dump-risk filter | queued | builds on data/cache/b19/*.npy |
 | B18_F07B | venue lead-lag at 1m/5m/15m for Binance spot and Bybit (the B17 F07 cells that had no data) | queued | needs a 1m spot/Bybit backfill (public archives) |
 | B18_F16_010 | Korean-listed coins with a thin Upbit book before pumps | waiting for data | Korea tick recorder since 2026-09-27; runnable ~2026-10-25 |
 | B18_F17 | order-book microstructure (10 statements) | waiting for data | recorded book depth; runnable ~2026-11-10 |
