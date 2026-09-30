@@ -63,3 +63,8 @@ main_book:
   object: scripts/main_book.py (launchd com.altcoin.mainbook, every 60 s); strategies f2_pump_cnn / f6_oi_short in paper_trades; state main_book_map
   sizing: B17_F10 - 10% of equity per trade, max 3 open; entries at the latest 1-minute close when first seen (<= 15 min after the planned entry)
   note: the F2/F6 forward-test tables stay the clean evidence; the main book adds execution delay and the position cap. PAPER ONLY, LIVE_TRADING=false.
+  amended_2026-10-01: >
+    Admission is now rule-based. A strategy enters the main book only after its own forward test passes its registered
+    decision rule (>= 300 closed paper trades, mean net > 0, day-clustered 95% CI above 0) and is then admitted at full
+    size automatically. The only brake is downside: equity 10% below its running peak pauses new entries for 7 days.
+    F2 is at 21/300, so the main book holds cash until then. F6 stays out (source invalidated).

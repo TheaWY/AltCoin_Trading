@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import sys
 import time
+
+import numpy as np
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +29,50 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS main_book_map (
   source TEXT NOT NULL, symbol TEXT NOT NULL, key_ts BIGINT NOT NULL, trade_id BIGINT, status TEXT, t_entry BIGINT,
   t_exit_plan BIGINT, stop_px DOUBLE PRECISION, note TEXT, created BIGINT, PRIMARY KEY (source, symbol, key_ts))"""
 STRAT = {"F2": "f2_pump_cnn", "F6": "f6_oi_short"}
-ENABLED = {"F2"}   # F6 removed 2026-09-30 (유리): its source was invalidated by the 5-min OI timestamp fix; open F6 trades still exit normally
+# Admission is rule-based, not discretionary (2026-10-01, after the -8.07 USDT start):
+#  - a strategy trades in the main book only once its OWN forward test has passed its registered decision rule
+#    (research/forward.yaml: >= 300 closed paper trades, mean net > 0 with a day-clustered 95% CI above 0);
+#    until then it keeps running in its forward table only. When it passes it is admitted automatically at full size
+#    (no cap on the upside).
+#  - the only brake is on the downside: if equity falls 10% below its running peak, new entries pause for 7 days.
+# F6 stays out permanently (source invalidated by the 5-min OI timestamp fix).
+FORWARD = {"F2": ("pump_cnn_paper", "ts_signal", "net")}
+MIN_TRADES, DD_PAUSE, PAUSE_S = 300, 0.10, 7 * 86400
+STATE = "CREATE TABLE IF NOT EXISTS main_book_state (k TEXT PRIMARY KEY, v DOUBLE PRECISION, note TEXT, updated BIGINT)"
+
+
+def qualified(st, src):
+    tab, tcol, ncol = FORWARD[src]
+    d = q(st, f"SELECT {tcol} AS t, {ncol} AS net FROM {tab} WHERE status='closed' AND {ncol} IS NOT NULL")
+    if d is None or len(d) < MIN_TRADES:
+        return False, f"{0 if d is None else len(d)}/{MIN_TRADES} forward trades"
+    days = [g.to_numpy() for _, g in d.groupby(d["t"] // 86400)["net"]]
+    rng = np.random.default_rng(3)
+    boot = [np.concatenate([days[i] for i in rng.integers(0, len(days), len(days))]).mean() for _ in range(2000)]
+    lo = float(np.percentile(boot, 2.5))
+    return lo > 0, f"n={len(d)} mean={d['net'].mean():+.4f} ci_lo={lo:+.4f}"
+
+
+def enabled(st, now):
+    q(st, STATE)
+    eq = equity(st)
+    r = q(st, "SELECT k, v FROM main_book_state")
+    kv = dict(zip(r["k"], r["v"])) if r is not None and len(r) else {}
+    peak = max(kv.get("peak", eq), eq)
+    q(st, "INSERT INTO main_book_state (k, v, updated) VALUES ('peak', ?, ?) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v, updated=EXCLUDED.updated", (peak, now))
+    if eq < peak * (1 - DD_PAUSE) and now >= kv.get("pause_until", 0):
+        q(st, "INSERT INTO main_book_state (k, v, note, updated) VALUES ('pause_until', ?, ?, ?) ON CONFLICT (k) DO UPDATE SET v=EXCLUDED.v, note=EXCLUDED.note, updated=EXCLUDED.updated",
+          (now + PAUSE_S, f"equity {eq:.2f} < 90% of peak {peak:.2f}", now))
+        kv["pause_until"] = now + PAUSE_S
+    if now < kv.get("pause_until", 0):
+        return set(), "paused (drawdown brake)"
+    ok, why = set(), []
+    for src in FORWARD:
+        good, msg = qualified(st, src)
+        why.append(f"{src}: {'admitted' if good else 'not yet'} ({msg})")
+        if good:
+            ok.add(src)
+    return ok, "; ".join(why)
 
 
 def last_px(st, sym):
@@ -53,15 +98,16 @@ def signals(st, now):
     b = q(st, "SELECT symbol, ts_onset, ts_entry, dv24 FROM oi_drop_short_paper WHERE status='open' AND ts_entry >= ?", (BOOK_START,))
     for r in (b.itertuples(index=False) if b is not None else []):
         out.append(("F6", r.symbol, int(r.ts_onset), "SHORT", int(r.ts_entry), float(r.dv24 or 0)))
-    return [s for s in out if s[4] <= now and s[0] in ENABLED]
+    return [s for s in out if s[4] <= now]
 
 
 def open_new(st, now):
     seen = q(st, "SELECT source, symbol, key_ts FROM main_book_map")
     done = set(map(tuple, seen[["source", "symbol", "key_ts"]].itertuples(index=False))) if seen is not None and len(seen) else set()
     n = 0
+    ok, _ = enabled(st, now)
     for src, sym, key, side, t_plan, dv in sorted(signals(st, now), key=lambda s: s[4]):
-        if (src, sym, key) in done:
+        if (src, sym, key) in done or src not in ok:
             continue
         def log(status, note, tid=None, t_in=None, stop=None):
             q(st, "INSERT INTO main_book_map (source, symbol, key_ts, trade_id, status, t_entry, t_exit_plan, stop_px, note, created) "
@@ -125,7 +171,7 @@ def main() -> int:
     c = manage(st, now); o = open_new(st, now)
     if o or c or time.gmtime(now).tm_min % 30 == 0:
         m = q(st, "SELECT status, count(*) AS n FROM main_book_map GROUP BY status")
-        print(time.strftime("%Y-%m-%d %H:%M"), f"opened={o} closed={c} equity={equity(st):.2f}",
+        print(time.strftime("%Y-%m-%d %H:%M"), f"opened={o} closed={c} equity={equity(st):.2f}", enabled(st, now)[1],
               dict(zip(m["status"], m["n"])) if m is not None and len(m) else {}, flush=True)
     return 0
 
