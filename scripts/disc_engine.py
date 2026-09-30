@@ -44,7 +44,7 @@ def diffk(a, k):
 
 
 def rollmean(a, w):
-    return pd.DataFrame(a).rolling(w, min_periods=max(2, w // 2)).mean().to_numpy(np.float32)
+    return pd.DataFrame(a).rolling(w, min_periods=min(w, max(2, w // 2))).mean().to_numpy(np.float32)
 
 
 def rollz(a, w=168):
@@ -200,8 +200,13 @@ def scan():
     DISC, VALI = (1711929600, VAL0), (VAL0, now)          # 2024-04-01 .. 2025-12-31 | 2026-01-01 .. end of panel
     K = dict(L.known_factors()); K.update(extra_known())
     rows_d, rows_v = L.eval_rows(DISC), L.eval_rows(VALI)
-    res = []
+    part = OUT / "pass1_partial.json"
+    res = json.load(open(part)) if part.exists() else []            # resume: keep finished variables
+    done = {r["var"] for r in res if "disc_p" in r and "val_p" in r}
+    res = [r for r in res if r["var"] in done]
     for name, fam, F in variables():
+        if name in done:
+            continue
         F = np.where(np.isfinite(F), F, np.nan).astype(np.float32)
         cov = float(np.isfinite(F[rows_v][X["U"][rows_v]]).mean()) if len(rows_v) else 0.0
         r = {"var": name, "family": fam, "val_coverage": round(cov, 3)}
