@@ -154,7 +154,7 @@ def targets():
           "dump24": np.where(np.isfinite(ll), (ll / c - 1 <= -0.10).astype(np.float32), np.nan),
           "vol24": np.abs(f24)}
     tg = {k: np.asarray(v, np.float32)[R] for k, v in tg.items()}
-    tg["mask"] = (X["U"][R] & np.isfinite(res24))
+    tg["mask"] = (X["U"][R] & np.isfinite(tg["xs24"]))
     tg["ts"] = ts[R]
     _cache["tg"] = tg
     return tg
