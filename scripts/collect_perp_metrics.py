@@ -32,6 +32,26 @@ from src.data.storage import get_storage  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 log = logging.getLogger("perp_metrics")
+logging.raiseExceptions = False  # a failing log handler must never print its own traceback storm (2026-09-30: 18GB err log filled the disk)
+
+
+class Throttle:
+    """Log the first error of a kind, then at most one summary per `every` seconds, and
+    back off the caller while the same error keeps repeating (e.g. DB PoolTimeout)."""
+    def __init__(self, name: str, every: float = 300.0) -> None:
+        self.name, self.every, self.n, self.last, self.fails = name, every, 0, 0.0, 0
+
+    def error(self, msg: str, *a) -> None:
+        self.n += 1
+        self.fails += 1
+        now = time.time()
+        if self.n == 1 or now - self.last >= self.every:
+            log.error("[%s] " + msg + " (x%d since last report)", self.name, *a, self.n)
+            self.n, self.last = 0, now
+        time.sleep(min(60.0, 2 ** min(self.fails, 6)))  # 2s, 4s .. 60s while failures continue
+
+    def ok(self) -> None:
+        self.fails = 0
 FUT_PAUSE = 0.33
 BOOK_LAP_S = 300
 BACKFILL_DAYS = 14
@@ -54,14 +74,16 @@ class Symbols:
 def premium_loop(storage, syms: Symbols) -> None:
     s = requests.Session()
     last_prune = 0.0
+    th = Throttle("premium")
     while True:
         t0 = time.time()
         try:
             n = pm.insert_premium(storage, pm.fetch_premium(s, set(syms.get())))
             if int(t0) % 3600 < 60:
                 log.info("premium: %d rows", n)
-        except Exception:  # noqa: BLE001
-            log.exception("premium failed")
+            th.ok()
+        except Exception as e:  # noqa: BLE001
+            th.error("premium failed: %r", e)
         if t0 - last_prune > 86400:
             last_prune = t0
             try:
@@ -98,6 +120,7 @@ def hot_symbols(storage, n: int = 30) -> list[str]:
 def hot_book_loop(storage) -> None:
     """Every minute: order book of the ~30 hottest coins -> book_1m (weight ~150/min)."""
     s = requests.Session()
+    hb = Throttle("hot_book")
     while True:
         t0 = time.time()
         rows = []
@@ -110,12 +133,20 @@ def hot_book_loop(storage) -> None:
         try:
             pm.insert_book(storage, rows, table="book_1m")
         except Exception as e:  # noqa: BLE001
-            log.warning("hot book insert: %r", e)
+            hb.error("hot book insert: %r", e)
         time.sleep(max(1.0, 60 - (time.time() - t0)))
 
 
 def book_loop(storage, syms: Symbols) -> None:
     s = requests.Session()
+    th = Throttle("book")
+
+    def flush(rows):
+        try:
+            pm.insert_book(storage, rows)
+            th.ok()
+        except Exception as e:  # noqa: BLE001
+            th.error("book insert failed: %r", e)
     while True:
         lst = syms.get()
         pause = BOOK_LAP_S / max(1, len(lst))
@@ -126,10 +157,10 @@ def book_loop(storage, syms: Symbols) -> None:
             except Exception:  # noqa: BLE001
                 pass
             if len(rows) >= 50:
-                pm.insert_book(storage, rows)
+                flush(rows)
                 rows = []
             time.sleep(pause)
-        pm.insert_book(storage, rows)
+        flush(rows)
         log.info("book lap: %d symbols in %.0fs", len(lst), time.time() - t0)
 
 
@@ -139,14 +170,16 @@ def futures_loop(storage, syms: Symbols) -> None:
         backfill(storage, BACKFILL_DAYS, only_missing=True)
     except Exception:  # noqa: BLE001
         log.exception("startup backfill failed")
+    th = Throttle("futures")
     while True:
         t0 = time.time()
         lst = syms.get()
         for sym in lst:
             try:
                 pm.insert_futures(storage, sym, pm.fetch_futures(s, sym, limit=6, pause=FUT_PAUSE))
-            except Exception:  # noqa: BLE001
-                log.exception("futures %s failed", sym)
+                th.ok()
+            except Exception as e:  # noqa: BLE001
+                th.error("futures %s failed: %r", sym, e)
         log.info("futures lap: %d symbols in %.0fs", len(lst), time.time() - t0)
 
 
