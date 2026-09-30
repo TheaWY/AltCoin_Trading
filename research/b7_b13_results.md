@@ -137,3 +137,10 @@
 - F16 Korea: 0/11 runnable statements.
 - F19_004 announcements: 0/4, but same sign in both periods (delisting short +1h: +3.4% val / +0.9% disc; listing long +1h: +2.2% / +2.0%) on 29-73 events per cell. Too few events to confirm; the live F1 service already paper-logs delisting shorts.
 - B17 summary: 0 surviving hypotheses out of every runnable cell. Still open: F17 (order-book history from about mid-November), F19 (keys), spot/Bybit sub-hour F07 cells (1m backfill).
+
+## Discovery engine pass 1 (run 2026-09-30)
+- 56 cross-source variables on the hourly perp panel, residualised each 8h row on 10 known factors (ret 24h/7d/28d, rv 7d, log dv24, funding, max 1h, volume surprise, OI change 24h, BTC beta). Target: 24h BTC-residual return. Discovery 2024-04..2025-12, validation 2026-01..2026-09-25.
+- 27/56 pass BH q=0.05 on discovery; 14 confirm in validation (same sign, 95% CI excludes 0).
+- Strongest novel predictors: Korean volume share (vshare_up novel IC -0.038 disc / -0.037 val; vshare_korea -0.019 / -0.034; vshare_bt -0.021 / -0.032) and OI relative to volume (oi_to_volume +0.013 / +0.034). High Korean share of a coin's volume predicts underperformance over the next 24h beyond the known factors.
+- Tradability: 0/14 have a quintile L/S with net CI > 0 after fee + slippage. Best vshare_up +4.4bp/day [-8.3, +17.0], vshare_korea +2.8 [-8.8, +13.6]. Fast-moving variables (spot-perp divergence, taker gaps, oi_vs_price) lose 16-31bp/day to turnover.
+- Next: slow-turnover construction for the Korea-share family (weekly rebalance, hold bands), combine with oi_to_volume, then forward paper test. L/S currently trades the raw variable; test the residual itself as the signal.
