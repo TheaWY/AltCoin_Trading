@@ -27,6 +27,7 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS main_book_map (
   source TEXT NOT NULL, symbol TEXT NOT NULL, key_ts BIGINT NOT NULL, trade_id BIGINT, status TEXT, t_entry BIGINT,
   t_exit_plan BIGINT, stop_px DOUBLE PRECISION, note TEXT, created BIGINT, PRIMARY KEY (source, symbol, key_ts))"""
 STRAT = {"F2": "f2_pump_cnn", "F6": "f6_oi_short"}
+ENABLED = {"F2"}   # F6 removed 2026-09-30 (유리): its source was invalidated by the 5-min OI timestamp fix; open F6 trades still exit normally
 
 
 def last_px(st, sym):
@@ -52,7 +53,7 @@ def signals(st, now):
     b = q(st, "SELECT symbol, ts_onset, ts_entry, dv24 FROM oi_drop_short_paper WHERE status='open' AND ts_entry >= ?", (BOOK_START,))
     for r in (b.itertuples(index=False) if b is not None else []):
         out.append(("F6", r.symbol, int(r.ts_onset), "SHORT", int(r.ts_entry), float(r.dv24 or 0)))
-    return [s for s in out if s[4] <= now]
+    return [s for s in out if s[4] <= now and s[0] in ENABLED]
 
 
 def open_new(st, now):
