@@ -27,6 +27,12 @@ EX = {"upbit": ("wss://api.upbit.com/websocket/v1", "https://api.upbit.com/v1/ma
       "bithumb": ("wss://ws-api.bithumb.com/websocket/v1", "https://api.bithumb.com/v1/market/all")}
 
 
+def ms(t) -> int:
+    """Bithumb sends microseconds, Upbit milliseconds. Normalise to ms (a us value broke the 5 s book throttle: 14x rows)."""
+    t = int(t)
+    return t // 1000 if t > 10 ** 14 else t
+
+
 def markets(ex):
     r = requests.get(EX[ex][1], params={"isDetails": "false"}, timeout=20).json()
     return sorted(m["market"] for m in r if m["market"].startswith("KRW-"))
@@ -51,16 +57,16 @@ class Sink:
                 continue
             d = OUT / self.ex / kind; d.mkdir(parents=True, exist_ok=True)
             tmp = d / f".{h}.tmp"
-            pd.DataFrame(rows).to_parquet(tmp, index=False)
+            pd.DataFrame(rows).to_parquet(tmp, index=False, compression="zstd")
             os.replace(tmp, d / f"{h}.parquet")
 
     def on(self, m):
         t = m.get("type") or m.get("ty")
         if t == "trade":
-            self.tr.append(dict(ts_ms=int(m.get("trade_timestamp") or m.get("ttms")), code=m.get("code") or m.get("cd"), price=float(m.get("trade_price") or m.get("tp")),
+            self.tr.append(dict(ts_ms=ms(m.get("trade_timestamp") or m.get("ttms")), code=m.get("code") or m.get("cd"), price=float(m.get("trade_price") or m.get("tp")),
                                 qty=float(m.get("trade_volume") or m.get("tv")), side=int((m.get("ask_bid") or m.get("ab")) == "BID"), seq=int(m.get("sequential_id") or m.get("sid") or 0)))
         elif t == "orderbook":
-            code, ts = m.get("code") or m.get("cd"), int(m.get("timestamp") or m.get("tms"))
+            code, ts = m.get("code") or m.get("cd"), ms(m.get("timestamp") or m.get("tms"))
             if ts - self.last_book.get(code, 0) < 5000:
                 return
             self.last_book[code] = ts
