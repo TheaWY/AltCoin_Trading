@@ -182,7 +182,9 @@ def s3_liq():
     st = get_storage()
     with st._connect() as c:  # noqa: SLF001
         cur = c.raw.cursor(); cur.execute("SELECT symbol, timestamp, long_liq_notional, short_liq_notional FROM liquidation_agg_1h")
-        Lq = pd.DataFrame(cur.fetchall(), columns=["symbol", "ts", "ll", "sl"])
+        raw = cur.fetchall()
+        Lq = pd.DataFrame(raw) if raw and isinstance(raw[0], dict) else pd.DataFrame(raw, columns=["symbol", "timestamp", "long_liq_notional", "short_liq_notional"])
+        Lq = Lq.rename(columns={"timestamp": "ts", "long_liq_notional": "ll", "short_liq_notional": "sl"})
     Lq["code"] = Lq.symbol.str.replace("/", "")
     j_of = {c: k for k, c in enumerate(codes)}; t_of = {t: k for k, t in enumerate(ts)}
     lc = X["lc"]; r1 = np.vstack([np.full((1, lc.shape[1]), np.nan), np.diff(lc, axis=0)])
@@ -229,7 +231,7 @@ def s4_grid():
     R = np.where(listed, cf[i0 + 24] / c[i0] - 1 - fund, np.nan)
     dv = np.nan_to_num(X["dv24"]); adv30 = pd.DataFrame(dv).rolling(720, min_periods=240).mean().to_numpy()[i0]
     upq = np.nan_to_num(np.asarray(B30.P("up_qv"))); qv = np.nan_to_num(X["qv"])
-    hold = day * D >= B30.HOLD
+    hold = day >= B30.HOLD                                   # B30.HOLD is in days
     series, rows = {}, []
     for Lb in (24, 72, 168):
         sh = -(pd.DataFrame(upq).rolling(Lb, min_periods=Lb // 2).sum().to_numpy() / np.maximum(pd.DataFrame(qv).rolling(Lb, min_periods=Lb // 2).sum().to_numpy(), 1))[i0]
@@ -272,7 +274,12 @@ def s4_grid():
 
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    if (OUT / "overnight.json").exists():
+        RES.update(json.load(open(OUT / "overnight.json")))
+    only = sys.argv[1:]
     for name, fn in (("S4", s4_grid), ("S2", s2_book), ("S1", s1_unlocks), ("S3", s3_liq)):
+        if only and name not in only:
+            continue
         try:
             r = fn()
             print(name, "done", json.dumps(r, default=float)[:1500], flush=True)
