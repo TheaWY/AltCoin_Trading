@@ -1,4 +1,5 @@
-"""Main paper book executor: trades the F2 (pump CNN) and F6 (oi-drop short) signals in the main $1,000 paper account.  PAPER ONLY.
+"""Main paper book executor (2026-10-01: all forward tests F2-F9 are candidates, admitted only by their own registered rule;
+F3/F4/F5/F9/F7 are mirrored from their forward tables). Originally: trades the F2 (pump CNN) and F6 (oi-drop short) signals in the main $1,000 paper account.  PAPER ONLY.
 Chosen by 유리 2026-09-28 after the portfolio reset: main book = F2 + F6 only (signal_xs, core hold and pump rider disabled).
 Runs every minute (launchd com.altcoin.mainbook). Never places orders; LIVE_TRADING is not read or changed here.
 
@@ -28,7 +29,11 @@ NOTIONAL_PCT, MAX_OPEN, HOLD, STOP, STOP_SLIP, STALE = 0.10, 3, 4 * 3600, 0.05, 
 SCHEMA = """CREATE TABLE IF NOT EXISTS main_book_map (
   source TEXT NOT NULL, symbol TEXT NOT NULL, key_ts BIGINT NOT NULL, trade_id BIGINT, status TEXT, t_entry BIGINT,
   t_exit_plan BIGINT, stop_px DOUBLE PRECISION, note TEXT, created BIGINT, PRIMARY KEY (source, symbol, key_ts))"""
-STRAT = {"F2": "f2_pump_cnn", "F6": "f6_oi_short"}
+STRAT = {"F2": "f2_pump_cnn", "F6": "f6_oi_short", "F3": "f3_crash_rebound", "F4": "f4_spot_led", "F5": "f5_unlock_short",
+         "F7": "f7_vshare_ls", "F9": "f9_listing_fade"}
+# mirror sources: the main-book position closes when the forward row it copies is no longer 'open'
+MIRROR = {"F3": ("crash_rebound_paper", "ts_signal"), "F4": ("spot_led_paper", "ts_signal"), "F5": ("unlock_short_paper", "ts_open"),
+          "F9": ("f9_listing_fade_paper", "notice_id"), "F7": ("f7_vshare_paper", "ts_signal")}
 # Admission is rule-based, not discretionary (2026-10-01, after the -8.07 USDT start):
 #  - a strategy trades in the main book only once its OWN forward test has passed its registered decision rule
 #    (research/forward.yaml: >= 300 closed paper trades, mean net > 0 with a day-clustered 95% CI above 0);
@@ -36,19 +41,41 @@ STRAT = {"F2": "f2_pump_cnn", "F6": "f6_oi_short"}
 #    (no cap on the upside).
 #  - the only brake is on the downside: if equity falls 10% below its running peak, new entries pause for 7 days.
 # F6 stays out permanently (source invalidated by the 5-min OI timestamp fix).
-FORWARD = {"F2": ("pump_cnn_paper", "ts_signal", "net")}
-MIN_TRADES, DD_PAUSE, PAUSE_S = 300, 0.10, 7 * 86400
+# 2026-10-01 (B31 follow-up): every forward test is a candidate, each judged by ITS registered rule in research/forward.yaml.
+# unit: 'trade' = one net per row, CI clustered by day; 'book' = rows summed per ts (weekly L/S book); 'event' = per row, iid bootstrap.
+FORWARD = {
+    "F2": ("pump_cnn_paper", "ts_signal", "net", 300, "trade"),
+    "F3": ("crash_rebound_paper", "ts_signal", "net", 30, "trade"),
+    "F4": ("spot_led_paper", "ts_signal", "net", 100, "trade"),
+    "F5": ("unlock_short_paper", "ts_open", "net", 60, "trade"),
+    "F7": ("f7_vshare_paper", "ts_signal", "net", 12, "book"),
+    "F9": ("f9_listing_fade_paper", "entry_ts", "net", 30, "event"),
+}
+# F8 (late-session basket) is judged too but has no execution adapter yet; it is reported, not traded.
+FORWARD_REPORT_ONLY = {"F8": ("f8_latesession_paper", "day", "net", 120, "event")}
+F7_GROSS = 0.5                     # gross notional of the mirrored F7 book as a share of equity (legs exempt from MAX_OPEN)
+DD_PAUSE, PAUSE_S = 0.10, 7 * 86400
 STATE = "CREATE TABLE IF NOT EXISTS main_book_state (k TEXT PRIMARY KEY, v DOUBLE PRECISION, note TEXT, updated BIGINT)"
 
 
 def qualified(st, src):
-    tab, tcol, ncol = FORWARD[src]
-    d = q(st, f"SELECT {tcol} AS t, {ncol} AS net FROM {tab} WHERE status='closed' AND {ncol} IS NOT NULL")
-    if d is None or len(d) < MIN_TRADES:
-        return False, f"{0 if d is None else len(d)}/{MIN_TRADES} forward trades"
-    days = [g.to_numpy() for _, g in d.groupby(d["t"] // 86400)["net"]]
+    tab, tcol, ncol, need, unit = {**FORWARD, **FORWARD_REPORT_ONLY}[src]
+    try:
+        d = q(st, f"SELECT {tcol} AS t, {ncol} AS net FROM {tab} WHERE status LIKE 'closed%%' AND {ncol} IS NOT NULL")
+    except Exception as e:  # noqa: BLE001
+        return False, f"table not ready ({type(e).__name__})"
+    if d is None or not len(d):
+        return False, f"0/{need}"
+    if unit == "book":
+        d = d.groupby("t", as_index=False)["net"].sum()
+    if len(d) < need:
+        return False, f"{len(d)}/{need}"
     rng = np.random.default_rng(3)
-    boot = [np.concatenate([days[i] for i in rng.integers(0, len(days), len(days))]).mean() for _ in range(2000)]
+    if unit == "trade":
+        days = [g.to_numpy() for _, g in d.groupby(d["t"] // 86400)["net"]]
+        boot = [np.concatenate([days[i] for i in rng.integers(0, len(days), len(days))]).mean() for _ in range(2000)]
+    else:
+        x = d["net"].to_numpy(); boot = [x[rng.integers(0, len(x), len(x))].mean() for _ in range(2000)]
     lo = float(np.percentile(boot, 2.5))
     return lo > 0, f"n={len(d)} mean={d['net'].mean():+.4f} ci_lo={lo:+.4f}"
 
@@ -67,10 +94,10 @@ def enabled(st, now):
     if now < kv.get("pause_until", 0):
         return set(), "paused (drawdown brake)"
     ok, why = set(), []
-    for src in FORWARD:
+    for src in list(FORWARD) + list(FORWARD_REPORT_ONLY):
         good, msg = qualified(st, src)
         why.append(f"{src}: {'admitted' if good else 'not yet'} ({msg})")
-        if good:
+        if good and src in FORWARD:
             ok.add(src)
     return ok, "; ".join(why)
 
@@ -98,7 +125,27 @@ def signals(st, now):
     b = q(st, "SELECT symbol, ts_onset, ts_entry, dv24 FROM oi_drop_short_paper WHERE status='open' AND ts_entry >= ?", (BOOK_START,))
     for r in (b.itertuples(index=False) if b is not None else []):
         out.append(("F6", r.symbol, int(r.ts_onset), "SHORT", int(r.ts_entry), float(r.dv24 or 0)))
+    # mirror adapters (2026-10-01): single-coin forward rows; the main-book position closes when the forward row closes
+    for src, sql, side in (("F3", "SELECT symbol, ts_signal AS k, ts_signal AS t, side, dv24 FROM crash_rebound_paper WHERE status='open' AND side <> 0", None),
+                           ("F4", "SELECT symbol, ts_signal AS k, ts_signal AS t, side, dv24 FROM spot_led_paper WHERE status='open' AND side <> 0", None),
+                           ("F5", "SELECT symbol, ts_open AS k, ts_open AS t, -1 AS side, 0 AS dv24 FROM unlock_short_paper WHERE status='open'", None),
+                           ("F9", "SELECT replace(symbol, 'USDT', '/USDT') AS symbol, notice_id AS k, entry_ts AS t, -1 AS side, dv24 FROM f9_listing_fade_paper WHERE status='open'", None)):
+        try:
+            r_ = q(st, sql)
+        except Exception:  # noqa: BLE001
+            continue
+        for r in (r_.itertuples(index=False) if r_ is not None else []):
+            out.append((src, r.symbol, int(r.k), "LONG" if r.side > 0 else "SHORT", int(r.t), float(r.dv24 or 0)))
     return [s for s in out if s[4] <= now]
+
+
+def f7_legs(st):
+    """open F7 legs (symbol with slash, ts_signal, weight)."""
+    try:
+        r = q(st, "SELECT replace(symbol, 'USDT', '/USDT') AS symbol, ts_signal, w, dv24 FROM f7_vshare_paper WHERE status='open'")
+    except Exception:  # noqa: BLE001
+        return []
+    return [] if r is None else list(r.itertuples(index=False))
 
 
 def open_new(st, now):
@@ -115,7 +162,7 @@ def open_new(st, now):
               (src, sym, key, tid, status, t_in, (t_in + HOLD) if t_in else None, stop, note, now))
         if now - t_plan > STALE:
             log("skip_stale", f"seen {now - t_plan}s after planned entry"); continue
-        mine = q(st, "SELECT count(*) AS n FROM main_book_map WHERE status='open'")
+        mine = q(st, "SELECT count(*) AS n FROM main_book_map WHERE status='open' AND source <> 'F7'")
         if int(mine["n"].iloc[0]) >= MAX_OPEN:
             log("skip_cap", f"{MAX_OPEN} positions already open"); continue
         ts_px, px = last_px(st, sym)
@@ -134,6 +181,28 @@ def open_new(st, now):
         st.update_portfolio_cash(cash - notional - fee)
         log("open", f"{side} {notional:.2f} USDT at {px:g} (equity {eq:.2f})", tid, now, px * (1 + STOP) if src == "F6" else None)
         print(time.strftime("%H:%M"), "OPEN", src, sym, side, round(notional, 2), px, flush=True); n += 1
+    if "F7" in ok:
+        eq = equity(st)
+        for leg in f7_legs(st):
+            if ("F7", leg.symbol, int(leg.ts_signal)) in done:
+                continue
+            ts_px, px = last_px(st, leg.symbol)
+            if px is None or now - ts_px > 180:
+                continue
+            side = "LONG" if leg.w > 0 else "SHORT"; notional = abs(float(leg.w)) * F7_GROSS * eq
+            fee = notional * (_fee() + slip(float(leg.dv24 or 0))); cash = float(st.get_portfolio_state()["cash"])
+            if notional + fee > cash:
+                continue
+            big = 1e18
+            tid = st.insert_paper_trade({
+                "signal_id": None, "exit_price": None, "symbol": leg.symbol, "direction": side, "entry_price": px, "quantity": notional / px,
+                "stop_loss": big if side == "SHORT" else 0.0, "take_profit": 0.0 if side == "SHORT" else big, "status": "open", "pnl": None,
+                "opened_at": now, "closed_at": None, "strategy": STRAT["F7"], "style": STRAT["F7"], "atr_pct": None, "trail_price": px,
+                "exit_reason": None, "fees": fee})
+            st.update_portfolio_cash(cash - notional - fee)
+            q(st, "INSERT INTO main_book_map (source, symbol, key_ts, trade_id, status, t_entry, note, created) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
+              ("F7", leg.symbol, int(leg.ts_signal), tid, "open", now, f"{side} {notional:.2f} USDT leg", now))
+            n += 1
     return n
 
 
@@ -146,6 +215,20 @@ def manage(st, now):
         if t is None:                                    # closed elsewhere (should not happen)
             q(st, "UPDATE main_book_map SET status='gone' WHERE source=? AND symbol=? AND key_ts=?", (r.source, r.symbol, r.key_ts)); continue
         px_exit, reason, t_close = None, None, now
+        if r.source in MIRROR:
+            tab, kcol = MIRROR[r.source]
+            sym_src = r.symbol.replace("/", "") if r.source in ("F9", "F7") else r.symbol
+            stt = q(st, f"SELECT status FROM {tab} WHERE symbol=? AND {kcol}=?", (sym_src, int(r.key_ts)))
+            if stt is not None and len(stt) and stt["status"].iloc[0] == "open":
+                continue
+            ts_px, px = last_px(st, r.symbol)
+            if px is None:
+                continue
+            _close(st, t, px, now, f"{STRAT[r.source]}:mirror")
+            q(st, "UPDATE main_book_map SET status='closed', note=COALESCE(note,'') || ? WHERE source=? AND symbol=? AND key_ts=?",
+              (f" | closed mirror at {px:g}", r.source, r.symbol, r.key_ts))
+            n += 1
+            continue
         if r.stop_px is not None and r.stop_px == r.stop_px:     # F6 stop on 1-minute highs since entry
             b = q(st, "SELECT ts, open, high FROM prices_1m WHERE symbol=? AND ts > ? AND ts <= ? ORDER BY ts", (r.symbol, int(r.t_entry) - 60, min(now, int(r.t_exit_plan))))
             if b is not None and len(b):
