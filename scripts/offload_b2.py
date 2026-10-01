@@ -99,6 +99,26 @@ def move_backups(e: dict, keep_days: int) -> None:
     log.info("backups: moved %d files, freed %.1f GB", len(old), freed / 1e9)
 
 
+def move_ticks(e: dict, keep_days: int) -> None:
+    """kr_ticks hourly files older than keep_days: upload, verify with rclone check, then remove locally (B2 keeps them,
+    full microsecond data). Off unless --move-ticks-days > 0."""
+    base = ROOT / "data/cache/kr_ticks"
+    if keep_days <= 0 or not base.exists():
+        return
+    cutoff = time.time() - keep_days * 86400
+    old = [f for f in base.rglob("*.parquet") if f.stat().st_mtime < cutoff]
+    if not old:
+        return
+    with tempfile.NamedTemporaryFile("w", delete=False) as fl:
+        fl.write("\n".join(str(f.relative_to(base)) for f in old))
+    rclone(e, "copy", str(base), dest(e, "cache/kr_ticks"), "--files-from", fl.name)
+    rclone(e, "check", str(base), dest(e, "cache/kr_ticks"), "--files-from", fl.name, "--one-way")
+    freed = sum(f.stat().st_size for f in old)
+    for f in old:
+        f.unlink()
+    log.info("kr_ticks: moved %d files to B2, freed %.1f GB", len(old), freed / 1e9)
+
+
 def prune_db(e: dict, days: int, vacuum_full: bool) -> None:
     from src.data.storage import get_storage
     st = get_storage()
@@ -154,11 +174,13 @@ def main() -> int:
     ap.add_argument("--prune-db", action="store_true")
     ap.add_argument("--db-days", type=int, default=800)
     ap.add_argument("--vacuum-full", action="store_true")
+    ap.add_argument("--move-ticks-days", type=int, default=0, help="move kr_ticks files older than N days to B2 (0 = off)")
     a = ap.parse_args()
     e = env()
     before = shutil.disk_usage(str(Path.home())).free
     copy_dirs(e)
     move_backups(e, a.keep_backups)
+    move_ticks(e, a.move_ticks_days)
     if a.prune_db:
         prune_db(e, a.db_days, a.vacuum_full)
     after = shutil.disk_usage(str(Path.home())).free
