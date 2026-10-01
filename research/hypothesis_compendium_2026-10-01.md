@@ -39,7 +39,7 @@ Forward paper (clean, out-of-sample by construction):
 
 | ID | Strategy | Closed | Mean net | Status |
 |---|---|---|---|---|
-| F1 | Upbit notice | 6 | n/a (net60 NaN, needs fix) | collecting |
+| F1 | Upbit notice | 0 | – | all 6 earlier rows were stale reposts; fixed, collecting |
 | F2 | pump CNN | 25 | +0.75% (sd 9.5%) | needs 300 for admission |
 | F3 | crash rebound long | 2 | +18% | too few |
 | F4 | spot-led | 14 | −5.2% (sd 24%) | failing |
@@ -73,3 +73,16 @@ Applied to every survivor above (F2 backtest, B19 top 5, vshare_up, DISC2 best, 
 | E13 | time-of-day split (Asia / EU / US session) | one session only |
 | E14 | top-decile vs mid-cap only universe | edge only in illiquid tail |
 | E15 | lookback sensitivity (±50% window) | sign flips |
+
+## 5. B21_EDGE results (run 2026-10-01, data/reports/b21/edge.md)
+
+Predictive signals all survive: no sign flip across weekday/weekend, 00/08/16h, BTC up/down, vol high/low, liquid/illiquid; a 1h delay keeps >85% of IC; all beat a 200-permutation placebo. Raw ICs (+0.11 to +0.14) include the known low-vol/size effects.
+
+| book (2026) | base/period | worst stress | verdict |
+|---|---|---|---|
+| vshare_up @168h | +0.66% [-0.03, +1.39] | drop top 5 weeks: +0.06% | closest to surviving -> forward F7 |
+| H033 @72h | +0.14% | drop top 5: -0.16%, BTC down: -0.02% | dead |
+| H013 @24h | +0.02% | 2x cost: -0.07%, delay: 0.00% | dead |
+| F2 trades | +0.46%/trade, CI spans 0 | Asia session -0.16%, drop top 5 days -70% | not confirmed; forward continues |
+
+F7 forward paper started 2026-10-01 (22L/22S, weekly). Pass needs >= 12 weekly books, >= 300 legs, CI > 0.

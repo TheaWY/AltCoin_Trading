@@ -18,5 +18,6 @@ Everything still open from B17 and the discovery engine, plus the main-book loss
 | F2 forward | registered decision: keep only if mean net > 0 with day-clustered CI above 0 after >= 300 paper trades | 16 trades so far | ~6-8 weeks |
 
 Rules: pre-register before running, commit scripts first, discovery 2024-04..2025-12 / validation 2026, day- or period-clustered CIs, costs included, log every result to research/trial_ledger.csv.
-| B21_EDGE | 15 edge-case tests (E01–E15) on all survivors, see hypothesis_compendium_2026-10-01.md | queued |
-| F1_FIX | upbit_notice_paper net60 is NaN on all 6 rows, fix computation | queued |
+| B21_EDGE | 15 edge-case tests on survivors | done: predictive 4/4 survive, books 0/3 + F2 not confirmed; vshare_up -> F7 |
+| F1_FIX | stale reposts filtered, NaN -> NULL | done |
+| F7 forward | weekly vshare_up L/S paper, Thursdays | live from 2026-10-01 |
