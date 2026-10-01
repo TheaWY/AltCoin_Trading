@@ -17,3 +17,4 @@ b2_keys.txt
 catboost_info/
 data/tmp_aggtrades/
 data/tmp_b17/
+.claude/

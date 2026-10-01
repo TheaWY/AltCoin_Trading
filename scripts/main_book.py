@@ -51,7 +51,19 @@ FORWARD = {
     "F7": ("f7_vshare_paper", "ts_signal", "net", 12, "book"),
     "F9": ("f9_listing_fade_paper", "entry_ts", "net", 30, "event"),
 }
+# Autonomous-research promotions (research/forward_auto.yaml, status 'forward') are candidates too: same rule as F7 (book unit).
+try:
+    import yaml as _yaml
+    _fa = _yaml.safe_load(open(ROOT / "research/forward_auto.yaml")) or {}
+    for _k, _v in _fa.items():
+        if _v.get("status") == "forward":
+            FORWARD[_k] = (_v["table"], "ts_signal", "net", 60, "book")
+except Exception:  # noqa: BLE001
+    pass
 # F8 (late-session basket) is judged too but has no execution adapter yet; it is reported, not traded.
+for _k, _v in list(FORWARD.items()):
+    if _k.startswith("AR"):
+        MIRROR[_k] = (_v[0], "ts_signal"); STRAT[_k] = _k.lower()
 FORWARD_REPORT_ONLY = {"F8": ("f8_latesession_paper", "day", "net", 120, "event")}
 F7_GROSS = 0.5                     # gross notional of the mirrored F7 book as a share of equity (legs exempt from MAX_OPEN)
 DD_PAUSE, PAUSE_S = 0.10, 7 * 86400
@@ -139,10 +151,10 @@ def signals(st, now):
     return [s for s in out if s[4] <= now]
 
 
-def f7_legs(st):
-    """open F7 legs (symbol with slash, ts_signal, weight)."""
+def f7_legs(st, table="f7_vshare_paper"):
+    """open legs of a book-type forward table (symbol with slash, ts_signal, weight)."""
     try:
-        r = q(st, "SELECT replace(symbol, 'USDT', '/USDT') AS symbol, ts_signal, w, dv24 FROM f7_vshare_paper WHERE status='open'")
+        r = q(st, f"SELECT replace(symbol, 'USDT', '/USDT') AS symbol, ts_signal, w, dv24 FROM {table} WHERE status='open'")
     except Exception:  # noqa: BLE001
         return []
     return [] if r is None else list(r.itertuples(index=False))
@@ -162,7 +174,7 @@ def open_new(st, now):
               (src, sym, key, tid, status, t_in, (t_in + HOLD) if t_in else None, stop, note, now))
         if now - t_plan > STALE:
             log("skip_stale", f"seen {now - t_plan}s after planned entry"); continue
-        mine = q(st, "SELECT count(*) AS n FROM main_book_map WHERE status='open' AND source <> 'F7'")
+        mine = q(st, "SELECT count(*) AS n FROM main_book_map WHERE status='open' AND source <> 'F7' AND source NOT LIKE 'AR%%'")
         if int(mine["n"].iloc[0]) >= MAX_OPEN:
             log("skip_cap", f"{MAX_OPEN} positions already open"); continue
         ts_px, px = last_px(st, sym)
@@ -181,15 +193,16 @@ def open_new(st, now):
         st.update_portfolio_cash(cash - notional - fee)
         log("open", f"{side} {notional:.2f} USDT at {px:g} (equity {eq:.2f})", tid, now, px * (1 + STOP) if src == "F6" else None)
         print(time.strftime("%H:%M"), "OPEN", src, sym, side, round(notional, 2), px, flush=True); n += 1
-    if "F7" in ok:
+    for bsrc in [k for k in ok if k == "F7" or k.startswith("AR")]:
         eq = equity(st)
-        for leg in f7_legs(st):
-            if ("F7", leg.symbol, int(leg.ts_signal)) in done:
+        n_books = len([k for k in ok if k == "F7" or k.startswith("AR")])
+        for leg in f7_legs(st, FORWARD[bsrc][0]):
+            if (bsrc, leg.symbol, int(leg.ts_signal)) in done:
                 continue
             ts_px, px = last_px(st, leg.symbol)
             if px is None or now - ts_px > 180:
                 continue
-            side = "LONG" if leg.w > 0 else "SHORT"; notional = abs(float(leg.w)) * F7_GROSS * eq
+            side = "LONG" if leg.w > 0 else "SHORT"; notional = abs(float(leg.w)) * F7_GROSS * eq / n_books
             fee = notional * (_fee() + slip(float(leg.dv24 or 0))); cash = float(st.get_portfolio_state()["cash"])
             if notional + fee > cash:
                 continue
@@ -197,11 +210,11 @@ def open_new(st, now):
             tid = st.insert_paper_trade({
                 "signal_id": None, "exit_price": None, "symbol": leg.symbol, "direction": side, "entry_price": px, "quantity": notional / px,
                 "stop_loss": big if side == "SHORT" else 0.0, "take_profit": 0.0 if side == "SHORT" else big, "status": "open", "pnl": None,
-                "opened_at": now, "closed_at": None, "strategy": STRAT["F7"], "style": STRAT["F7"], "atr_pct": None, "trail_price": px,
+                "opened_at": now, "closed_at": None, "strategy": STRAT[bsrc], "style": STRAT[bsrc], "atr_pct": None, "trail_price": px,
                 "exit_reason": None, "fees": fee})
             st.update_portfolio_cash(cash - notional - fee)
             q(st, "INSERT INTO main_book_map (source, symbol, key_ts, trade_id, status, t_entry, note, created) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING",
-              ("F7", leg.symbol, int(leg.ts_signal), tid, "open", now, f"{side} {notional:.2f} USDT leg", now))
+              (bsrc, leg.symbol, int(leg.ts_signal), tid, "open", now, f"{side} {notional:.2f} USDT leg", now))
             n += 1
     return n
 
@@ -217,7 +230,7 @@ def manage(st, now):
         px_exit, reason, t_close = None, None, now
         if r.source in MIRROR:
             tab, kcol = MIRROR[r.source]
-            sym_src = r.symbol.replace("/", "") if r.source in ("F9", "F7") else r.symbol
+            sym_src = r.symbol.replace("/", "") if r.source in ("F9", "F7") or r.source.startswith("AR") else r.symbol
             stt = q(st, f"SELECT status FROM {tab} WHERE symbol=? AND {kcol}=?", (sym_src, int(r.key_ts)))
             if stt is not None and len(stt) and stt["status"].iloc[0] == "open":
                 continue
