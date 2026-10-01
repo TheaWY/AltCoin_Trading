@@ -1,0 +1,200 @@
+{"method": "xs_sort", "var": "upbit_share_24h", "cond": null, "prio": 0, "id": "AR28741da3", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "xs_sort", "var": "upbit_share_7d", "cond": null, "prio": 0, "id": "ARa200b4d5", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "xs_sort", "var": "upbit_share_chg", "cond": null, "prio": 0, "id": "AR4061dbe0", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "xs_sort", "var": "korea_share_24h", "cond": null, "prio": 0, "id": "AR4cc495f9", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "xs_sort", "var": "kimchi_prem_rel", "cond": null, "prio": 0, "id": "ARd224444c", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "xs_sort", "var": "kimchi_prem_chg", "cond": null, "prio": 0, "id": "AR2816e16c", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "xs_sort", "var": "rv_7d", "cond": null, "prio": 1, "id": "AR9455e217", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "xs_sort", "var": "ivol_7d", "cond": null, "prio": 1, "id": "ARc07576b7", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "xs_sort", "var": "rsj_7d", "cond": null, "prio": 1, "id": "AR3bc90575", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "xs_sort", "var": "jump_share_7d", "cond": null, "prio": 1, "id": "AR688524d8", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "xs_sort", "var": "skew_7d", "cond": null, "prio": 1, "id": "AR08727cd2", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "xs_sort", "var": "vol_of_vol_7d", "cond": null, "prio": 1, "id": "AR0ffc06ae", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "xs_sort", "var": "session_asia_var_share", "cond": null, "prio": 1, "id": "AR1e94a090", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "xs_sort", "var": "funding_7d", "cond": null, "prio": 1, "id": "AR9a8d223e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "xs_sort", "var": "funding_dev", "cond": null, "prio": 1, "id": "ARfcc37771", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "xs_sort", "var": "funding_z", "cond": null, "prio": 1, "id": "ARf5add01c", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "xs_sort", "var": "taker_share_24h", "cond": null, "prio": 2, "id": "AR6a939563", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "xs_sort", "var": "taker_share_7d", "cond": null, "prio": 2, "id": "ARe1c863dd", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "xs_sort", "var": "taker_var_compression", "cond": null, "prio": 2, "id": "AR3020160a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "xs_sort", "var": "oi_chg_7d", "cond": null, "prio": 2, "id": "ARcfe84e50", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "xs_sort", "var": "oi_to_volume", "cond": null, "prio": 2, "id": "AR80684593", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "DISC1 survivor (predictive only)"}
+{"method": "xs_sort", "var": "fund_x_oi", "cond": null, "prio": 2, "id": "AR58d0e056", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "crowding interaction [exploratory]"}
+{"method": "ctrend_combo", "var": "ALL", "cond": null, "prio": 2, "id": "AR903e5796", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Lewellen/Fieberg combination: rolling 180d FM slopes x characteristics, no in-sample weights"}
+{"method": "xs_sort", "var": "rev_1d", "cond": null, "prio": 3, "id": "AR6bd75e46", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Jegadeesh 1990; Liu-Tsyvinski-Wu 2022"}
+{"method": "xs_sort", "var": "rev_3d", "cond": null, "prio": 3, "id": "ARd6d82d51", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "short-term reversal"}
+{"method": "xs_sort", "var": "mom_3w", "cond": null, "prio": 3, "id": "AR8d3299c2", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "LTW 2022 CMOM"}
+{"method": "xs_sort", "var": "mom_4w_skip1w", "cond": null, "prio": 3, "id": "ARcda0b6a2", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Jegadeesh-Titman skip-week"}
+{"method": "xs_sort", "var": "max_1h_7d", "cond": null, "prio": 3, "id": "ARc91405d8", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Bali-Cakici-Whitelaw 2011 lottery"}
+{"method": "xs_sort", "var": "dist_from_30d_high", "cond": null, "prio": 3, "id": "ARc3494dfe", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "George-Hwang 2004 52-week high"}
+{"method": "xs_sort", "var": "rangepos_24h", "cond": null, "prio": 3, "id": "ARf4d3aa70", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "intraday range position (reversal)"}
+{"method": "xs_sort", "var": "vol_surprise", "cond": null, "prio": 3, "id": "AR25ab99e5", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Gervais-Kaniel-Mingelgrin 2001"}
+{"method": "xs_sort", "var": "amihud_7d", "cond": null, "prio": 3, "id": "AR5f6e058e", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Amihud 2002"}
+{"method": "xs_sort", "var": "trades_per_dollar", "cond": null, "prio": 3, "id": "AR9eef64a1", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "retail intensity [exploratory]"}
+{"method": "xs_sort", "var": "avg_trade_size_z", "cond": null, "prio": 3, "id": "ARd566a207", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "informed-flow proxy (large trades) [exploratory]"}
+{"method": "xs_sort", "var": "gap_vs_btc_24h", "cond": null, "prio": 3, "id": "AR3e5b3ea6", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Hou 2007 lead-lag catch-up"}
+{"method": "xs_sort", "var": "beta_30d", "cond": null, "prio": 3, "id": "ARf6d14611", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Frazzini-Pedersen 2014 BAB"}
+{"method": "xs_sort", "var": "corr_btc_7d", "cond": null, "prio": 3, "id": "ARa79e1f0f", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "co-movement [exploratory]"}
+{"method": "factor_momentum", "var": "upbit_share_24h", "cond": null, "prio": 3, "id": "AR018061a7", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "factor_momentum", "var": "upbit_share_7d", "cond": null, "prio": 3, "id": "AR4de21b01", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "factor_momentum", "var": "upbit_share_chg", "cond": null, "prio": 3, "id": "AR135a0cad", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "factor_momentum", "var": "korea_share_24h", "cond": null, "prio": 3, "id": "ARd5d71ff6", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "factor_momentum", "var": "kimchi_prem_rel", "cond": null, "prio": 3, "id": "ARd7d1090c", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "factor_momentum", "var": "kimchi_prem_chg", "cond": null, "prio": 3, "id": "ARd481ec5f", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "xs_sort", "var": "ls_top_minus_global", "cond": null, "prio": 4, "id": "AR834cc5b1", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "smart vs crowd positioning [exploratory]"}
+{"method": "xs_sort", "var": "taker_ratio_24h", "cond": null, "prio": 4, "id": "AR2fc91cc8", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "taker buy/sell ratio"}
+{"method": "factor_momentum", "var": "rv_7d", "cond": null, "prio": 4, "id": "AR6d1a9285", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "factor_momentum", "var": "ivol_7d", "cond": null, "prio": 4, "id": "ARff2cc7c3", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "factor_momentum", "var": "rsj_7d", "cond": null, "prio": 4, "id": "ARab955928", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "factor_momentum", "var": "jump_share_7d", "cond": null, "prio": 4, "id": "ARcc58de45", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "factor_momentum", "var": "skew_7d", "cond": null, "prio": 4, "id": "ARbedef628", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "factor_momentum", "var": "vol_of_vol_7d", "cond": null, "prio": 4, "id": "ARfce704dd", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "factor_momentum", "var": "session_asia_var_share", "cond": null, "prio": 4, "id": "ARd0a2eeaf", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "factor_momentum", "var": "funding_7d", "cond": null, "prio": 4, "id": "AR86033591", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "factor_momentum", "var": "funding_dev", "cond": null, "prio": 4, "id": "ARa1b38cb9", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "factor_momentum", "var": "funding_z", "cond": null, "prio": 4, "id": "AR955d3a48", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "mfd_gate", "var": "ALL", "cond": null, "prio": 4, "id": "ARe87addba", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "machine-forecast-disagreement gate (Chu-Shen-Zhu 2026): trade only coins where bootstrap ridge forecasts agree"}
+{"method": "factor_momentum", "var": "taker_share_24h", "cond": null, "prio": 5, "id": "AR8a7fc594", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "factor_momentum", "var": "taker_share_7d", "cond": null, "prio": 5, "id": "AR2aa58417", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "factor_momentum", "var": "taker_var_compression", "cond": null, "prio": 5, "id": "AR43091915", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "factor_momentum", "var": "oi_chg_7d", "cond": null, "prio": 5, "id": "AR0fd733c7", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "factor_momentum", "var": "oi_to_volume", "cond": null, "prio": 5, "id": "AR09ae0651", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "DISC1 survivor (predictive only)"}
+{"method": "factor_momentum", "var": "fund_x_oi", "cond": null, "prio": 5, "id": "AR0f56a6f7", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "crowding interaction [exploratory]"}
+{"method": "layered", "var": "upbit_share_24h", "cond": "btc_30d_down", "prio": 5, "id": "ARf9e61b4a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "layered", "var": "upbit_share_24h", "cond": "mkt_vol_high", "prio": 5, "id": "ARc2017434", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "layered", "var": "upbit_share_24h", "cond": "breadth_low", "prio": 5, "id": "AR09f748d6", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "layered", "var": "upbit_share_24h", "cond": "funding_crowded", "prio": 5, "id": "AR9f694c28", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "layered", "var": "upbit_share_24h", "cond": "weekend", "prio": 5, "id": "ARffa1bbb5", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "layered", "var": "upbit_share_24h", "cond": "korea_hot", "prio": 5, "id": "AR71f9392d", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "B29/B30/B31/B33 survivor (retail attention)"}
+{"method": "layered", "var": "upbit_share_7d", "cond": "btc_30d_down", "prio": 5, "id": "AR8d4baad4", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "layered", "var": "upbit_share_7d", "cond": "mkt_vol_high", "prio": 5, "id": "AR1dd75492", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "layered", "var": "upbit_share_7d", "cond": "breadth_low", "prio": 5, "id": "AR3c521a77", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "layered", "var": "upbit_share_7d", "cond": "funding_crowded", "prio": 5, "id": "ARcabb9992", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "layered", "var": "upbit_share_7d", "cond": "weekend", "prio": 5, "id": "ARb9f21b35", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "layered", "var": "upbit_share_7d", "cond": "korea_hot", "prio": 5, "id": "AR84541aaf", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "same, slow"}
+{"method": "layered", "var": "upbit_share_chg", "cond": "btc_30d_down", "prio": 5, "id": "AR156ea12a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "layered", "var": "upbit_share_chg", "cond": "mkt_vol_high", "prio": 5, "id": "AR8491f28a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "layered", "var": "upbit_share_chg", "cond": "breadth_low", "prio": 5, "id": "AR40819f7f", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "layered", "var": "upbit_share_chg", "cond": "funding_crowded", "prio": 5, "id": "ARde683ebe", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "layered", "var": "upbit_share_chg", "cond": "weekend", "prio": 5, "id": "ARa6f97de4", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "layered", "var": "upbit_share_chg", "cond": "korea_hot", "prio": 5, "id": "AR459d16c6", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "attention surge"}
+{"method": "layered", "var": "korea_share_24h", "cond": "btc_30d_down", "prio": 5, "id": "AR3410ef58", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "layered", "var": "korea_share_24h", "cond": "mkt_vol_high", "prio": 5, "id": "AR780a3b80", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "layered", "var": "korea_share_24h", "cond": "breadth_low", "prio": 5, "id": "ARe55a2411", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "layered", "var": "korea_share_24h", "cond": "funding_crowded", "prio": 5, "id": "ARd82ec1b3", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "layered", "var": "korea_share_24h", "cond": "weekend", "prio": 5, "id": "ARf6e119d3", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "layered", "var": "korea_share_24h", "cond": "korea_hot", "prio": 5, "id": "AR578173e2", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Upbit+Bithumb (B32 H4: holdout only)"}
+{"method": "layered", "var": "kimchi_prem_rel", "cond": "btc_30d_down", "prio": 5, "id": "ARdf62fab5", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "layered", "var": "kimchi_prem_rel", "cond": "mkt_vol_high", "prio": 5, "id": "AR3c53c4c0", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "layered", "var": "kimchi_prem_rel", "cond": "breadth_low", "prio": 5, "id": "AR21a4bcb0", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "layered", "var": "kimchi_prem_rel", "cond": "funding_crowded", "prio": 5, "id": "AR95769b47", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "layered", "var": "kimchi_prem_rel", "cond": "weekend", "prio": 5, "id": "AR0598c622", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "layered", "var": "kimchi_prem_rel", "cond": "korea_hot", "prio": 5, "id": "ARe1ccb9f4", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "coin kimchi premium vs market median"}
+{"method": "layered", "var": "kimchi_prem_chg", "cond": "btc_30d_down", "prio": 5, "id": "AR21c3218d", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "layered", "var": "kimchi_prem_chg", "cond": "mkt_vol_high", "prio": 5, "id": "AR7b24da9e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "layered", "var": "kimchi_prem_chg", "cond": "breadth_low", "prio": 5, "id": "AR9af2d20e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "layered", "var": "kimchi_prem_chg", "cond": "funding_crowded", "prio": 5, "id": "AR792d2bd7", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "layered", "var": "kimchi_prem_chg", "cond": "weekend", "prio": 5, "id": "AR36cd51ff", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "layered", "var": "kimchi_prem_chg", "cond": "korea_hot", "prio": 5, "id": "AR2d8e45b7", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "premium change [exploratory]"}
+{"method": "factor_momentum", "var": "rev_1d", "cond": null, "prio": 6, "id": "ARd0fe706c", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Jegadeesh 1990; Liu-Tsyvinski-Wu 2022"}
+{"method": "factor_momentum", "var": "rev_3d", "cond": null, "prio": 6, "id": "AR7ac49a0e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "short-term reversal"}
+{"method": "factor_momentum", "var": "mom_3w", "cond": null, "prio": 6, "id": "AR94b62b28", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "LTW 2022 CMOM"}
+{"method": "factor_momentum", "var": "mom_4w_skip1w", "cond": null, "prio": 6, "id": "AR4e2c8f9b", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Jegadeesh-Titman skip-week"}
+{"method": "factor_momentum", "var": "max_1h_7d", "cond": null, "prio": 6, "id": "ARa0584b4a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Bali-Cakici-Whitelaw 2011 lottery"}
+{"method": "factor_momentum", "var": "dist_from_30d_high", "cond": null, "prio": 6, "id": "ARf905015a", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "George-Hwang 2004 52-week high"}
+{"method": "factor_momentum", "var": "rangepos_24h", "cond": null, "prio": 6, "id": "ARc9ab887b", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "intraday range position (reversal)"}
+{"method": "layered", "var": "rv_7d", "cond": "btc_30d_down", "prio": 6, "id": "ARf6c9a5d6", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "layered", "var": "rv_7d", "cond": "mkt_vol_high", "prio": 6, "id": "AR70c5a2e5", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "layered", "var": "rv_7d", "cond": "breadth_low", "prio": 6, "id": "AR2bc0b6d9", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "layered", "var": "rv_7d", "cond": "funding_crowded", "prio": 6, "id": "AR32197f87", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "layered", "var": "rv_7d", "cond": "weekend", "prio": 6, "id": "ARd549f565", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "layered", "var": "rv_7d", "cond": "korea_hot", "prio": 6, "id": "AR8b792481", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Ang-Hodrick-Xing-Zhang 2006"}
+{"method": "layered", "var": "ivol_7d", "cond": "btc_30d_down", "prio": 6, "id": "AR0cb3b2fc", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "layered", "var": "ivol_7d", "cond": "mkt_vol_high", "prio": 6, "id": "AR2cb803e8", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "layered", "var": "ivol_7d", "cond": "breadth_low", "prio": 6, "id": "AR5a724f4b", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "layered", "var": "ivol_7d", "cond": "funding_crowded", "prio": 6, "id": "AR95bf3b5b", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "layered", "var": "ivol_7d", "cond": "weekend", "prio": 6, "id": "AR7a2166e8", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "layered", "var": "ivol_7d", "cond": "korea_hot", "prio": 6, "id": "AR1123f9d9", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "idiosyncratic vol"}
+{"method": "layered", "var": "rsj_7d", "cond": "btc_30d_down", "prio": 6, "id": "AR3866d8ab", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "layered", "var": "rsj_7d", "cond": "mkt_vol_high", "prio": 6, "id": "AR095bdd9b", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "layered", "var": "rsj_7d", "cond": "breadth_low", "prio": 6, "id": "AR1dc038f8", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "layered", "var": "rsj_7d", "cond": "funding_crowded", "prio": 6, "id": "AR5952d3a9", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "layered", "var": "rsj_7d", "cond": "weekend", "prio": 6, "id": "AR699d9825", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "layered", "var": "rsj_7d", "cond": "korea_hot", "prio": 6, "id": "AR16d376cc", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Zhang-Zhao realised signed jump; Bollerslev-Li-Zhao 2020"}
+{"method": "layered", "var": "jump_share_7d", "cond": "btc_30d_down", "prio": 6, "id": "AR2e39ca96", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "layered", "var": "jump_share_7d", "cond": "mkt_vol_high", "prio": 6, "id": "AR5d8a2388", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "layered", "var": "jump_share_7d", "cond": "breadth_low", "prio": 6, "id": "AR6b045c49", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "layered", "var": "jump_share_7d", "cond": "funding_crowded", "prio": 6, "id": "AR5baad270", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "layered", "var": "jump_share_7d", "cond": "weekend", "prio": 6, "id": "AR893738aa", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "layered", "var": "jump_share_7d", "cond": "korea_hot", "prio": 6, "id": "AR883b07c9", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Lee-Wang 2025 JFQA jump variation (negative)"}
+{"method": "layered", "var": "skew_7d", "cond": "btc_30d_down", "prio": 6, "id": "AR46e0f2bd", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "layered", "var": "skew_7d", "cond": "mkt_vol_high", "prio": 6, "id": "ARfd80a1a1", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "layered", "var": "skew_7d", "cond": "breadth_low", "prio": 6, "id": "ARfa58b71d", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "layered", "var": "skew_7d", "cond": "funding_crowded", "prio": 6, "id": "AR25c24202", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "layered", "var": "skew_7d", "cond": "weekend", "prio": 6, "id": "AR44608e33", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "layered", "var": "skew_7d", "cond": "korea_hot", "prio": 6, "id": "ARac042daf", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Amaya et al. 2015"}
+{"method": "layered", "var": "vol_of_vol_7d", "cond": "btc_30d_down", "prio": 6, "id": "AR0fbd10f6", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "layered", "var": "vol_of_vol_7d", "cond": "mkt_vol_high", "prio": 6, "id": "AR9b8d9048", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "layered", "var": "vol_of_vol_7d", "cond": "breadth_low", "prio": 6, "id": "AR6daf3778", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "layered", "var": "vol_of_vol_7d", "cond": "funding_crowded", "prio": 6, "id": "ARc273d5f2", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "layered", "var": "vol_of_vol_7d", "cond": "weekend", "prio": 6, "id": "ARdd704bec", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "layered", "var": "vol_of_vol_7d", "cond": "korea_hot", "prio": 6, "id": "AR8aa1a5f5", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Baltussen-van Bekkum-van der Grient 2018"}
+{"method": "layered", "var": "session_asia_var_share", "cond": "btc_30d_down", "prio": 6, "id": "ARa298c2f4", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "layered", "var": "session_asia_var_share", "cond": "mkt_vol_high", "prio": 6, "id": "ARda7d3689", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "layered", "var": "session_asia_var_share", "cond": "breadth_low", "prio": 6, "id": "ARc0d54b0e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "layered", "var": "session_asia_var_share", "cond": "funding_crowded", "prio": 6, "id": "AR842858f2", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "layered", "var": "session_asia_var_share", "cond": "weekend", "prio": 6, "id": "ARadcf9093", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "layered", "var": "session_asia_var_share", "cond": "korea_hot", "prio": 6, "id": "AR1e81cfe2", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "session variance decomposition (Asia-heavy = retail) [exploratory]"}
+{"method": "factor_momentum", "var": "vol_surprise", "cond": null, "prio": 6, "id": "ARdf2a0451", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Gervais-Kaniel-Mingelgrin 2001"}
+{"method": "factor_momentum", "var": "amihud_7d", "cond": null, "prio": 6, "id": "AR518f4f2f", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Amihud 2002"}
+{"method": "factor_momentum", "var": "trades_per_dollar", "cond": null, "prio": 6, "id": "AR3e49119c", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "retail intensity [exploratory]"}
+{"method": "factor_momentum", "var": "avg_trade_size_z", "cond": null, "prio": 6, "id": "AR64e2be31", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "informed-flow proxy (large trades) [exploratory]"}
+{"method": "layered", "var": "funding_7d", "cond": "btc_30d_down", "prio": 6, "id": "AR0f78fc66", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "layered", "var": "funding_7d", "cond": "mkt_vol_high", "prio": 6, "id": "AR9722634f", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "layered", "var": "funding_7d", "cond": "breadth_low", "prio": 6, "id": "ARd9c6cf3f", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "layered", "var": "funding_7d", "cond": "funding_crowded", "prio": 6, "id": "ARfa232c0e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "layered", "var": "funding_7d", "cond": "weekend", "prio": 6, "id": "AR880bcb81", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "layered", "var": "funding_7d", "cond": "korea_hot", "prio": 6, "id": "AR38e4d1ec", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Schmeling-Schrimpf-Todorov 2023 carry crashes"}
+{"method": "layered", "var": "funding_dev", "cond": "btc_30d_down", "prio": 6, "id": "AR0fbe75fa", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "layered", "var": "funding_dev", "cond": "mkt_vol_high", "prio": 6, "id": "AR157ba391", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "layered", "var": "funding_dev", "cond": "breadth_low", "prio": 6, "id": "AR5925ffa1", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "layered", "var": "funding_dev", "cond": "funding_crowded", "prio": 6, "id": "ARf88f2b35", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "layered", "var": "funding_dev", "cond": "weekend", "prio": 6, "id": "AR9c1df4ab", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "layered", "var": "funding_dev", "cond": "korea_hot", "prio": 6, "id": "AR6fef1946", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "deviation from the 0.01% anchor (BitMEX 2025)"}
+{"method": "layered", "var": "funding_z", "cond": "btc_30d_down", "prio": 6, "id": "AR175d355e", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "layered", "var": "funding_z", "cond": "mkt_vol_high", "prio": 6, "id": "ARcc5b7dfe", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "layered", "var": "funding_z", "cond": "breadth_low", "prio": 6, "id": "ARb8a51786", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "layered", "var": "funding_z", "cond": "funding_crowded", "prio": 6, "id": "AR5ad5cd4a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "layered", "var": "funding_z", "cond": "weekend", "prio": 6, "id": "AR92e8b375", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "layered", "var": "funding_z", "cond": "korea_hot", "prio": 6, "id": "AR3b063c70", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "funding surprise"}
+{"method": "factor_momentum", "var": "gap_vs_btc_24h", "cond": null, "prio": 6, "id": "AR1e887c9f", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Hou 2007 lead-lag catch-up"}
+{"method": "factor_momentum", "var": "beta_30d", "cond": null, "prio": 6, "id": "AR41b305ea", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Frazzini-Pedersen 2014 BAB"}
+{"method": "factor_momentum", "var": "corr_btc_7d", "cond": null, "prio": 6, "id": "ARe41f174c", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "co-movement [exploratory]"}
+{"method": "layered", "var": "taker_share_24h", "cond": "btc_30d_down", "prio": 7, "id": "ARcbd6c788", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "layered", "var": "taker_share_24h", "cond": "mkt_vol_high", "prio": 7, "id": "AReda400a6", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "layered", "var": "taker_share_24h", "cond": "breadth_low", "prio": 7, "id": "AR84fe3f4f", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "layered", "var": "taker_share_24h", "cond": "funding_crowded", "prio": 7, "id": "ARf3f42a52", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "layered", "var": "taker_share_24h", "cond": "weekend", "prio": 7, "id": "ARb8e1d4ce", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "layered", "var": "taker_share_24h", "cond": "korea_hot", "prio": 7, "id": "AR5835564e", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "Chordia-Subrahmanyam 2004 order imbalance"}
+{"method": "layered", "var": "taker_share_7d", "cond": "btc_30d_down", "prio": 7, "id": "ARef353cd1", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "layered", "var": "taker_share_7d", "cond": "mkt_vol_high", "prio": 7, "id": "AR5aa43ce1", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "layered", "var": "taker_share_7d", "cond": "breadth_low", "prio": 7, "id": "AR4c96b959", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "layered", "var": "taker_share_7d", "cond": "funding_crowded", "prio": 7, "id": "AR655a0469", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "layered", "var": "taker_share_7d", "cond": "weekend", "prio": 7, "id": "AR44d34673", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "layered", "var": "taker_share_7d", "cond": "korea_hot", "prio": 7, "id": "ARa52067a8", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "order-flow persistence"}
+{"method": "layered", "var": "taker_var_compression", "cond": "btc_30d_down", "prio": 7, "id": "AR0928bbab", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "layered", "var": "taker_var_compression", "cond": "mkt_vol_high", "prio": 7, "id": "ARdaec0fe0", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "layered", "var": "taker_var_compression", "cond": "breadth_low", "prio": 7, "id": "AR420986ed", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "layered", "var": "taker_var_compression", "cond": "funding_crowded", "prio": 7, "id": "AR14f0e0b0", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "layered", "var": "taker_var_compression", "cond": "weekend", "prio": 7, "id": "AR78a63b33", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "layered", "var": "taker_var_compression", "cond": "korea_hot", "prio": 7, "id": "ARb4ed3908", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "Garcia Seuma 2026 pre-cascade compression [weak]"}
+{"method": "layered", "var": "oi_chg_7d", "cond": "btc_30d_down", "prio": 7, "id": "ARf26d1b89", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "layered", "var": "oi_chg_7d", "cond": "mkt_vol_high", "prio": 7, "id": "AR3be8a034", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "layered", "var": "oi_chg_7d", "cond": "breadth_low", "prio": 7, "id": "AR3275ff94", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "layered", "var": "oi_chg_7d", "cond": "funding_crowded", "prio": 7, "id": "AR6b475acd", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "layered", "var": "oi_chg_7d", "cond": "weekend", "prio": 7, "id": "AR2761179a", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "layered", "var": "oi_chg_7d", "cond": "korea_hot", "prio": 7, "id": "AR5ab2d887", "registered": "2026-10-02 00:04:55", "sign": -1, "source": "leverage build-up"}
+{"method": "layered", "var": "oi_to_volume", "cond": "btc_30d_down", "prio": 7, "id": "ARb6dcb7cd", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "DISC1 survivor (predictive only)"}
+{"method": "layered", "var": "oi_to_volume", "cond": "mkt_vol_high", "prio": 7, "id": "AR840f8983", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "DISC1 survivor (predictive only)"}
+{"method": "layered", "var": "oi_to_volume", "cond": "breadth_low", "prio": 7, "id": "AR80e6870c", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "DISC1 survivor (predictive only)"}
+{"method": "layered", "var": "oi_to_volume", "cond": "funding_crowded", "prio": 7, "id": "ARc9ec38ae", "registered": "2026-10-02 00:04:55", "sign": 1, "source": "DISC1 survivor (predictive only)"}
