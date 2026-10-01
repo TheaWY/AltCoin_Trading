@@ -146,11 +146,18 @@ def run_one(spec, P):
             # claim: effect stronger when state on. Battery on the ON subsample; interaction t from FM on-off difference.
             G_on, _ = A.fama_macbeth(d["R"], {"sig": A.winsor_rows(np.where(d["mask"], S, np.nan))}, mask=d["mask"] & state[:, None])
             G_off, _ = A.fama_macbeth(d["R"], {"sig": A.winsor_rows(np.where(d["mask"], S, np.nan))}, mask=d["mask"] & ~state[:, None])
-            diff = (G_on["sig"] - G_off["sig"]).to_numpy()
+            # interaction: difference of the two slope means, Welch-style with NW variances (on/off days never overlap)
             for tag, sel in (("insample", ~hold), ("holdout", hold)):
-                out[f"{tag}_interaction_t"] = A.nw_t(diff[sel])[1]
+                a, b = G_on["sig"].to_numpy()[sel], G_off["sig"].to_numpy()[sel]
+                ma, ta = A.nw_t(a); mb, tb = A.nw_t(b)
+                sa, sb = (abs(ma / ta) if ta not in (0, np.nan) and np.isfinite(ta) and ta != 0 else np.nan), (abs(mb / tb) if np.isfinite(tb) and tb != 0 else np.nan)
+                out[f"{tag}_interaction_t"] = float((ma - mb) / np.sqrt(sa ** 2 + sb ** 2)) if np.isfinite(sa) and np.isfinite(sb) else np.nan
                 out[f"{tag}_on_t"] = A.nw_t(G_on["sig"].to_numpy()[sel])[1]; out[f"{tag}_off_t"] = A.nw_t(G_off["sig"].to_numpy()[sel])[1]
                 out[f"{tag}_on_days"] = int(np.isfinite(G_on["sig"].to_numpy()[sel]).sum())
+            out["state_on_share"] = float(np.nanmean(state[hold]))
+            if np.nansum(state[hold]) < 30 or np.nansum(state[~hold]) < 30:
+                out["error"] = f"state on only {int(np.nansum(state[hold]))} holdout days / {int(np.nansum(state[~hold]))} in-sample days: untestable"
+                return out
             S = np.where(state[:, None], S, np.nan)
         for tag, sel in (("insample", ~hold), ("holdout", hold)):
             r, _ = B30.battery(spec["id"], S, d, F, sel)

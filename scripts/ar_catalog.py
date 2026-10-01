@@ -93,7 +93,7 @@ CONDITIONERS = {
     "btc_30d_down": (lambda P: (P["lc"][:, P["btc"]] - L.lag(P["lc"][:, [P["btc"]]], 720)[:, 0]) < 0, "bear state"),
     "mkt_vol_high": (lambda P: (_roll(np.nanmean(np.where(P["U"], P["r1"] ** 2, np.nan), 1), 168) > _roll(np.nanmean(np.where(P["U"], P["r1"] ** 2, np.nan), 1), 720)).ravel(), "Nagel 2012 reversal in high vol"),
     "breadth_low": (lambda P: np.nanmean(np.where(P["U"], (P["lc"] - L.lag(P["lc"], 24)) > 0, np.nan), 1) < 0.4, "weak breadth"),
-    "funding_crowded": (lambda P: np.nanmean(np.where(P["U"], P["f8"], np.nan), 1) > 0.0002, "crowded longs (STT 2023)"),
+    "funding_crowded": (lambda P: (lambda f: f > np.nanquantile(f, 0.8))(_roll(np.nanmean(np.where(P["U"], P["f8"], np.nan), 1), 24).ravel()), "crowded longs: mean funding in its top quintile (STT 2023)"),
     "weekend": (lambda P: (((P["ts"] // 86400) + 3) % 7) >= 5, "weekend (thin liquidity)"),
     "korea_hot": (lambda P: _share(np.nansum(np.where(P["U"], L.S(P["up_qv"], 24), np.nan), 1), np.nansum(np.where(P["U"], L.S(P["qv"], 24), np.nan), 1)) > np.nanmedian(_share(np.nansum(np.where(P["U"], L.S(P["up_qv"], 24), np.nan), 1), np.nansum(np.where(P["U"], L.S(P["qv"], 24), np.nan), 1))), "Korean retail share above median (Stambaugh-Yu-Yuan sentiment transplant)"),
     "strategy_lost_7d": (None, "the base signal's own L/S lost over the last 7 days (factor momentum, Fieberg et al. 2023) - built per signal"),
