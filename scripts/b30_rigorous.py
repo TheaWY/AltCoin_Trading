@@ -189,7 +189,7 @@ def part1():
     Rt = pd.DataFrame(rows)
     H = Rt[Rt.set == "holdout"].copy()
     p_one = 1 - stats.norm.cdf(H.fm_t.fillna(-9))                       # one-sided in the a-priori direction
-    H["fm_p1"] = p_one; H["bhy"] = A.bhy(p_one.to_numpy()); H["holm"] = A.holm(p_one.to_numpy())
+    H["fm_p1"] = p_one; H["bhy"] = A.bhy(np.asarray(p_one)); H["holm"] = A.holm(np.asarray(p_one))
     BN = pd.DataFrame(nets).fillna(0.0)
     spa = A.spa_stepm(np.zeros(len(BN)), -BN, reps=2000)
     srs = BN.mean() / BN.std(); best = srs.idxmax()
