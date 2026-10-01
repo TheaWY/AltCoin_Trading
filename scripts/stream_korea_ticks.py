@@ -3,9 +3,11 @@
 No bulk tick history exists for either exchange, so B17 families F07/F16/F17 need this running for weeks first.
 
 Writes hourly parquet files (flushed every 60 s, whole hour rewritten atomically):
-  data/cache/kr_ticks/{upbit,bithumb}/trades/YYYYMMDD_HH.parquet   ts_ms, code, price, qty, side(1=ask hit/buy), seq
-  data/cache/kr_ticks/{upbit,bithumb}/book/YYYYMMDD_HH.parquet     ts_ms, code, b1..b5 px/qty, a1..a5 px/qty, tb, ta (throttled 1 per 5 s per code)
-Disk: ~1 GB/day for both exchanges (book dominates). Reconnects forever; never raises."""
+  data/cache/kr_ticks/{upbit,bithumb}/trades/YYYYMMDD_HH.parquet   ts_ms, ts_us, code, price, qty, side(1=ask hit/buy), seq
+  data/cache/kr_ticks/{upbit,bithumb}/book/YYYYMMDD_HH.parquet     ts_ms, ts_us, code, b1..b5 px/qty, a1..a5 px/qty, tb, ta
+    Upbit book throttled to 1 per 5 s per code; Bithumb book kept at full rate (>= 5 ms apart) with microsecond timestamps.
+  Files before 2026-10-01 21:00 KST have no ts_us and Bithumb ts_ms holds MICROseconds: read with scripts/kr_ticks_io.py.
+Disk: Bithumb book ~1.5-3 GB/day (zstd), Upbit ~0.2 GB/day. Reconnects forever; never raises."""
 from __future__ import annotations
 
 import asyncio
@@ -27,10 +29,10 @@ EX = {"upbit": ("wss://api.upbit.com/websocket/v1", "https://api.upbit.com/v1/ma
       "bithumb": ("wss://ws-api.bithumb.com/websocket/v1", "https://api.bithumb.com/v1/market/all")}
 
 
-def ms(t) -> int:
-    """Bithumb sends microseconds, Upbit milliseconds. Normalise to ms (a us value broke the 5 s book throttle: 14x rows)."""
+def us(t) -> int:
+    """Exchange timestamp -> integer microseconds. Bithumb sends microseconds (kept at full precision), Upbit milliseconds."""
     t = int(t)
-    return t // 1000 if t > 10 ** 14 else t
+    return t if t > 10 ** 14 else t * 1000
 
 
 def markets(ex):
@@ -63,15 +65,19 @@ class Sink:
     def on(self, m):
         t = m.get("type") or m.get("ty")
         if t == "trade":
-            self.tr.append(dict(ts_ms=ms(m.get("trade_timestamp") or m.get("ttms")), code=m.get("code") or m.get("cd"), price=float(m.get("trade_price") or m.get("tp")),
+            t_us = us(m.get("trade_timestamp") or m.get("ttms"))
+            self.tr.append(dict(ts_ms=t_us // 1000, ts_us=t_us, code=m.get("code") or m.get("cd"), price=float(m.get("trade_price") or m.get("tp")),
                                 qty=float(m.get("trade_volume") or m.get("tv")), side=int((m.get("ask_bid") or m.get("ab")) == "BID"), seq=int(m.get("sequential_id") or m.get("sid") or 0)))
         elif t == "orderbook":
-            code, ts = m.get("code") or m.get("cd"), ms(m.get("timestamp") or m.get("tms"))
-            if ts - self.last_book.get(code, 0) < 5000:
+            code, t_us = m.get("code") or m.get("cd"), us(m.get("timestamp") or m.get("tms"))
+            # Upbit: 1 book per 5 s per code. Bithumb: every update kept (min 5 ms apart) at microsecond resolution, by request.
+            gap = 5_000 if self.ex == "bithumb" else 5_000_000
+            if t_us - self.last_book.get(code, 0) < gap:
                 return
-            self.last_book[code] = ts
+            self.last_book[code] = t_us
+            ts = t_us // 1000
             u = (m.get("orderbook_units") or m.get("obu"))[:5]
-            row = dict(ts_ms=ts, code=code, tb=float(m.get("total_bid_size") or m.get("tbs") or 0), ta=float(m.get("total_ask_size") or m.get("tas") or 0))
+            row = dict(ts_ms=ts, ts_us=t_us, code=code, tb=float(m.get("total_bid_size") or m.get("tbs") or 0), ta=float(m.get("total_ask_size") or m.get("tas") or 0))
             for i, x in enumerate(u, 1):
                 row[f"b{i}"] = float(x.get("bid_price") or x.get("bp")); row[f"bq{i}"] = float(x.get("bid_size") or x.get("bs"))
                 row[f"a{i}"] = float(x.get("ask_price") or x.get("ap")); row[f"aq{i}"] = float(x.get("ask_size") or x.get("as"))
