@@ -175,9 +175,14 @@ def main() -> int:
     ap.add_argument("--db-days", type=int, default=800)
     ap.add_argument("--vacuum-full", action="store_true")
     ap.add_argument("--move-ticks-days", type=int, default=0, help="move kr_ticks files older than N days to B2 (0 = off)")
+    ap.add_argument("--ticks-only", action="store_true", help="only the kr_ticks move (daily job com.altcoin.tickoffload)")
     a = ap.parse_args()
     e = env()
     before = shutil.disk_usage(str(Path.home())).free
+    if a.ticks_only:
+        move_ticks(e, a.move_ticks_days)
+        log.info("tick offload done: free space %.1f GB -> %.1f GB", before / 1e9, shutil.disk_usage(str(Path.home())).free / 1e9)
+        return 0
     copy_dirs(e)
     move_backups(e, a.keep_backups)
     move_ticks(e, a.move_ticks_days)
