@@ -88,3 +88,12 @@ F8:
   rules: frozen, see script docstring
   pass: >= 120 trading days and day-level net CI lower bound > 0
   kill: 120 days with mean net <= 0
+
+F9:
+  name: post-Upbit-KRW-listing fade (short Binance perp days 1..10)
+  registered: 2026-10-01
+  source: B31 D2 + B31b (data/reports/b31/validate.json, d2_events.csv)
+  script: scripts/upbit_listing_fade_paper.py (launchd com.altcoin.listingfade, daily 09:05 KST; events from the F1 watcher)
+  table: f9_listing_fade_paper
+  pass: >= 30 closed events and mean net > 0 with bootstrap 95% CI above 0
+  kill: 30 events with mean net <= 0
