@@ -24,6 +24,7 @@ from src.data.storage import get_storage  # noqa: E402
 
 UPBIT = "https://api-manager.upbit.com/api/v1/announcements"
 FAPI = "https://fapi.binance.com"
+MAX_LAG_S = 600
 FEE = 0.0005
 SCHEMA = """CREATE TABLE IF NOT EXISTS upbit_notice_paper (
   notice_id BIGINT NOT NULL, symbol TEXT NOT NULL, kind TEXT, title TEXT, first_listed_ts DOUBLE PRECISION,
@@ -71,9 +72,12 @@ def settle_later(s, nid, sym, side, bid0, ask0):
         res = {}
         for mins, (b, a) in vals.items():
             exitp = b if side > 0 else a
-            res[mins] = side * (exitp / entry - 1) - 2 * FEE
-        db("UPDATE upbit_notice_paper SET bid15=?, ask15=?, bid60=?, ask60=?, net15=?, net60=?, status='closed' "
-           "WHERE notice_id=? AND symbol=?", (*vals[15], *vals[60], res[15], res[60], nid, sym))
+            r_ = side * (exitp / entry - 1) - 2 * FEE
+            res[mins] = None if r_ != r_ else r_  # NaN -> NULL so averages stay valid
+        st = "closed" if res[60] is not None else "no_book"
+        vals = {k: tuple(None if x != x else x for x in v) for k, v in vals.items()}
+        db("UPDATE upbit_notice_paper SET bid15=?, ask15=?, bid60=?, ask60=?, net15=?, net60=?, status=? "
+           "WHERE notice_id=? AND symbol=?", (*vals[15], *vals[60], res[15], res[60], st, nid, sym))
     threading.Thread(target=run, daemon=True).start()
 
 
@@ -111,6 +115,9 @@ def main() -> int:
             first = datetime.fromisoformat(n.get("first_listed_at") or n["listed_at"]).timestamp()
             print(time.strftime("%F %T"), "NEW", n["id"], n["title"][:80], f"lag {now - first:.2f}s", flush=True)
             if not cl:
+                continue
+            if now - first > MAX_LAG_S:  # old notice resurfacing (edit/repost), not a fresh signal
+                print(time.strftime("%F %T"), "SKIP stale", n["id"], f"lag {now - first:.0f}s", flush=True)
                 continue
             kind, side = cl
             syms = [x for x in re.findall(r"[A-Z][A-Z0-9]{1,11}", n["title"]) if x not in ("KRW", "BTC", "USDT")]
