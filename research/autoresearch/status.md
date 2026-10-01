@@ -1,6 +1,6 @@
-# Autonomous research status - 2026-10-02 00:15 KST
+# Autonomous research status - 2026-10-02 01:15 KST
 
-Hypotheses: 14 tested (0 errors), 1 passed the full rule, 330 queued. Running BHY over all 14 holdout p-values. Families tested: {'vol': 7, 'korea': 6, 'funding': 1}
+Hypotheses: 26 tested (0 errors), 1 passed the full rule, 318 queued. Running BHY over all 26 holdout p-values. Families tested: {'vol': 7, 'korea': 6, 'funding': 3, 'flow': 3, 'oi': 3, 'price': 3, 'method': 1}
 
 ## Last hour
 
@@ -20,6 +20,18 @@ Hypotheses: 14 tested (0 errors), 1 passed the full rule, 330 queued. Running BH
 | AR0ffc06ae | xs_sort | vol_of_vol_7d |  | -0.52 | +0.27 | -0.35 | -0.91 | -11.01 | False | False |
 | AR1e94a090 | xs_sort | session_asia_var_share |  | +0.96 | +0.44 | +0.46 | +0.45 | -7.10 | False | False |
 | AR9a8d223e | xs_sort | funding_7d |  | +2.65 | -0.57 | -0.95 | -0.89 | -14.62 | False | False |
+| ARfcc37771 | xs_sort | funding_dev |  | +2.20 | +0.64 | +0.84 | +1.10 | -20.96 | False | False |
+| ARf5add01c | xs_sort | funding_z |  | -0.81 | +1.40 | +0.89 | +1.40 | -5.95 | False | False |
+| AR6a939563 | xs_sort | taker_share_24h |  | +0.02 | +1.32 | +1.16 | +2.05 | -6.96 | False | False |
+| ARe1c863dd | xs_sort | taker_share_7d |  | +1.50 | +2.13 | +2.63 | +3.02 | +7.18 | False | False |
+| AR3020160a | xs_sort | taker_var_compression |  | +0.82 | -0.51 | +0.13 | +0.97 | -11.61 | False | False |
+| ARcfe84e50 | xs_sort | oi_chg_7d |  | +0.65 | -0.90 | -0.49 | -1.49 | -14.03 | False | False |
+| AR80684593 | xs_sort | oi_to_volume |  | -1.66 | +1.11 | +0.62 | +0.00 | -5.97 | False | False |
+| AR58d0e056 | xs_sort | fund_x_oi |  | +3.57 | -0.79 | -0.87 | -1.40 | -13.91 | False | False |
+| AR903e5796 | ctrend_combo | ALL |  | +2.00 | +0.13 | -0.30 | -0.07 | -8.99 | False | False |
+| AR6bd75e46 | xs_sort | rev_1d |  | +1.59 | +0.60 | +1.14 | -0.02 | -12.60 | False | False |
+| ARd6d82d51 | xs_sort | rev_3d |  | +1.51 | -1.39 | -0.31 | -1.59 | -17.93 | False | False |
+| AR8d3299c2 | xs_sort | mom_3w |  | +0.90 | +0.95 | +0.17 | +1.61 | -1.85 | False | False |
 
 ## Survivors (full rule)
 
@@ -30,6 +42,7 @@ Hypotheses: 14 tested (0 errors), 1 passed the full rule, 330 queued. Running BH
 - AR4cc495f9 xs_sort korea_share_24h: holdout t +3.15; failed ['insample_sign', 'lag']
 - AR28741da3 xs_sort upbit_share_24h: holdout t +2.59; failed ['bhy']
 - ARc07576b7 xs_sort ivol_7d: holdout t +2.13; failed ['bhy', 'lag', 'dsort', 'band_net']
+- ARe1c863dd xs_sort taker_share_7d: holdout t +2.13; failed ['bhy']
 - AR2816e16c xs_sort kimchi_prem_chg: holdout t +2.01; failed ['bhy', 'lag', 'dsort', 'band_net']
 - ARd224444c xs_sort kimchi_prem_rel: holdout t +1.69; failed ['holdout_t2', 'bhy', 'lag', 'band_net']
 
@@ -50,7 +63,7 @@ Hypotheses: 14 tested (0 errors), 1 passed the full rule, 330 queued. Running BH
 
 ## Next (queue head) and why
 
-- next 30 queued by method/state: {'xs_sort': 23, 'factor_momentum': 6, 'ctrend_combo': 1}
+- next 30 queued by method/state: {'factor_momentum': 16, 'xs_sort': 13, 'mfd_gate': 1}
 - order = literature strength first (Korea retail, funding/carry, higher moments), then flow/OI, then price/volume, then layered state x signal (Nagel 2012, Stambaugh-Yu-Yuan, factor momentum) and model-level combinations (Lewellen/Fieberg CTREND, MFD gate).
 - promotion rule: holdout FM t >= 2 with the a-priori sign AND running BHY (q=0.05) over every hypothesis the engine has tested AND in-sample FM t > 0 AND 1h-lag t > 1.5 AND size-double-sort t > 1.5 AND band net > 0 -> promoted to a forward paper test; the forward test passes after >= 60 daily books with day-net bootstrap CI > 0, which admits it to the main book.
 
