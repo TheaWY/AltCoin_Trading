@@ -34,10 +34,9 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import b7_lib as L  # noqa: E402
-import disc_engine as DE  # noqa: E402
 
 OUT = ROOT / "data/reports/b21"
-VAL0 = DE.VAL0
+VAL0 = 1767225600   # = disc_engine.VAL0 (2026-01-01); disc_engine imported lazily (lightgbm + torch in one process deadlocks libomp)
 RNG = np.random.default_rng(21)
 H_ = 3600
 
@@ -244,6 +243,7 @@ def main():
     ctx = {"ts": ts, "X": X, "rows": rows, "btc30": btc30[rows], "btc30_full": btc30, "mvol": mvol[rows],
            "mvol_med": float(np.nanmedian(mvol[rows])), "cf": cf, "sigd": sigd}
 
+    import disc_engine as DE
     sig = {}
     want = {"vshare_up": -1, "oi_to_volume": +1}
     for n, _, f in DE.variables():
@@ -264,7 +264,8 @@ def main():
         R["predictive"][n] = predictive(n, F, ctx)
     for n, F, H in (("H033", sig["H033"], 72), ("vshare_up", sig["vshare_up"], 168), ("H013", sig["H013"], 24)):
         R["pnl"][f"{n}@{H}h"] = pnl(n, F, H, ctx)
-    R["f2"] = f2_part()
+    if (OUT / "f2.json").exists():
+        R["f2"] = json.load(open(OUT / "f2.json"))
     json.dump(R, open(OUT / "edge.json", "w"), indent=1, default=float)
 
     f = lambda x: "–" if x is None else f"{x:+.4f}"  # noqa: E731
@@ -282,7 +283,7 @@ def main():
         Ls.append(f"| {n} | {f(b['mean'])} [{f(b['ci'][0])}, {f(b['ci'][1])}] | {f(o['E01_delay1h']['mean'])} | {f(o['E02_cost2x']['mean'])} | {f(o['E03_drop_top5']['mean'])} | "
                   f"{f(o['E07_delist_lastprice']['mean'])} | {f(o['E11_$10,000']['mean'])} | {f(o['E11_$100,000']['mean'])} | {f(o['E11_$1,000,000']['mean'])} | "
                   f"{f(o['E09_btc_up']['mean'])} | {f(o['E09_btc_down']['mean'])} | {o['E10_placebo']['pass']} | {'YES' if o['verdict']['survives'] else 'no'} |")
-    o = R["f2"]
+    o = R.get("f2", {})
     Ls += ["", "## F2 pump CNN, 2026 trades (mean net per trade)", "", "| test | value |", "|---|---|"]
     for k, v in o.items():
         Ls.append(f"| {k} | {json.dumps(v, default=float)} |")
@@ -291,4 +292,10 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["f2"]:          # run in its own process (torch only, no lightgbm)
+        import torch
+        torch.set_num_threads(1)
+        OUT.mkdir(parents=True, exist_ok=True)
+        json.dump(f2_part(), open(OUT / "f2.json", "w"), indent=1, default=float)
+    else:
+        main()
