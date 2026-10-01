@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.latesession</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>-u</string>
+    <string>scripts/latesession_paper.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <!-- F8: open at 01:05 KST (16:05 UTC), close at 09:05 KST (00:05 UTC); mode chosen from the UTC hour -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>1</integer><key>Minute</key><integer>5</integer></dict>
+    <dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>5</integer></dict>
+  </array>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/latesession.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/latesession.err.log</string>
+</dict>
+</plist>

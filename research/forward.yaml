@@ -78,3 +78,13 @@ F7:
   rules: frozen, see script docstring
   pass: >= 12 weekly books AND >= 300 closed legs AND weekly book-net day-clustered CI lower bound > 0
   kill: 12 books with mean weekly net <= 0
+
+F8:
+  name: late-session alt continuation (09:00->01:00 KST sign, hold 01:00->09:00 KST)
+  registered: 2026-10-01
+  source: B27_INTRADAY (data/reports/b27/intraday.md), 1 cell of 46 - forward test only
+  script: scripts/latesession_paper.py  (launchd com.altcoin.latesession, 01:05 and 09:05 KST)
+  table: f8_latesession_paper (one row per day)
+  rules: frozen, see script docstring
+  pass: >= 120 trading days and day-level net CI lower bound > 0
+  kill: 120 days with mean net <= 0
