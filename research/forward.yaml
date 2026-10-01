@@ -68,3 +68,13 @@ main_book:
     decision rule (>= 300 closed paper trades, mean net > 0, day-clustered 95% CI above 0) and is then admitted at full
     size automatically. The only brake is downside: equity 10% below its running peak pauses new entries for 7 days.
     F2 is at 21/300, so the main book holds cash until then. F6 stays out (source invalidated).
+
+F7:
+  name: vshare_up weekly long/short (Upbit volume share, sign -1)
+  registered: 2026-10-01
+  source: B21_EDGE (data/reports/b21/edge.md) - best book; positive under all stress tests, 2026 CI touched 0
+  script: scripts/vshare_ls_paper.py  (launchd com.altcoin.f7vshare, Thursdays 09:05 KST)
+  table: f7_vshare_paper (one row per leg per week)
+  rules: frozen, see script docstring
+  pass: >= 12 weekly books AND >= 300 closed legs AND weekly book-net day-clustered CI lower bound > 0
+  kill: 12 books with mean weekly net <= 0
