@@ -113,12 +113,13 @@ def mr_test(P: pd.DataFrame, B=1000, seed=0):
     bl = block_length(X[:, -1] - X[:, 0])
     rng = np.random.default_rng(seed); p_geo = 1.0 / bl
     cnt = 0
+    ar = np.arange(T)
     for _ in range(B):
-        idx = np.empty(T, int); i = rng.integers(T)
-        for t in range(T):
-            if t > 0 and rng.random() < p_geo:
-                i = rng.integers(T)
-            idx[t] = i; i = (i + 1) % T
+        new = rng.random(T) < p_geo; new[0] = True
+        bid = np.cumsum(new) - 1
+        start_pos = ar[new]
+        starts = rng.integers(T, size=len(start_pos))
+        idx = (starts[bid] + (ar - start_pos[bid])) % T
         Db = D[idx]
         Jb = (Db.mean(0) - D.mean(0)).min()
         cnt += Jb >= J
