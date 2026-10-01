@@ -142,6 +142,7 @@ def run(S, F, H):
     Fx = F.fillna(0.0)
     picks = {m: pd.Series(index=reb, dtype=object) for m in ("RIDGE", "LGBM")}
     gate = pd.Series(index=reb, dtype=float)
+    PRED = {m: [] for m in ("RIDGE", "LGBM")}
     for b0, b1 in zip(blocks[:-1], blocks[1:]):
         tr = (days >= TRAIN0 // D) & (days + H - 1 < b0)
         te = reb[(reb >= b0) & (reb < b1)]
@@ -157,7 +158,7 @@ def run(S, F, H):
                                    subsample_freq=1, colsample_bytree=0.8, verbose=-1, random_state=24).fit(Xtr[m], y[m])
             pl[k] = gb.predict(Xte)
         for m_, P in (("RIDGE", pr), ("LGBM", pl)):
-            M = pd.DataFrame(P, index=te)
+            M = pd.DataFrame(P, index=te); PRED[m_].append(M)
             best = M.idxmax(1); picks[m_].loc[te] = np.where(M.max(1) > 0, best, "CASH")
         yb = (EWy.loc[days[tr]] < 0); m = EWy.loc[days[tr]].notna()
         cl = lgb.LGBMClassifier(n_estimators=150, learning_rate=0.03, num_leaves=7, min_child_samples=20, verbose=-1,
@@ -192,6 +193,14 @@ def run(S, F, H):
     from sklearn.metrics import roc_auc_score
     yy = (EWy.loc[gate.index] < 0).astype(int); mm = EWy.loc[gate.index].notna()
     res["gate_auc"] = float(roc_auc_score(yy[mm], gate[mm])) if yy[mm].nunique() == 2 else None
+    # per strategy: can the model tell a losing period from a winning one? (AUC of forecast vs realised sign)
+    res["per_strategy_auc"] = {}
+    for m_ in ("RIDGE", "LGBM"):
+        P = pd.concat(PRED[m_])
+        res["per_strategy_auc"][m_] = {}
+        for k in strat:
+            yk = Y[k].loc[P.index]; ok = yk.notna()
+            res["per_strategy_auc"][m_][k] = float(roc_auc_score((yk[ok] > 0).astype(int), P.loc[ok, k])) if (yk[ok] > 0).nunique() == 2 else None
     for m_ in ("RIDGE", "LGBM", "GATE"):
         r = res[m_]
         res[m_]["pass"] = bool(r["ci_bp"][0] is not None and r["ci_bp"][0] > 0 and r["sharpe"] > res["EW"]["sharpe"] and r["sharpe"] > res["WINNER"]["sharpe"])
@@ -213,7 +222,8 @@ def main():
             v = r[k]
             Lm.append(f"| {k} | {v['bp_day']:+.1f} [{v['ci_bp'][0]:+.1f}, {v['ci_bp'][1]:+.1f}] | {v['sharpe']:.2f} | {v['y2026']['bp_day']:+.1f} | {v['y2026']['sharpe']:.2f} | {v.get('pass', '')} |")
         Lm += ["", "Single strategies: " + ", ".join(f"{k} {v['bp_day']:+.1f}bp (S {v['sharpe']:.2f})" for k, v in r["single"].items()),
-               f"Picks: {r['pick_counts']}", f"Gate: cash {r['gate_cash_share']:.0%} of periods, AUC for 'EW loses next period' {r['gate_auc']}", ""]
+               f"Picks: {r['pick_counts']}", f"Gate: cash {r['gate_cash_share']:.0%} of periods, AUC for 'EW loses next period' {r['gate_auc']}",
+               "Per-strategy AUC (forecast vs realised win/lose): " + "; ".join(f"{m}: " + ", ".join(f"{k} {v:.2f}" for k, v in d.items() if v is not None) for m, d in r["per_strategy_auc"].items()), ""]
     (OUT / "regime.md").write_text("\n".join(Lm) + "\n")
     print("\n".join(Lm))
 
