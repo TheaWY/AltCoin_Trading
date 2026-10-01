@@ -1,21 +1,11 @@
-# Autonomous research status - 2026-10-02 06:15 KST
+# Autonomous research status - 2026-10-02 07:15 KST
 
-Hypotheses: 84 tested (0 errors), 1 passed the full rule, 260 queued. Running BHY over all 84 holdout p-values. Families tested: {'korea': 34, 'vol': 14, 'price': 7, 'funding': 6, 'flow': 6, 'oi': 6, 'volume': 4, 'cross': 3, 'method': 2, 'positioning': 2}
+Hypotheses: 96 tested (0 errors), 1 passed the full rule, 248 queued. Running BHY over all 96 holdout p-values. Families tested: {'korea': 46, 'vol': 14, 'price': 7, 'funding': 6, 'flow': 6, 'oi': 6, 'volume': 4, 'cross': 3, 'method': 2, 'positioning': 2}
 
 ## Last hour
 
 | id | method | variable | state | in FM t | holdout FM t | alpha t | lag t | band net bp | BHY | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ARf9e61b4a | layered | upbit_share_24h | btc_30d_down | +0.56 | +2.00 | +0.88 | +0.72 | -0.29 | False | False |
-| ARc2017434 | layered | upbit_share_24h | mkt_vol_high | +2.59 | +1.16 | +2.63 | +0.99 | +5.28 | False | False |
-| AR09f748d6 | layered | upbit_share_24h | breadth_low | +1.59 | +1.26 | -0.37 | -1.16 | -11.95 | False | False |
-| ARffa1bbb5 | layered | upbit_share_24h | weekend | +2.14 | +1.94 | +1.95 | +2.32 | +11.46 | False | False |
-| AR71f9392d | layered | upbit_share_24h | korea_hot | +2.49 | +1.12 | +2.33 | +1.65 | +6.69 | False | False |
-| AR8d4baad4 | layered | upbit_share_7d | btc_30d_down | -0.07 | +2.34 | +0.76 | +0.82 | +0.82 | False | False |
-| AR1dd75492 | layered | upbit_share_7d | mkt_vol_high | +1.41 | +2.10 | +3.14 | +1.14 | +5.11 | False | False |
-| AR3c521a77 | layered | upbit_share_7d | breadth_low | +0.61 | +1.35 | -0.72 | -1.19 | -11.66 | False | False |
-| ARb9f21b35 | layered | upbit_share_7d | weekend | +1.39 | +2.35 | +2.47 | +2.87 | +13.60 | False | False |
-| AR84541aaf | layered | upbit_share_7d | korea_hot | +1.54 | +1.92 | +3.07 | +2.39 | +11.41 | False | False |
 | AR9f694c28 | layered | upbit_share_24h | funding_crowded | +2.75 | -0.35 | +1.15 | +1.68 | +17.71 | False | False |
 | ARcabb9992 | layered | upbit_share_7d | funding_crowded | +2.03 | -0.12 | +1.69 | +2.13 | +22.83 | False | False |
 | AR156ea12a | layered | upbit_share_chg | btc_30d_down | +2.98 | +0.36 | +1.57 | +0.93 | -2.62 | False | False |
@@ -28,6 +18,18 @@ Hypotheses: 84 tested (0 errors), 1 passed the full rule, 260 queued. Running BH
 | AR780a3b80 | layered | korea_share_24h | mkt_vol_high | +0.02 | +2.84 | +2.30 | +1.24 | +2.94 | False | False |
 | ARe55a2411 | layered | korea_share_24h | breadth_low | -0.96 | +2.19 | -0.04 | -0.38 | -5.00 | False | False |
 | ARd82ec1b3 | layered | korea_share_24h | funding_crowded | +0.29 | +2.70 | +2.94 | +2.81 | +8.67 | False | False |
+| ARf6e119d3 | layered | korea_share_24h | weekend | +1.00 | +1.45 | +1.86 | +2.25 | +6.88 | False | False |
+| AR578173e2 | layered | korea_share_24h | korea_hot | -0.24 | +2.29 | +1.78 | +1.62 | +3.76 | False | False |
+| ARdf62fab5 | layered | kimchi_prem_rel | btc_30d_down | -0.73 | +1.30 | +0.98 | +0.44 | -6.38 | False | False |
+| AR3c53c4c0 | layered | kimchi_prem_rel | mkt_vol_high | +0.75 | +0.95 | -0.07 | +0.78 | -2.10 | False | False |
+| AR21a4bcb0 | layered | kimchi_prem_rel | breadth_low | +0.46 | +1.24 | +0.87 | +0.00 | -12.69 | False | False |
+| AR95769b47 | layered | kimchi_prem_rel | funding_crowded | +0.82 | -1.63 | -1.49 | -0.80 | -24.00 | False | False |
+| AR0598c622 | layered | kimchi_prem_rel | weekend | -0.14 | +1.58 | +1.89 | +2.27 | +5.44 | False | False |
+| ARe1ccb9f4 | layered | kimchi_prem_rel | korea_hot | +0.93 | +1.07 | +1.08 | +0.64 | -6.30 | False | False |
+| AR21c3218d | layered | kimchi_prem_chg | btc_30d_down | +0.34 | +1.50 | +2.09 | +1.06 | -2.18 | False | False |
+| AR7b24da9e | layered | kimchi_prem_chg | mkt_vol_high | +1.31 | +2.05 | +1.16 | +1.29 | +0.92 | False | False |
+| AR9af2d20e | layered | kimchi_prem_chg | breadth_low | -0.05 | +0.74 | +1.26 | +0.30 | -6.33 | False | False |
+| AR792d2bd7 | layered | kimchi_prem_chg | funding_crowded | +1.19 | -0.71 | -0.85 | -1.25 | -25.11 | False | False |
 
 ## Survivors (full rule)
 
