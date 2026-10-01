@@ -1,35 +1,23 @@
-# Autonomous research status - 2026-10-02 03:15 KST
+# Autonomous research status - 2026-10-02 04:19 KST
 
-Hypotheses: 50 tested (0 errors), 1 passed the full rule, 294 queued. Running BHY over all 50 holdout p-values. Families tested: {'korea': 12, 'vol': 12, 'price': 7, 'volume': 4, 'funding': 3, 'flow': 3, 'oi': 3, 'cross': 3, 'positioning': 2, 'method': 1}
+Hypotheses: 62 tested (0 errors), 1 passed the full rule, 282 queued. Running BHY over all 62 holdout p-values. Families tested: {'vol': 14, 'korea': 12, 'price': 7, 'funding': 6, 'flow': 6, 'oi': 6, 'volume': 4, 'cross': 3, 'method': 2, 'positioning': 2}
 
 ## Last hour
 
 | id | method | variable | state | in FM t | holdout FM t | alpha t | lag t | band net bp | BHY | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ARcda0b6a2 | xs_sort | mom_4w_skip1w |  | +0.32 | +0.41 | +0.01 | +0.64 | -4.32 | False | False |
-| ARc91405d8 | xs_sort | max_1h_7d |  | +1.61 | +0.24 | -0.59 | -1.23 | -11.08 | False | False |
-| ARc3494dfe | xs_sort | dist_from_30d_high |  | +0.10 | +0.96 | -0.69 | +0.89 | -5.89 | False | False |
-| ARf4d3aa70 | xs_sort | rangepos_24h |  | +1.35 | +0.27 | +0.01 | -0.73 | -18.05 | False | False |
-| AR25ab99e5 | xs_sort | vol_surprise |  | +1.71 | -0.33 | -0.72 | +0.25 | -10.21 | False | False |
-| AR5f6e058e | xs_sort | amihud_7d |  | -0.44 | -0.59 | +0.45 | +1.31 | -4.23 | False | False |
-| AR9eef64a1 | xs_sort | trades_per_dollar |  | +2.01 | -1.59 | -2.23 | -2.04 | -17.09 | False | False |
-| ARd566a207 | xs_sort | avg_trade_size_z |  | +1.56 | -0.48 | -0.67 | +0.47 | -13.87 | False | False |
-| AR3e5b3ea6 | xs_sort | gap_vs_btc_24h |  | -1.69 | -0.62 | -1.04 | +0.07 | -22.91 | False | False |
-| ARf6d14611 | xs_sort | beta_30d |  | +0.59 | +0.49 | +1.77 | +1.85 | +6.54 | False | False |
-| ARa79e1f0f | xs_sort | corr_btc_7d |  | +1.87 | +0.91 | -1.18 | -1.58 | -13.23 | False | False |
-| AR018061a7 | factor_momentum | upbit_share_24h |  | +2.77 | +2.09 | +2.08 | +1.22 | +3.83 | False | False |
-| AR4de21b01 | factor_momentum | upbit_share_7d |  | +2.21 | +2.96 | +2.47 | +1.74 | +7.53 | False | False |
-| AR135a0cad | factor_momentum | upbit_share_chg |  | +2.47 | +0.90 | +1.50 | +1.03 | -3.61 | False | False |
-| ARd5d71ff6 | factor_momentum | korea_share_24h |  | +0.95 | +4.21 | +2.55 | +2.10 | +5.17 | True | True |
-| ARd7d1090c | factor_momentum | kimchi_prem_rel |  | +0.90 | +1.07 | +1.21 | +0.69 | -4.14 | False | False |
-| ARd481ec5f | factor_momentum | kimchi_prem_chg |  | +1.31 | +1.76 | +2.29 | +1.17 | -1.43 | False | False |
-| AR834cc5b1 | xs_sort | ls_top_minus_global |  | -0.59 | +2.80 | +3.04 | +2.57 | +3.90 | False | False |
-| AR2fc91cc8 | xs_sort | taker_ratio_24h |  | +1.36 | -0.54 | -0.35 | -0.56 | -15.89 | False | False |
-| AR6d1a9285 | factor_momentum | rv_7d |  | +1.40 | -0.26 | -1.16 | -2.03 | -31.73 | False | False |
-| ARff2cc7c3 | factor_momentum | ivol_7d |  | +1.56 | +0.96 | -2.17 | -3.16 | -42.78 | False | False |
-| ARab955928 | factor_momentum | rsj_7d |  | +1.12 | -1.24 | -1.64 | -1.96 | -24.01 | False | False |
-| ARcc58de45 | factor_momentum | jump_share_7d |  | -1.04 | -1.02 | -1.42 | -1.59 | -25.08 | False | False |
-| ARbedef628 | factor_momentum | skew_7d |  | +1.48 | +0.55 | -1.18 | -1.09 | -12.77 | False | False |
+| ARfce704dd | factor_momentum | vol_of_vol_7d |  | -2.51 | -0.72 | -1.65 | -2.56 | -39.65 | False | False |
+| ARd0a2eeaf | factor_momentum | session_asia_var_share |  | +1.23 | +0.24 | +0.67 | +0.43 | -2.73 | False | False |
+| AR86033591 | factor_momentum | funding_7d |  | +2.40 | -1.10 | -1.28 | -1.27 | -23.37 | False | False |
+| ARa1b38cb9 | factor_momentum | funding_dev |  | +2.56 | +0.28 | +0.17 | +0.35 | -19.88 | False | False |
+| AR955d3a48 | factor_momentum | funding_z |  | -0.96 | +1.75 | +1.45 | +1.40 | -4.26 | False | False |
+| ARe87addba | mfd_gate | ALL |  | +1.04 | +1.84 | – | – | +3.45 | False | False |
+| AR8a7fc594 | factor_momentum | taker_share_24h |  | +0.31 | +0.26 | -0.10 | +0.07 | -11.73 | False | False |
+| AR2aa58417 | factor_momentum | taker_share_7d |  | +1.06 | +1.15 | +1.32 | +1.81 | +1.00 | False | False |
+| AR43091915 | factor_momentum | taker_var_compression |  | +0.31 | -1.17 | -0.81 | -0.05 | -17.46 | False | False |
+| AR0fd733c7 | factor_momentum | oi_chg_7d |  | -0.08 | -1.04 | -0.61 | -0.99 | -12.71 | False | False |
+| AR09ae0651 | factor_momentum | oi_to_volume |  | -1.29 | +0.25 | -0.56 | -1.02 | -15.81 | False | False |
+| AR0f56a6f7 | factor_momentum | fund_x_oi |  | +3.19 | -1.45 | -1.21 | -0.92 | -16.43 | False | False |
 
 ## Survivors (full rule)
 
@@ -64,7 +52,7 @@ Hypotheses: 50 tested (0 errors), 1 passed the full rule, 294 queued. Running BH
 
 ## Next (queue head) and why
 
-- next 30 queued by method/state: {'factor_momentum': 11, 'layered/btc_30d_down': 3, 'layered/mkt_vol_high': 3, 'layered/breadth_low': 3, 'layered/funding_crowded': 3, 'layered/weekend': 3, 'layered/korea_hot': 3, 'mfd_gate': 1}
+- next 30 queued by method/state: {'layered/btc_30d_down': 5, 'layered/mkt_vol_high': 5, 'layered/breadth_low': 5, 'layered/funding_crowded': 5, 'layered/weekend': 5, 'layered/korea_hot': 5}
 - order = literature strength first (Korea retail, funding/carry, higher moments), then flow/OI, then price/volume, then layered state x signal (Nagel 2012, Stambaugh-Yu-Yuan, factor momentum) and model-level combinations (Lewellen/Fieberg CTREND, MFD gate).
 - promotion rule: holdout FM t >= 2 with the a-priori sign AND running BHY (q=0.05) over every hypothesis the engine has tested AND in-sample FM t > 0 AND 1h-lag t > 1.5 AND size-double-sort t > 1.5 AND band net > 0 -> promoted to a forward paper test; the forward test passes after >= 60 daily books with day-net bootstrap CI > 0, which admits it to the main book.
 
