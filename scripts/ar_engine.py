@@ -302,7 +302,12 @@ def status():
     ok = [r for r in rows if "error" not in r]
     passed = [r for r in ok if r.get("pass")]
     near = sorted([r for r in ok if (r.get("holdout_fm_t") or -9) >= 1.5 and not r.get("pass")], key=lambda r: -(r.get("holdout_fm_t") or 0))[:8]
-    recent = [r for r in rows if r.get("run", "") >= time.strftime("%F %H:", time.localtime(time.time() - 3600))][-40:]
+    def _age(r):
+        try:
+            return time.time() - time.mktime(time.strptime(r.get("run", ""), "%Y-%m-%d %H:%M:%S"))
+        except Exception:  # noqa: BLE001
+            return 1e9
+    recent = [r for r in rows if _age(r) <= 3700][-40:]
     fa = yaml.safe_load(open(FWD_AUTO)) if FWD_AUTO.exists() else {}
     fam_counts = pd.Series([C.VARIABLES.get(r["var"], (0, "method"))[1] for r in ok]).value_counts().to_dict() if ok else {}
     nxt = pd.Series([s["method"] + ("/" + s["cond"] if s.get("cond") else "") for s in pending[:30]]).value_counts().to_dict() if pending else {}

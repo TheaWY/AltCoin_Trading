@@ -1,4 +1,4 @@
-# Autonomous research status - 2026-10-02 02:15 KST
+# Autonomous research status - 2026-10-02 02:39 KST
 
 Hypotheses: 38 tested (0 errors), 0 passed the full rule, 306 queued. Running BHY over all 38 holdout p-values. Families tested: {'korea': 7, 'vol': 7, 'price': 7, 'volume': 4, 'funding': 3, 'flow': 3, 'oi': 3, 'cross': 3, 'method': 1}
 
@@ -6,18 +6,6 @@ Hypotheses: 38 tested (0 errors), 0 passed the full rule, 306 queued. Running BH
 
 | id | method | variable | state | in FM t | holdout FM t | alpha t | lag t | band net bp | BHY | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ARfcc37771 | xs_sort | funding_dev |  | +2.20 | +0.64 | +0.84 | +1.10 | -20.96 | False | False |
-| ARf5add01c | xs_sort | funding_z |  | -0.81 | +1.40 | +0.89 | +1.40 | -5.95 | False | False |
-| AR6a939563 | xs_sort | taker_share_24h |  | +0.02 | +1.32 | +1.16 | +2.05 | -6.96 | False | False |
-| ARe1c863dd | xs_sort | taker_share_7d |  | +1.50 | +2.13 | +2.63 | +3.02 | +7.18 | False | False |
-| AR3020160a | xs_sort | taker_var_compression |  | +0.82 | -0.51 | +0.13 | +0.97 | -11.61 | False | False |
-| ARcfe84e50 | xs_sort | oi_chg_7d |  | +0.65 | -0.90 | -0.49 | -1.49 | -14.03 | False | False |
-| AR80684593 | xs_sort | oi_to_volume |  | -1.66 | +1.11 | +0.62 | +0.00 | -5.97 | False | False |
-| AR58d0e056 | xs_sort | fund_x_oi |  | +3.57 | -0.79 | -0.87 | -1.40 | -13.91 | False | False |
-| AR903e5796 | ctrend_combo | ALL |  | +2.00 | +0.13 | -0.30 | -0.07 | -8.99 | False | False |
-| AR6bd75e46 | xs_sort | rev_1d |  | +1.59 | +0.60 | +1.14 | -0.02 | -12.60 | False | False |
-| ARd6d82d51 | xs_sort | rev_3d |  | +1.51 | -1.39 | -0.31 | -1.59 | -17.93 | False | False |
-| AR8d3299c2 | xs_sort | mom_3w |  | +0.90 | +0.95 | +0.17 | +1.61 | -1.85 | False | False |
 | ARcda0b6a2 | xs_sort | mom_4w_skip1w |  | +0.32 | +0.41 | +0.01 | +0.64 | -4.32 | False | False |
 | ARc91405d8 | xs_sort | max_1h_7d |  | +1.61 | +0.24 | -0.59 | -1.23 | -11.08 | False | False |
 | ARc3494dfe | xs_sort | dist_from_30d_high |  | +0.10 | +0.96 | -0.69 | +0.89 | -5.89 | False | False |
