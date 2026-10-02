@@ -1,51 +1,51 @@
-# Autonomous research status - 2026-10-02 13:16 KST
+# Autonomous research status - 2026-10-02 14:15 KST
 
-Hypotheses: 600 tested (0 errors), 0 passed the full rule, 48 queued. Running BHY over all 600 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 56, 'korea': 54, 'volume': 32, 'funding': 27, 'flow': 24, 'oi': 24, 'cross': 10, 'positioning': 4}
+Hypotheses: 648 tested (0 errors), 0 passed the full rule, 0 queued. Running BHY over all 648 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 63, 'korea': 54, 'volume': 36, 'funding': 27, 'flow': 27, 'oi': 27, 'cross': 27, 'positioning': 18}
 
 ## Last hour
 
 | id | method | variable | state | in FM t | holdout FM t | alpha t | lag t | band net bp | BHY | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ARb060b42e | layered | rangepos_24h | weekend | +0.66 | -1.48 | -0.70 | -1.32 | -30.66 | False | False |
-| AR4c646cbe | layered | rangepos_24h | korea_hot | +1.02 | -0.69 | -0.81 | -1.20 | -23.28 | False | False |
-| AR90ad7c94 | layered | rv_7d | strategy_lost_7d | +0.98 | -0.18 | -0.95 | -0.96 | -9.65 | False | False |
-| AR1b46d4a9 | layered | ivol_7d | strategy_lost_7d | +0.40 | +1.60 | -0.74 | -0.67 | -7.50 | False | False |
-| AR83407c24 | layered | rsj_7d | strategy_lost_7d | +0.76 | +0.99 | +1.34 | +0.77 | -6.91 | False | False |
-| AR7e83130c | layered | jump_share_7d | strategy_lost_7d | -1.22 | -0.54 | -0.77 | -1.41 | -13.49 | False | False |
-| AR038f2a72 | layered | skew_7d | strategy_lost_7d | +0.71 | +0.04 | -0.12 | -0.63 | -10.30 | False | False |
-| ARf27d2db1 | layered | vol_of_vol_7d | strategy_lost_7d | -0.21 | +1.42 | -0.05 | +0.05 | -5.10 | False | False |
-| ARd9c05970 | layered | session_asia_var_share | strategy_lost_7d | +0.57 | +0.08 | -0.37 | +0.07 | -11.97 | False | False |
-| AR716c4a43 | layered | vol_surprise | btc_30d_down | +1.10 | -0.85 | -0.27 | -0.15 | -14.58 | False | False |
-| AR40c59681 | layered | vol_surprise | mkt_vol_high | -0.32 | -1.63 | -2.25 | -0.70 | -22.62 | False | False |
-| AR9860660c | layered | vol_surprise | breadth_low | +1.03 | +0.31 | +0.05 | +0.72 | -7.49 | False | False |
-| AR515cd173 | layered | vol_surprise | funding_crowded | +1.38 | -0.46 | -2.12 | -1.34 | -30.94 | False | False |
-| ARa486ecb0 | layered | vol_surprise | weekend | +1.54 | +0.73 | -0.11 | +1.12 | -9.95 | False | False |
-| AR9d886751 | layered | vol_surprise | korea_hot | +1.34 | -0.10 | -0.66 | -0.15 | -11.39 | False | False |
-| AR4311daa4 | layered | amihud_7d | btc_30d_down | +0.76 | -1.57 | +0.86 | +0.57 | -10.26 | False | False |
-| ARf3136269 | layered | amihud_7d | mkt_vol_high | -0.28 | +0.09 | +0.45 | +1.78 | +5.47 | False | False |
-| AR2310d17b | layered | amihud_7d | breadth_low | +0.75 | -0.50 | +1.28 | +1.51 | +4.36 | False | False |
-| AR8a6522e5 | layered | amihud_7d | funding_crowded | -1.76 | -1.59 | -0.88 | -1.07 | -13.33 | False | False |
-| AR06ad0f39 | layered | amihud_7d | weekend | +0.84 | -0.43 | +0.20 | +0.39 | -6.24 | False | False |
-| ARb06bc25e | layered | amihud_7d | korea_hot | -0.28 | +0.43 | +0.91 | +1.34 | +0.08 | False | False |
-| AR4ef51dfc | layered | trades_per_dollar | btc_30d_down | +0.64 | -1.41 | -2.82 | -2.18 | -24.03 | False | False |
-| ARff291217 | layered | trades_per_dollar | mkt_vol_high | +0.51 | -1.07 | -2.49 | -2.14 | -20.71 | False | False |
-| AR04a2497e | layered | trades_per_dollar | breadth_low | +1.44 | -0.33 | -2.29 | -2.40 | -28.51 | False | False |
-| ARf888ea8f | layered | trades_per_dollar | funding_crowded | +1.17 | -0.94 | -0.61 | -0.56 | -14.35 | False | False |
-| AR50d9424c | layered | trades_per_dollar | weekend | +1.27 | -0.32 | -0.45 | -0.66 | -18.49 | False | False |
-| AR7f2b5019 | layered | trades_per_dollar | korea_hot | +1.43 | -0.84 | -0.45 | -0.78 | -15.57 | False | False |
-| AR694bbe87 | layered | avg_trade_size_z | btc_30d_down | +1.80 | -1.22 | -1.37 | -0.70 | -24.23 | False | False |
-| ARe532c2cf | layered | avg_trade_size_z | mkt_vol_high | +0.48 | -1.43 | -1.57 | -0.28 | -22.18 | False | False |
-| ARacc96681 | layered | avg_trade_size_z | breadth_low | +1.37 | -0.01 | +0.10 | +0.98 | -13.52 | False | False |
-| ARe7c4d603 | layered | avg_trade_size_z | funding_crowded | -0.20 | -0.18 | +0.56 | +0.95 | -3.48 | False | False |
-| AR810bc679 | layered | avg_trade_size_z | weekend | +2.05 | +0.52 | -0.52 | +0.29 | -15.04 | False | False |
-| AR0b6a6189 | layered | avg_trade_size_z | korea_hot | +0.75 | +0.77 | +0.91 | +1.33 | -11.72 | False | False |
-| ARe2f259ef | layered | funding_7d | strategy_lost_7d | +2.16 | -0.39 | -0.60 | -0.53 | -17.16 | False | False |
-| AR3dfcb595 | layered | funding_dev | strategy_lost_7d | +1.50 | +0.72 | +0.69 | +1.37 | -17.02 | False | False |
-| ARf1bef8c9 | layered | funding_z | strategy_lost_7d | +0.14 | -0.04 | -0.72 | -0.26 | -15.61 | False | False |
-| AR07c07e58 | layered | gap_vs_btc_24h | btc_30d_down | +0.07 | -0.70 | -1.14 | -0.36 | -29.82 | False | False |
-| AR8add515c | layered | gap_vs_btc_24h | mkt_vol_high | -1.08 | -1.28 | -1.24 | -0.32 | -29.07 | False | False |
-| AR6ae5228d | layered | gap_vs_btc_24h | breadth_low | -2.59 | -1.09 | -2.08 | -1.03 | -28.56 | False | False |
-| AR1c21bfc1 | layered | gap_vs_btc_24h | funding_crowded | -0.32 | +0.21 | -0.44 | +0.77 | -7.98 | False | False |
+| ARefdda0ee | layered | corr_btc_7d | btc_30d_down | +0.31 | +1.15 | -1.85 | -1.82 | -22.42 | False | False |
+| AR35d38210 | layered | corr_btc_7d | mkt_vol_high | +2.18 | +0.75 | -1.15 | -0.74 | -13.35 | False | False |
+| AR7ae7dd7b | layered | corr_btc_7d | breadth_low | +0.54 | +1.15 | -1.22 | -1.75 | -22.64 | False | False |
+| AR11ae23f7 | layered | corr_btc_7d | funding_crowded | +0.99 | +0.11 | +2.04 | +0.87 | +7.01 | False | False |
+| ARc5c599d1 | layered | corr_btc_7d | weekend | +0.96 | +0.89 | -0.35 | -0.99 | -18.63 | False | False |
+| ARc2aad99d | layered | corr_btc_7d | korea_hot | +1.87 | +0.04 | -0.94 | -1.01 | -14.25 | False | False |
+| AR149660f6 | layered | taker_share_24h | strategy_lost_7d | +1.37 | +1.50 | +1.75 | +2.21 | -3.19 | False | False |
+| ARabd0cf61 | layered | taker_share_7d | strategy_lost_7d | +1.03 | +2.48 | +2.22 | +2.41 | +12.41 | False | False |
+| AR92f43f54 | layered | taker_var_compression | strategy_lost_7d | +0.72 | -0.69 | -0.11 | +0.67 | -17.70 | False | False |
+| AR89c263f1 | layered | oi_chg_7d | strategy_lost_7d | +0.43 | -0.22 | -0.08 | -0.49 | -10.48 | False | False |
+| ARe53ceb96 | layered | oi_to_volume | strategy_lost_7d | -0.30 | +0.94 | +1.43 | +0.78 | -0.01 | False | False |
+| AR82a64484 | layered | fund_x_oi | strategy_lost_7d | +0.56 | -0.14 | -0.69 | -0.77 | -14.84 | False | False |
+| AR7f62254a | layered | ls_top_minus_global | btc_30d_down | -0.44 | +0.16 | +0.77 | +0.46 | -5.23 | False | False |
+| AR3197cbb1 | layered | ls_top_minus_global | mkt_vol_high | -0.19 | +1.79 | +2.35 | +0.89 | +0.10 | False | False |
+| AR6e26d663 | layered | ls_top_minus_global | breadth_low | -0.06 | -0.04 | +0.13 | +0.24 | -7.15 | False | False |
+| ARb50b92a2 | layered | ls_top_minus_global | funding_crowded | +0.12 | +2.06 | +2.91 | +2.43 | +26.90 | False | False |
+| ARdb8c02b3 | layered | ls_top_minus_global | weekend | -2.16 | +1.48 | +1.34 | +1.65 | +4.49 | False | False |
+| AR9862dc0d | layered | ls_top_minus_global | korea_hot | -0.78 | +3.29 | +3.47 | +3.22 | +12.17 | False | False |
+| AR58cfcc4d | layered | taker_ratio_24h | btc_30d_down | +0.49 | +0.11 | -1.01 | -0.93 | -22.00 | False | False |
+| AR29d25987 | layered | taker_ratio_24h | mkt_vol_high | +2.24 | +0.66 | +0.78 | +0.85 | -2.01 | False | False |
+| ARce0a18bb | layered | taker_ratio_24h | breadth_low | +1.41 | -1.20 | -0.90 | -1.06 | -22.66 | False | False |
+| ARbc26df25 | layered | taker_ratio_24h | funding_crowded | +1.19 | +1.52 | +3.29 | +2.56 | +17.40 | False | False |
+| AR83dff4ea | layered | taker_ratio_24h | weekend | +0.41 | -0.70 | -0.37 | -1.21 | -27.87 | False | False |
+| ARe664f9f9 | layered | taker_ratio_24h | korea_hot | +1.82 | +1.09 | +0.76 | +0.55 | -7.25 | False | False |
+| AR0b6d1cd2 | layered | rev_1d | strategy_lost_7d | +1.18 | +0.63 | +0.82 | +0.17 | -8.42 | False | False |
+| ARd5b48648 | layered | rev_3d | strategy_lost_7d | +1.02 | -0.84 | +1.26 | -0.41 | -13.40 | False | False |
+| AR6663b55c | layered | mom_3w | strategy_lost_7d | -1.05 | +0.50 | +0.28 | +0.62 | -6.36 | False | False |
+| AR122ddb2c | layered | mom_4w_skip1w | strategy_lost_7d | +0.71 | -0.14 | +0.26 | -0.06 | -7.74 | False | False |
+| AR76bc0427 | layered | max_1h_7d | strategy_lost_7d | +0.78 | +0.95 | -0.58 | -0.69 | -10.04 | False | False |
+| AR94762723 | layered | dist_from_30d_high | strategy_lost_7d | -0.55 | +0.64 | -0.45 | +0.68 | -3.62 | False | False |
+| ARc7b5a1e3 | layered | rangepos_24h | strategy_lost_7d | +0.35 | +1.03 | -0.37 | -0.56 | -18.47 | False | False |
+| AR8ec232a8 | layered | vol_surprise | strategy_lost_7d | +0.25 | -0.32 | -0.61 | -0.27 | -13.40 | False | False |
+| AR05ee4aed | layered | amihud_7d | strategy_lost_7d | -0.21 | -0.39 | +0.18 | +1.39 | -0.88 | False | False |
+| AR90757aeb | layered | trades_per_dollar | strategy_lost_7d | +1.06 | -2.62 | -1.83 | -2.17 | -17.50 | False | False |
+| AR49bc5feb | layered | avg_trade_size_z | strategy_lost_7d | +0.00 | -0.59 | -0.86 | +0.10 | -16.43 | False | False |
+| AR65c36b06 | layered | gap_vs_btc_24h | strategy_lost_7d | -1.41 | +0.14 | -0.87 | +0.40 | -17.85 | False | False |
+| AR3269f997 | layered | beta_30d | strategy_lost_7d | +0.64 | +1.05 | +1.65 | +1.28 | +13.63 | False | False |
+| ARdbe6dd57 | layered | corr_btc_7d | strategy_lost_7d | +0.87 | +1.58 | -1.30 | -1.69 | -15.35 | False | False |
+| AR285a26d3 | layered | ls_top_minus_global | strategy_lost_7d | -0.69 | +3.19 | +3.41 | +2.74 | +9.53 | False | False |
+| AR516e7ae0 | layered | taker_ratio_24h | strategy_lost_7d | +1.23 | -0.63 | -0.06 | +0.13 | -13.04 | False | False |
 
 ## D-series: market direction (sign of the EW market return over the next h; holdout)
 
@@ -101,13 +101,13 @@ Hypotheses: 600 tested (0 errors), 0 passed the full rule, 48 queued. Running BH
 ## Near misses (holdout FM t >= 1.5, failed a check)
 
 - ARd5d71ff6 factor_momentum korea_share_24h: holdout t +4.21; failed ['bhy']
+- AR9862dc0d layered ls_top_minus_global x korea_hot: holdout t +3.29; failed ['bhy', 'insample_sign', 'interaction']
+- AR285a26d3 layered ls_top_minus_global x strategy_lost_7d: holdout t +3.19; failed ['bhy', 'insample_sign', 'interaction']
 - AR4cc495f9 xs_sort korea_share_24h: holdout t +3.15; failed ['bhy', 'insample_sign', 'lag']
 - ARa200b4d5 xs_sort upbit_share_7d: holdout t +3.12; failed ['bhy']
 - AR3b063c70 layered funding_z x korea_hot: holdout t +3.01; failed ['bhy', 'insample_sign', 'interaction']
 - AR4de21b01 factor_momentum upbit_share_7d: holdout t +2.96; failed ['bhy']
 - AR780a3b80 layered korea_share_24h x mkt_vol_high: holdout t +2.84; failed ['bhy', 'lag', 'interaction']
-- AR834cc5b1 xs_sort ls_top_minus_global: holdout t +2.80; failed ['bhy', 'insample_sign']
-- AR3410ef58 layered korea_share_24h x btc_30d_down: holdout t +2.77; failed ['bhy', 'insample_sign', 'lag', 'dsort', 'interaction']
 
 ## Forward paper tests (clean evidence)
 
@@ -127,7 +127,7 @@ Hypotheses: 600 tested (0 errors), 0 passed the full rule, 48 queued. Running BH
 
 ## Next (queue head) and why
 
-- next 30 queued by method/state: {'layered/strategy_lost_7d': 6, 'layered/weekend': 4, 'layered/korea_hot': 4, 'layered/btc_30d_down': 4, 'layered/mkt_vol_high': 4, 'layered/breadth_low': 4, 'layered/funding_crowded': 4}
+- next 30 queued by method/state: {}
 - order = literature strength first (Korea retail, funding/carry, higher moments), then flow/OI, then price/volume, then layered state x signal (Nagel 2012, Stambaugh-Yu-Yuan, factor momentum) and model-level combinations (Lewellen/Fieberg CTREND, MFD gate).
 - promotion rule: holdout FM t >= 2 with the a-priori sign AND running BHY (q=0.05) over every hypothesis the engine has tested AND in-sample FM t > 0 AND 1h-lag t > 1.5 AND size-double-sort t > 1.5 AND band net > 0 -> promoted to a forward paper test; the forward test passes after >= 60 daily books with day-net bootstrap CI > 0, which admits it to the main book.
 
