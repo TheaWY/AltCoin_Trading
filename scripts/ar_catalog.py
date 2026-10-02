@@ -85,6 +85,13 @@ VARIABLES = {
     "gap_vs_btc_24h": (+1, "cross", lambda P: (P["lc"] - L.lag(P["lc"], 24)) - np.nan_to_num(P["beta"]) * (P["lc"] - L.lag(P["lc"], 24))[:, [P["btc"]]], "Hou 2007 lead-lag catch-up", True),
     "beta_30d": (-1, "cross", lambda P: P["beta"], "Frazzini-Pedersen 2014 BAB", True),
     "corr_btc_7d": (+1, "cross", lambda P: L.corr(P["r1"], P["r1"][:, [P["btc"]]], 168), "co-movement [exploratory]", True),
+    # --- liquidations (coinalyze_1h via ar_ext; history from 2026-06-26 -> SHORT-HISTORY track in the engine) ---
+    "liq_long_share_24h": (+1, "liq", lambda P: _share(L.S(np.nan_to_num(P["liq_long"]), 24), L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24)) * np.where(L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24) > 0, 1, np.nan),
+                           "forced long selling overshoots -> next-day rebound (liquidation-spiral reversal; B33 S3 found continuation only within ~4h)", True),
+    "liq_to_oi_24h": (+1, "liq", lambda P: _share(L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24), P["oi_cz"]) * np.where(np.isfinite(P["liq_long"]) | np.isfinite(P["liq_short"]), 1, np.nan),
+                      "capitulation intensity: liquidations relative to open interest -> reversal", True),
+    "liq_short_share_24h": (-1, "liq", lambda P: _share(L.S(np.nan_to_num(P["liq_short"]), 24), L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24)) * np.where(L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24) > 0, 1, np.nan),
+                            "short squeezes overshoot -> next-day give-back", True),
 }
 
 # ----------------------------------------------------------------------------------------------- conditioners (hourly T vectors)

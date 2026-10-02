@@ -77,6 +77,14 @@ def panel():
     P["i0"] = P["i0"][P["i0"] + 25 < len(ts)]
     P["F"] = A.ltw_factors(d["R"], d["size"], d["mom21"], d["mask"], mkt_w=d["adv30"])
     P["hold"] = d["day"] >= B30.HOLD
+    try:                                                           # DB-only sources (short history): coinalyze liquidations / OI
+        import ar_ext
+        from src.data.storage import get_storage
+        P.update(ar_ext.coinalyze_grid(get_storage(), ts, codes))
+    except Exception as e:  # noqa: BLE001
+        print("coinalyze grid unavailable:", type(e).__name__, e, flush=True)
+        for k in ("liq_long", "liq_short", "oi_cz"):
+            P[k] = np.full_like(P["lc"], np.nan)
     _PANEL.update(P)
     return P
 
@@ -101,11 +109,13 @@ def build_state(P, cond, S_hourly_daily=None):
 def propose(max_new=200):
     tested = {r["id"] for r in jl_read(RESULTS)} | {r["id"] for r in jl_read(QUEUE)}
     specs = []
-    prio = {"korea": 0, "funding": 1, "vol": 1, "flow": 2, "oi": 2, "price": 3, "volume": 3, "cross": 3, "positioning": 4}
+    prio = {"liq": -2, "korea": 0, "funding": 1, "vol": 1, "flow": 2, "oi": 2, "price": 3, "volume": 3, "cross": 3, "positioning": 4}
     for var, (sign, fam, fn, src, live) in C.VARIABLES.items():
         specs.append({"method": "xs_sort", "var": var, "cond": None, "prio": prio.get(fam, 5)})
     for var, (sign, fam, fn, src, live) in C.VARIABLES.items():
         specs.append({"method": "factor_momentum", "var": var, "cond": None, "prio": prio.get(fam, 5) + 3})
+        if fam == "liq":
+            continue                                                   # short history: state splits would be untestable
         for cond in C.CONDITIONERS:
             specs.append({"method": "layered", "var": var, "cond": cond, "prio": prio.get(fam, 5) + 5 + (2 if cond == "strategy_lost_7d" else 0)})
     specs.append({"method": "ctrend_combo", "var": "ALL", "cond": None, "prio": 2})
@@ -179,20 +189,31 @@ def run_one(spec, P):
                 out["error"] = f"state on only {int(np.nansum(state[hold]))} holdout days / {int(np.nansum(state[~hold]))} in-sample days: untestable"
                 return out
             S = np.where(state[:, None], S, np.nan)
-        for tag, sel in (("insample", ~hold), ("holdout", hold)):
+        samples = (("insample", ~hold), ("holdout", hold))
+        ok_days = (np.isfinite(S) & d["mask"]).sum(1) >= 20
+        if ok_days.sum() and ok_days[~hold].sum() < 60:
+            # SHORT-HISTORY track: the variable's data start inside the holdout, so the standard 2025-07 split is empty
+            # in-sample. Split the available days 60/40 in time instead and flag the row; a pass here is weaker evidence.
+            if ok_days.sum() < 75:
+                out["error"] = f"only {int(ok_days.sum())} usable days: untestable"; return out
+            idx = np.flatnonzero(ok_days); cut = idx[int(0.6 * len(idx))]
+            ins_s = ok_days & (np.arange(len(ok_days)) < cut); hold_s = ok_days & ~ins_s
+            out["short_history"] = True; out["short_days"] = [int(ins_s.sum()), int(hold_s.sum())]
+            samples = (("insample", ins_s), ("holdout", hold_s))
+        for tag, sel in samples:
             r, _ = B30.battery(spec["id"], S, d, F, sel)
             for k in ("fm_t", "t_ew", "t_vw", "mr_p", "dsort_t", "alpha_t", "lag1h_t", "weekly_t", "net_bp", "band_net_bp", "breakeven_bp", "turnover", "hml_bp", "sharpe"):
                 out[f"{tag}_{k}"] = r.get(k)
     elif spec["method"] == "ctrend_combo":
         import b30_rigorous as B30r
-        ch = {v: build_signal(P, v) for v in C.VARIABLES if C.VARIABLES[v][4]}
+        ch = {v: build_signal(P, v) for v in C.VARIABLES if C.VARIABLES[v][4] and C.VARIABLES[v][1] != "liq"}   # liq: short history, not in combos
         S = B30r.lewellen(ch, d["R"], d["mask"], window=180)
         for tag, sel in (("insample", (~hold) & (np.arange(len(hold)) >= 185)), ("holdout", hold)):
             r, _ = B30.battery(spec["id"], S, d, F, sel)
             for k in ("fm_t", "t_ew", "t_vw", "alpha_t", "lag1h_t", "dsort_t", "net_bp", "band_net_bp", "hml_bp"):
                 out[f"{tag}_{k}"] = r.get(k)
     elif spec["method"] == "mfd_gate":
-        ch = {v: build_signal(P, v) for v in C.VARIABLES if C.VARIABLES[v][4]}
+        ch = {v: build_signal(P, v) for v in C.VARIABLES if C.VARIABLES[v][4] and C.VARIABLES[v][1] != "liq"}   # liq: short history, not in combos
         names = list(ch); T, N = d["R"].shape
         Z = np.stack([pd.DataFrame(np.where(d["mask"], ch[k], np.nan)).rank(axis=1, pct=True).to_numpy() - 0.5 for k in names], -1)
         rng = np.random.default_rng(7); preds = []
@@ -295,7 +316,7 @@ def promote():
         if var not in C.VARIABLES or not C.VARIABLES[var][4] or r["method"] not in ("xs_sort", "factor_momentum", "layered"):
             fa[r["id"]] = {"status": "survivor_not_live", "spec": {k: r[k] for k in ("method", "var", "cond", "sign")}, "registered": time.strftime("%F")}
             continue
-        fa[r["id"]] = {"status": "forward", "spec": {k: r[k] for k in ("method", "var", "cond", "sign")}, "registered": time.strftime("%F"),
+        fa[r["id"]] = {"status": "forward", "track": ("short_history" if r.get("short_history") else "standard"), "spec": {k: r[k] for k in ("method", "var", "cond", "sign")}, "registered": time.strftime("%F"),
                        "table": f"fa_{r['id'].lower()}", "construction": "daily 00:05 UTC, band L/S enter 20% keep 30%, EW, gross 1.0, costs fee+slip, funding",
                        "pass": ">= 60 daily books AND day-net bootstrap 95% CI > 0", "kill": "60 books with mean net <= 0",
                        "evidence": {k: r.get(k) for k in ("insample_fm_t", "holdout_fm_t", "holdout_alpha_t", "holdout_lag1h_t", "holdout_dsort_t", "holdout_band_net_bp")}}
@@ -356,7 +377,7 @@ def status():
     for r in recent:
         if "error" in r:
             Lm.append(f"| {r['id']} | {r['method']} | {r['var']} | {r.get('cond') or ''} | ERROR | | | | | | |"); continue
-        Lm.append(f"| {r['id']} | {r['method']} | {r['var']} | {r.get('cond') or ''} | {f(r.get('insample_fm_t'))} | {f(r.get('holdout_fm_t'))} | {f(r.get('holdout_alpha_t'))} | {f(r.get('holdout_lag1h_t'))} | {f(r.get('holdout_band_net_bp'))} | {r.get('bhy')} | {r.get('pass')} |")
+        Lm.append(f"| {r['id']} | {r['method']} | {r['var']}{' [short-history]' if r.get('short_history') else ''} | {r.get('cond') or ''} | {f(r.get('insample_fm_t'))} | {f(r.get('holdout_fm_t'))} | {f(r.get('holdout_alpha_t'))} | {f(r.get('holdout_lag1h_t'))} | {f(r.get('holdout_band_net_bp'))} | {r.get('bhy')} | {r.get('pass')} |")
     dr = [r for r in ok if r.get("method") == "ts_direction"]
     if dr:
         Lm += ["", "## D-series: market direction (sign of the EW market return over the next h; holdout)", "",

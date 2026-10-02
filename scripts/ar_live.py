@@ -78,6 +78,13 @@ def live_panel(st, t_end):
     # prices_1m keeps ~3 weeks, so listing age cannot be read from the window: crypto_only() enforces >= 30 days listed
     P["U"] = (dv24 >= 5e6) & np.isfinite(c) & (np.cumsum(np.isfinite(c), 0) >= 168)
     P["dv24"] = dv24
+    try:                                                           # coinalyze liquidations / OI (liq family)
+        import ar_ext
+        P.update(ar_ext.coinalyze_grid(st, P["ts"], P["codes"], t0=t0, fresh=True))
+    except Exception as e:  # noqa: BLE001
+        print("coinalyze grid unavailable:", type(e).__name__, e, flush=True)
+        for k in ("liq_long", "liq_short", "oi_cz"):
+            P[k] = np.full_like(c, np.nan)
     return P
 
 

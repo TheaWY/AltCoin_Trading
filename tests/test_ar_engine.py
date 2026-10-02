@@ -17,6 +17,7 @@ def fake_panel(T=900, N=40, seed=0):
          "bt_qv": rng.uniform(0, 1e5, (T, N)), "up_lc": lc + 0.02, "oi": rng.uniform(1e6, 1e8, (T, N)), "ls_top": rng.uniform(0.5, 2, (T, N)),
          "ls_global": rng.uniform(0.5, 2, (T, N)), "taker": rng.uniform(0.5, 2, (T, N)), "U": np.ones((T, N), bool)}
     P["tbq"] = P["tbq"] * P["qv"]
+    P["liq_long"] = rng.uniform(0, 1e5, (T, N)); P["liq_short"] = rng.uniform(0, 1e5, (T, N)); P["oi_cz"] = rng.uniform(1e6, 1e8, (T, N))
     return P
 
 
