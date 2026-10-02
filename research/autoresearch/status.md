@@ -1,11 +1,17 @@
-# Autonomous research status - 2026-10-02 22:15 KST
+# Autonomous research status - 2026-10-02 23:15 KST
 
-Hypotheses: 648 tested (0 errors), 0 passed the full rule, 0 queued. Running BHY over all 648 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 63, 'korea': 54, 'volume': 36, 'funding': 27, 'flow': 27, 'oi': 27, 'cross': 27, 'positioning': 18}
+Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY over all 650 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 63, 'korea': 54, 'volume': 36, 'funding': 27, 'flow': 27, 'oi': 27, 'cross': 27, 'positioning': 18, 'liq': 2}
 
 ## Last hour
 
 | id | method | variable | state | in FM t | holdout FM t | alpha t | lag t | band net bp | BHY | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
+| ARfa0a97ce | xs_sort | liq_long_share_24h [short-history] |  | -0.27 | -2.83 | -1.82 | -2.37 | -82.01 | False | False |
+| ARfcaf6019 | xs_sort | liq_to_oi_24h |  | ERROR | | | | | | |
+| AR29de52a3 | xs_sort | liq_short_share_24h [short-history] |  | -0.25 | -2.83 | -1.82 | -2.37 | -82.01 | False | False |
+| AR950da8d4 | factor_momentum | liq_long_share_24h |  | ERROR | | | | | | |
+| AR172b5875 | factor_momentum | liq_to_oi_24h |  | ERROR | | | | | | |
+| AR2181753b | factor_momentum | liq_short_share_24h |  | ERROR | | | | | | |
 
 ## D-series: market direction (sign of the EW market return over the next h; holdout)
 
@@ -81,6 +87,7 @@ Hypotheses: 648 tested (0 errors), 0 passed the full rule, 0 queued. Running BHY
 | F7 Upbit share weekly | 0 | 12 | – | – |
 | F8 late-session | 1 | 120 | -0.97 | – |
 | F9 Upbit-listing fade | 0 | 30 | – | – |
+| F10 pairs divergence | 0 | 60 | – | – |
 | AR28741da3 upbit_share_24h | 1 | 60 | -0.37 | – |
 | ARa200b4d5 upbit_share_7d | 1 | 60 | -0.57 | – |
 | ARd5d71ff6 korea_share_24h | 0 | 60 | – | – |
