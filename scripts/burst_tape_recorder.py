@@ -24,7 +24,7 @@ import websockets
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "data/cache/burst_tape"; OUT.mkdir(parents=True, exist_ok=True)
 TRIG, WINDOW_S, RECORD_S, MAX_PER_DAY, MAX_CONCURRENT = 0.03, 300, 4 * 3600, 30, 8
-WS = "wss://fstream.binance.com/ws"
+WS = "wss://fstream.binance.com/market/stream?streams="  # /market: the plain /ws path connects but sends nothing (same as collect_tick_bars)
 
 
 class Recorder:
@@ -60,10 +60,10 @@ class Recorder:
 async def record(sym, active):
     rec = Recorder(sym)
     try:
-        async with websockets.connect(f"{WS}/{sym.lower()}@aggTrade/{sym.lower()}@bookTicker", ping_interval=20) as ws:
+        async with websockets.connect(f"{WS}{sym.lower()}@aggTrade/{sym.lower()}@bookTicker", ping_interval=20) as ws:
             while time.time() - rec.t0 < RECORD_S:
                 try:
-                    m = json.loads(await asyncio.wait_for(ws.recv(), timeout=30))
+                    m = json.loads(await asyncio.wait_for(ws.recv(), timeout=30)).get("data", {})
                 except asyncio.TimeoutError:
                     continue
                 if m.get("e") == "aggTrade":
@@ -81,9 +81,9 @@ async def main():
     print(time.strftime("%F %T"), "burst tape recorder watching all perps", flush=True)
     while True:
         try:
-            async with websockets.connect(f"{WS}/!miniTicker@arr", ping_interval=20, max_size=2 ** 22) as ws:
+            async with websockets.connect(f"{WS}!miniTicker@arr", ping_interval=20, max_size=2 ** 22) as ws:
                 async for raw in ws:
-                    now = time.time(); arr = json.loads(raw)
+                    now = time.time(); arr = json.loads(raw).get("data", [])
                     for m in arr:
                         s = m["s"]
                         if not s.endswith("USDT"):
