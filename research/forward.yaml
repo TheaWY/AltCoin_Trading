@@ -97,3 +97,13 @@ F9:
   table: f9_listing_fade_paper
   pass: >= 30 closed events and mean net > 0 with bootstrap 95% CI above 0
   kill: 30 events with mean net <= 0
+F10:
+  name: pairs DIVERGENCE continuation (opposite side of the retired pairs_statarb entries)
+  registered: 2026-10-02 23:00 KST (pre-registered; no live data before this)
+  source: B34 opposite-side audit (research/b34_opposite_2026-10-02.md) - retired book 31 trades -85 USDT, opposite +84, diff CI [+1.6, +9.2]/trade
+  script: scripts/pairs_divergence_paper.py (launchd com.altcoin.pairsdiv, hourly :20; same selection + z core as the retired book, side mirrored)
+  table: f10_pairs_div_paper
+  construction: entry |z|>=2 -> ride the spread (long rich leg / short beta x cheap leg); target |z|>=|entry|+1; stop |z|<=0.5 or -15%; max hold 48h; <=20 open; taker fee+slip both sides, Binance settled funding per leg
+  pass: ">= 60 closed events and mean net > 0 with bootstrap 95% CI above 0"
+  kill: 60 events with mean net <= 0
+  note: the B34 'opposite' number is an upper bound (old exits were taken on the original side); this test is the clean version
