@@ -111,8 +111,12 @@ def propose(max_new=200):
     specs = []
     prio = {"liq": -2, "korea": 0, "funding": 1, "vol": 1, "flow": 2, "oi": 2, "price": 3, "volume": 3, "cross": 3, "positioning": 4}
     for var, (sign, fam, fn, src, live) in C.VARIABLES.items():
+        if "forward-only" in src:
+            continue                                                   # sign fixed after seeing data: forward paper book only, never re-tested
         specs.append({"method": "xs_sort", "var": var, "cond": None, "prio": prio.get(fam, 5)})
     for var, (sign, fam, fn, src, live) in C.VARIABLES.items():
+        if "forward-only" in src:
+            continue
         specs.append({"method": "factor_momentum", "var": var, "cond": None, "prio": prio.get(fam, 5) + 3})
         if fam == "liq":
             continue                                                   # short history: state splits would be untestable
