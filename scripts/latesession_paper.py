@@ -38,7 +38,10 @@ def db(sql, params=()):
     st = get_storage()
     with st._connect() as c:  # noqa: SLF001
         cur = c.raw.cursor(); cur.execute(sql.replace("?", "%s"), params)
-        return cur.fetchall() if cur.description else None
+        if not cur.description:
+            return None
+        rows = cur.fetchall()
+        return [tuple(r.values()) if isinstance(r, dict) else r for r in rows]   # psycopg dict rows -> tuples in SELECT order
 
 
 def slip(dv):
