@@ -105,9 +105,10 @@ def m1(book, bin_s, hold_day):
         s = direction_stats(y[sel], x[sel], lag=max(3, 60 // bin_s), block=max(10, 600 // bin_s))
         out.update({f"{tag}_big_{k}": v for k, v in s.items() if k in ("n", "pt_hit", "pt_p", "edge_bp", "auc")})
     # per-day hit rate (stability)
-    out["hit_by_day"] = {int(d): float(((np.sign(x) * y) > 0)[day == d].mean()) for d in np.unique(day)}
+    nz = y != 0                                                                   # PT convention: zero moves are not scored
+    out["hit_by_day"] = {int(d): float(((np.sign(x) * y) > 0)[nz & (day == d)].mean()) for d in np.unique(day)}
     hr = (agg["ts"].to_numpy() + KST) % 86400 // 3600
-    out["hit_by_kst_hour"] = {int(h): float(((np.sign(x) * y) > 0)[hr == h].mean()) for h in range(24) if (hr == h).sum() > 500}
+    out["hit_by_kst_hour"] = {int(h): float(((np.sign(x) * y) > 0)[nz & (hr == h)].mean()) for h in range(24) if (nz & (hr == h)).sum() > 500}
     return out
 
 
@@ -152,7 +153,7 @@ def m2(up_book, trades_kr, hold_day):
         o = {"test": name, "sign": sign, "coins": int(d["symbol"].nunique())}
         for tag, sel in (("insample", day < hold_day), ("holdout", day == hold_day)):
             o.update({f"{tag}_{k}": v for k, v in direction_stats(y[sel], x[sel], lag=5, block=60).items()})
-        ok = np.isfinite(x) & np.isfinite(y)
+        ok = np.isfinite(x) & np.isfinite(y) & (y != 0)
         o["hit_by_day"] = {int(dd): float(((np.sign(x) * y) > 0)[ok & (day == dd)].mean()) for dd in np.unique(day[ok])}
         out.append(o)
     # who leads: cross-correlation of 1m returns, pooled across coins, lags -5..+5 (positive lag = Binance leads Upbit)
