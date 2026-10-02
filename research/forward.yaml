@@ -115,3 +115,12 @@ F11:
   construction: detect notice (watcher, ~5-10 s lag); mid at detection = reference; if |mid move| >= 3% within 10 min -> paper position in the direction of the move at the touch; exit at 3% adverse (stop) or 4h; taker fee + slippage by dv24 both sides; notices with no confirmation kept as 'no_confirm'
   pass: ">= 60 confirmed events and mean net > 0 with bootstrap 95% CI above 0"
   kill: 60 confirmed events with mean net <= 0
+F12:
+  name: fresh burst (30-min +5% on 5x volume in a coin that has NOT run up over the prior week)
+  registered: 2026-10-03 00:30 KST (forward only; the split was found in-sample on 23 days / 646 bursts and is carried by few trades)
+  source: B35 SAND retrospective (research/b35_burst_retro.md) - all bursts 4h mean -0.1% (median -1.8%); r7d<=0 subset +3.7% CI [+0.7,+7.7] n=83 hit 57%; extended coins fade; Korea-led and OI-building bursts fade
+  script: scripts/fresh_burst_paper.py (launchd com.altcoin.freshburst, every 5 min)
+  table: f12_fresh_burst_paper
+  construction: long at trigger close; stop -3% on 1m lows; time exit 4h; one per coin per 4h; max 10 open; taker fee+slip both sides; settled funding
+  pass: ">= 60 closed events and mean net > 0 with bootstrap 95% CI above 0"
+  kill: 60 events with mean net <= 0

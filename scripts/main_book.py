@@ -33,7 +33,7 @@ STRAT = {"F2": "f2_pump_cnn", "F6": "f6_oi_short", "F3": "f3_crash_rebound", "F4
          "F7": "f7_vshare_ls", "F9": "f9_listing_fade"}
 # mirror sources: the main-book position closes when the forward row it copies is no longer 'open'
 MIRROR = {"F3": ("crash_rebound_paper", "ts_signal"), "F4": ("spot_led_paper", "ts_signal"), "F5": ("unlock_short_paper", "ts_open"),
-          "F9": ("f9_listing_fade_paper", "notice_id"), "F7": ("f7_vshare_paper", "ts_signal"), "F11": ("f11_notice_mom_paper", "notice_id")}
+          "F9": ("f9_listing_fade_paper", "notice_id"), "F7": ("f7_vshare_paper", "ts_signal"), "F11": ("f11_notice_mom_paper", "notice_id"), "F12": ("f12_fresh_burst_paper", "ts_signal")}
 # Admission is rule-based, not discretionary (2026-10-01, after the -8.07 USDT start):
 #  - a strategy trades in the main book only once its OWN forward test has passed its registered decision rule
 #    (research/forward.yaml: >= 300 closed paper trades, mean net > 0 with a day-clustered 95% CI above 0);
@@ -51,6 +51,7 @@ FORWARD = {
     "F7": ("f7_vshare_paper", "ts_signal", "net", 12, "book"),
     "F9": ("f9_listing_fade_paper", "entry_ts", "net", 30, "event"),
     "F11": ("f11_notice_mom_paper", "confirm_ts", "net", 60, "trade"),       # Upbit notice momentum (registered 2026-10-02)
+    "F12": ("f12_fresh_burst_paper", "ts_signal", "net", 60, "trade"),        # fresh burst (registered 2026-10-03)
 }
 # Autonomous-research promotions (research/forward_auto.yaml, status 'forward') are candidates too: same rule as F7 (book unit).
 try:
@@ -143,7 +144,8 @@ def signals(st, now):
                            ("F4", "SELECT symbol, ts_signal AS k, ts_signal AS t, side, dv24 FROM spot_led_paper WHERE status='open' AND side <> 0", None),
                            ("F5", "SELECT symbol, ts_open AS k, ts_open AS t, -1 AS side, 0 AS dv24 FROM unlock_short_paper WHERE status='open'", None),
                            ("F9", "SELECT replace(symbol, 'USDT', '/USDT') AS symbol, notice_id AS k, entry_ts AS t, -1 AS side, dv24 FROM f9_listing_fade_paper WHERE status='open'", None),
-                           ("F11", "SELECT replace(symbol, 'USDT', '/USDT') AS symbol, notice_id AS k, confirm_ts AS t, side, dv24 FROM f11_notice_mom_paper WHERE status='open'", None)):
+                           ("F11", "SELECT replace(symbol, 'USDT', '/USDT') AS symbol, notice_id AS k, confirm_ts AS t, side, dv24 FROM f11_notice_mom_paper WHERE status='open'", None),
+                           ("F12", "SELECT symbol, ts_signal AS k, ts_signal AS t, 1 AS side, dv24 FROM f12_fresh_burst_paper WHERE status='open'", None)):
         try:
             r_ = q(st, sql)
         except Exception:  # noqa: BLE001
