@@ -116,6 +116,11 @@ def propose(max_new=200):
     for var in list(DR.DVARS) + ["ALL"]:
         for hz in DR.HORIZONS:
             specs.append({"method": "ts_direction", "var": var, "cond": hz, "prio": -1})
+            # conditional direction: the claim that direction information concentrates in a state (high vol, crowded
+            # funding, weekend); weekly horizon excluded (too few state-on weeks)
+            for state in ("mkt_vol_high", "funding_crowded", "weekend", "btc_30d_down"):
+                if hz != "1w":
+                    specs.append({"method": "ts_direction", "var": var, "cond": f"{hz}|{state}", "prio": 0})
     new = []
     for s in sorted(specs, key=lambda s: s["prio"]):
         s["id"] = hid({k: s[k] for k in ("method", "var", "cond")})

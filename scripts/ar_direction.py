@@ -153,6 +153,9 @@ def economic(y, f, hm, h, sel, per_year):
 
 
 def run(P, var, hz, start_ts, hold_ts, end_ts):
+    """hz = '24h' or '24h|mkt_vol_high': the second form tests the predictor only on rows where that ar_catalog
+    conditioner is on (pre-registered claim: direction information concentrates in that state)."""
+    hz, _, state = hz.partition("|")
     h = HORIZONS[hz]
     if var == "ALL":
         Z = np.column_stack([zscore(DVARS[v][0] * np.asarray(DVARS[v][2](P), float)) for v in DVARS]); sign = +1
@@ -164,6 +167,13 @@ def run(P, var, hz, start_ts, hold_ts, end_ts):
     daily = h >= 24
     rows = (ts % 86400 == 0) if daily else np.ones(len(ts), bool)
     rows &= (ts >= start_ts) & (ts + h * 3600 <= end_ts)
+    if state:
+        import ar_catalog as C
+        with np.errstate(all="ignore"):
+            on = np.nan_to_num(np.asarray(C.CONDITIONERS[state][0](P), float)).astype(bool).ravel()
+        rows &= on
+        if (rows & (ts >= hold_ts)).sum() < (30 if daily else 300):
+            return {"error": f"state {state} on for only {int((rows & (ts >= hold_ts)).sum())} holdout rows: untestable", "horizon": hz, "sign": int(sign)}
     ins, hold = rows & (ts < hold_ts), rows & (ts >= hold_ts)
     per_year = 365 if daily else 365 * 24
     lag = max(A.nw_lag(int(rows.sum())), (h // 24 if daily else h))
