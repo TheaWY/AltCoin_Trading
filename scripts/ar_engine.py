@@ -335,7 +335,7 @@ def forward_scoreboard():
              "F3 crash rebound": ("crash_rebound_paper", "net", "ts_signal", 30, "trade"), "F4 spot-led": ("spot_led_paper", "net", "ts_signal", 100, "trade"),
              "F5 unlock short": ("unlock_short_paper", "net", "ts_open", 60, "trade"), "F7 Upbit share weekly": ("f7_vshare_paper", "net", "ts_signal", 12, "book"),
              "F8 late-session": ("f8_latesession_paper", "net", "day", 120, "event"), "F9 Upbit-listing fade": ("f9_listing_fade_paper", "net", "entry_ts", 30, "event"),
-             "F10 pairs divergence": ("f10_pairs_div_paper", "net", "ts_open", 60, "trade")}
+             "F10 pairs divergence": ("f10_pairs_div_paper", "net", "ts_open", 60, "trade"), "F11 Upbit notice momentum": ("f11_notice_mom_paper", "net", "confirm_ts", 60, "trade")}
     fa = yaml.safe_load(open(FWD_AUTO)) if FWD_AUTO.exists() else {}
     for k, v in (fa or {}).items():
         if v.get("status") == "forward":

@@ -107,3 +107,11 @@ F10:
   pass: ">= 60 closed events and mean net > 0 with bootstrap 95% CI above 0"
   kill: 60 events with mean net <= 0
   note: the B34 'opposite' number is an upper bound (old exits were taken on the original side); this test is the clean version
+F11:
+  name: Upbit notice momentum (any notice kind on a perp-listed coin, confirmation-gated)
+  registered: 2026-10-02 23:55 KST (pre-registered; motivated by SAND 2026-10-02 16:00 '유의 종목 지정 해제' -> +17% in 60 min; the 4 prior warning-lifted events did nothing, so the gate is the hypothesis, not the notice kind)
+  script: scripts/upbit_listing_watcher.py notice_momentum() (same watcher process as F1, launchd com.altcoin.upbitlisting)
+  table: f11_notice_mom_paper
+  construction: detect notice (watcher, ~5-10 s lag); mid at detection = reference; if |mid move| >= 3% within 10 min -> paper position in the direction of the move at the touch; exit at 3% adverse (stop) or 4h; taker fee + slippage by dv24 both sides; notices with no confirmation kept as 'no_confirm'
+  pass: ">= 60 confirmed events and mean net > 0 with bootstrap 95% CI above 0"
+  kill: 60 confirmed events with mean net <= 0

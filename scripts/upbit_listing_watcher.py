@@ -81,8 +81,65 @@ def settle_later(s, nid, sym, side, bid0, ask0):
     threading.Thread(target=run, daemon=True).start()
 
 
+F11_SCHEMA = """CREATE TABLE IF NOT EXISTS f11_notice_mom_paper (
+  notice_id BIGINT NOT NULL, symbol TEXT NOT NULL, kind TEXT, title TEXT, first_listed_ts DOUBLE PRECISION, detect_ts DOUBLE PRECISION,
+  mid0 DOUBLE PRECISION, confirm_ts DOUBLE PRECISION, confirm_move DOUBLE PRECISION, side INTEGER, entry_px DOUBLE PRECISION,
+  exit_ts DOUBLE PRECISION, exit_px DOUBLE PRECISION, exit_reason TEXT, dv24 DOUBLE PRECISION, gross DOUBLE PRECISION,
+  cost DOUBLE PRECISION, net DOUBLE PRECISION, status TEXT, PRIMARY KEY (notice_id, symbol))"""
+F11_CONFIRM, F11_WINDOW_S, F11_STOP, F11_HOLD_S, F11_FEE = 0.03, 600, 0.03, 4 * 3600, 0.0005
+
+
+def slip(dv):
+    return 0.0002 if dv > 1e8 else 0.0005 if dv > 2e7 else 0.0010 if dv > 5e6 else 0.0020
+
+
+def notice_momentum(s, nid, kind, code, title, first):
+    """F11 (registered 2026-10-02 23:55 KST): ANY fresh Upbit notice naming a perp-listed coin -> wait for confirmation
+    (|mid move| >= 3% within 10 min of detection) -> paper position in the direction of the move at the touch (ask for a
+    long, bid for a short); exit at -3% adverse (stop) or +4h (time); taker fee + slippage both sides. No confirmation
+    within 10 min -> row kept with status 'no_confirm' so the denominator is honest. Never places orders."""
+    def run():
+        try:
+            bid0, ask0 = book(s, code); mid0 = (bid0 + ask0) / 2; t_det = time.time()
+            try:
+                dv = float(s.get(f"{FAPI}/fapi/v1/ticker/24hr", params={"symbol": code}, timeout=5).json()["quoteVolume"])
+            except Exception:  # noqa: BLE001
+                dv = 0.0
+            db("INSERT INTO f11_notice_mom_paper (notice_id, symbol, kind, title, first_listed_ts, detect_ts, mid0, dv24, status) VALUES (?,?,?,?,?,?,?,?,'watching') ON CONFLICT DO NOTHING",
+               (nid, code, kind, title[:200], first, t_det, mid0, dv))
+            side, entry, t_in = 0, None, None
+            while time.time() - t_det < F11_WINDOW_S:
+                time.sleep(10)
+                bid, ask = book(s, code); mv = (bid + ask) / 2 / mid0 - 1
+                if mv >= F11_CONFIRM:
+                    side, entry, t_in = 1, ask, time.time(); break
+                if mv <= -F11_CONFIRM:
+                    side, entry, t_in = -1, bid, time.time(); break
+            if not side:
+                db("UPDATE f11_notice_mom_paper SET status='no_confirm' WHERE notice_id=? AND symbol=?", (nid, code)); return
+            db("UPDATE f11_notice_mom_paper SET confirm_ts=?, confirm_move=?, side=?, entry_px=?, status='open' WHERE notice_id=? AND symbol=?",
+               (t_in, entry / mid0 - 1, side, entry, nid, code))
+            print(time.strftime("%F %T"), f"F11 open {code} {'LONG' if side > 0 else 'SHORT'} at {entry} after {t_in - t_det:.0f}s ({kind})", flush=True)
+            reason = None
+            while reason is None:
+                time.sleep(10)
+                bid, ask = book(s, code); px = bid if side > 0 else ask
+                if side * (px / entry - 1) <= -F11_STOP:
+                    reason = "stop"
+                elif time.time() - t_in >= F11_HOLD_S:
+                    reason = "time_4h"
+            gross = side * (px / entry - 1); cost = 2 * (F11_FEE + slip(dv)); net = gross - cost
+            db("UPDATE f11_notice_mom_paper SET exit_ts=?, exit_px=?, exit_reason=?, gross=?, cost=?, net=?, status='closed' WHERE notice_id=? AND symbol=?",
+               (time.time(), px, reason, gross, cost, net, nid, code))
+            print(time.strftime("%F %T"), f"F11 close {code} {reason} gross {gross:+.4f} net {net:+.4f}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(time.strftime("%F %T"), "F11 error", code, repr(e)[:120], flush=True)
+            db("UPDATE f11_notice_mom_paper SET status='error' WHERE notice_id=? AND symbol=? AND status IN ('watching','open')", (nid, code))
+    threading.Thread(target=run, daemon=True).start()
+
+
 def main() -> int:
-    db(SCHEMA)
+    db(SCHEMA); db(F11_SCHEMA)
     s = requests.Session()
     s.headers["User-Agent"] = "Mozilla/5.0"
     live = perps(s)
@@ -114,13 +171,19 @@ def main() -> int:
             cl = classify(n["title"])
             first = datetime.fromisoformat(n.get("first_listed_at") or n["listed_at"]).timestamp()
             print(time.strftime("%F %T"), "NEW", n["id"], n["title"][:80], f"lag {now - first:.2f}s", flush=True)
-            if not cl:
-                continue
             if now - first > MAX_LAG_S:  # old notice resurfacing (edit/repost), not a fresh signal
                 print(time.strftime("%F %T"), "SKIP stale", n["id"], f"lag {now - first:.0f}s", flush=True)
                 continue
-            kind, side = cl
             syms = [x for x in re.findall(r"[A-Z][A-Z0-9]{1,11}", n["title"]) if x not in ("KRW", "BTC", "USDT")]
+            # F11: every fresh notice (listing, warning, warning lifted, delisting, other) on a perp-listed coin
+            f11_kind = cl[0] if cl else ("warning_lifted" if "유의 종목 지정 해제" in n["title"] else "warning" if "유의 종목" in n["title"] else "other")
+            for sym in dict.fromkeys(syms):
+                code = next((c for c in (f"{sym}USDT", f"1000{sym}USDT") if c in live), None)
+                if code:
+                    notice_momentum(s, n["id"], f11_kind, code, n["title"], first)
+            if not cl:
+                continue
+            kind, side = cl
             for sym in dict.fromkeys(syms):
                 code = next((c for c in (f"{sym}USDT", f"1000{sym}USDT") if c in live), None)
                 if not code:
