@@ -90,6 +90,10 @@ VARIABLES = {
                            "forced long selling overshoots -> next-day rebound (liquidation-spiral reversal; B33 S3 found continuation only within ~4h)", True),
     "liq_to_oi_24h": (+1, "liq", lambda P: _share(L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24), P["oi_cz"]) * np.where(np.isfinite(P["liq_long"]) | np.isfinite(P["liq_short"]), 1, np.nan),
                       "capitulation intensity: liquidations relative to open interest -> reversal", True),
+    # continuation variant registered 2026-10-03 00:00 KST AFTER seeing the 36-day short-history result (t -2.83 against the
+    # reversal sign): it is NOT re-tested on that data; it goes straight to a forward paper book (research/forward_auto.yaml)
+    "liq_long_cont_24h": (-1, "liq", lambda P: _share(L.S(np.nan_to_num(P["liq_long"]), 24), L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24)) * np.where(L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24) > 0, 1, np.nan),
+                           "forced long selling CONTINUES next day (short the coins with the highest long-liquidation share); forward-only", True),
     "liq_short_share_24h": (-1, "liq", lambda P: _share(L.S(np.nan_to_num(P["liq_short"]), 24), L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24)) * np.where(L.S(np.nan_to_num(P["liq_long"]) + np.nan_to_num(P["liq_short"]), 24) > 0, 1, np.nan),
                             "short squeezes overshoot -> next-day give-back", True),
 }

@@ -58,3 +58,20 @@ ARd5d71ff6:
     holdout_lag1h_t: 2.100860368671908
     holdout_dsort_t: 2.7744156558962905
     holdout_band_net_bp: 5.172686075482899
+ARb44d336e:
+  status: forward
+  track: short_history_forward_only
+  spec:
+    method: xs_sort
+    var: liq_long_cont_24h
+    cond: null
+    sign: -1
+  registered: '2026-10-02'
+  table: fa_arb44d336e
+  construction: daily 00:05 UTC, band L/S enter 20% keep 30%, EW, gross 1.0, costs
+    fee+slip, funding
+  pass: '>= 60 daily books AND day-net bootstrap 95% CI > 0'
+  kill: 60 books with mean net <= 0
+  evidence:
+    note: sign chosen after a 36-day short-history result (ARfa0a97ce holdout t -2.83
+      against reversal); no back-test credit, forward test only
