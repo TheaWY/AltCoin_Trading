@@ -1,55 +1,55 @@
-# Autonomous research status - 2026-10-02 10:16 KST
+# Autonomous research status - 2026-10-02 11:16 KST
 
-Hypotheses: 240 tested (0 errors), 1 passed the full rule, 408 queued. Running BHY over all 240 holdout p-values. Families tested: {'method': 122, 'korea': 48, 'vol': 29, 'price': 14, 'funding': 6, 'flow': 6, 'oi': 6, 'volume': 4, 'cross': 3, 'positioning': 2}
+Hypotheses: 360 tested (0 errors), 1 passed the full rule, 288 queued. Running BHY over all 360 holdout p-values. Families tested: {'method': 242, 'korea': 48, 'vol': 29, 'price': 14, 'funding': 6, 'flow': 6, 'oi': 6, 'volume': 4, 'cross': 3, 'positioning': 2}
 
 ## Last hour
 
 | id | method | variable | state | in FM t | holdout FM t | alpha t | lag t | band net bp | BHY | pass |
 |---|---|---|---|---|---|---|---|---|---|---|
-| ARce003791 | ts_direction | vrp_30d | 4h|mkt_vol_high | -1.33 | -0.35 | – | – | – | False | False |
-| ARa94f3025 | ts_direction | vrp_30d | 4h|funding_crowded | -0.98 | +0.50 | – | – | – | False | False |
-| AR857dcc40 | ts_direction | vrp_30d | 4h|weekend | +0.99 | +1.24 | – | – | – | False | False |
-| AR0ab55205 | ts_direction | vrp_30d | 4h|btc_30d_down | +0.96 | +1.19 | – | – | – | False | False |
-| AR293f1dd1 | ts_direction | vrp_30d | 24h|mkt_vol_high | -0.60 | -0.03 | – | – | – | False | False |
-| ARce8bf9c0 | ts_direction | vrp_30d | 24h|funding_crowded | -0.67 | – | – | – | – | False | False |
-| ARde1b2dbb | ts_direction | vrp_30d | 24h|weekend | +1.44 | +1.55 | – | – | – | False | False |
-| AR54a31455 | ts_direction | vrp_30d | 24h|btc_30d_down | +1.01 | +1.85 | – | – | – | False | False |
-| AR09315250 | ts_direction | dvol_level | 1h|mkt_vol_high | +1.09 | +0.76 | – | – | – | False | False |
-| AR394e062a | ts_direction | dvol_level | 1h|funding_crowded | +0.62 | -0.71 | – | – | – | False | False |
-| AR91b013f1 | ts_direction | dvol_level | 1h|weekend | -0.85 | -0.71 | – | – | – | False | False |
-| AR00970dee | ts_direction | dvol_level | 1h|btc_30d_down | +2.02 | +0.52 | – | – | – | False | False |
-| AR9d4664e2 | ts_direction | dvol_level | 4h|mkt_vol_high | +1.47 | +0.61 | – | – | – | False | False |
-| AR92a77a36 | ts_direction | dvol_level | 4h|funding_crowded | +0.27 | -0.59 | – | – | – | False | False |
-| AR613b7f2f | ts_direction | dvol_level | 4h|weekend | -0.91 | -0.94 | – | – | – | False | False |
-| ARb08e2e35 | ts_direction | dvol_level | 4h|btc_30d_down | +2.33 | +0.54 | – | – | – | False | False |
-| AR6bc75592 | ts_direction | dvol_level | 24h|mkt_vol_high | +1.38 | +0.74 | – | – | – | False | False |
-| AR15c4beeb | ts_direction | dvol_level | 24h|funding_crowded | +0.00 | – | – | – | – | False | False |
-| ARf6a96383 | ts_direction | dvol_level | 24h|weekend | -0.77 | -0.78 | – | – | – | False | False |
-| AR096b6229 | ts_direction | dvol_level | 24h|btc_30d_down | +2.60 | +0.41 | – | – | – | False | False |
-| AR735486ca | ts_direction | agg_funding_24h | 1h|mkt_vol_high | +0.23 | +1.36 | – | – | – | False | False |
-| AR5c6ca548 | ts_direction | agg_funding_24h | 1h|funding_crowded | -1.49 | -0.99 | – | – | – | False | False |
-| AR5d5b18fd | ts_direction | agg_funding_24h | 1h|weekend | -1.94 | -0.44 | – | – | – | False | False |
-| AR72a2c2b8 | ts_direction | agg_funding_24h | 1h|btc_30d_down | +1.86 | +0.31 | – | – | – | False | False |
-| AR1f2f7b43 | ts_direction | agg_funding_24h | 4h|mkt_vol_high | +0.27 | +1.48 | – | – | – | False | False |
-| AR715b3ad8 | ts_direction | agg_funding_24h | 4h|funding_crowded | -1.74 | -1.11 | – | – | – | False | False |
-| ARd9a9bda4 | ts_direction | agg_funding_24h | 4h|weekend | -2.18 | -0.52 | – | – | – | False | False |
-| AR5b026c71 | ts_direction | agg_funding_24h | 4h|btc_30d_down | +1.54 | +0.50 | – | – | – | False | False |
-| ARc303d4db | ts_direction | agg_funding_24h | 24h|mkt_vol_high | +0.61 | +1.72 | – | – | – | False | False |
-| AR43d22266 | ts_direction | agg_funding_24h | 24h|funding_crowded | -0.90 | – | – | – | – | False | False |
-| ARc92a8e52 | ts_direction | agg_funding_24h | 24h|weekend | -2.22 | -0.12 | – | – | – | False | False |
-| AR7a5b0d74 | ts_direction | agg_funding_24h | 24h|btc_30d_down | +1.74 | +0.37 | – | – | – | False | False |
-| ARb0062a43 | ts_direction | agg_funding_chg_7d | 1h|mkt_vol_high | -0.17 | +0.61 | – | – | – | False | False |
-| ARe20b3a8c | ts_direction | agg_funding_chg_7d | 1h|funding_crowded | -1.05 | +0.25 | – | – | – | False | False |
-| ARc272f0c5 | ts_direction | agg_funding_chg_7d | 1h|weekend | -1.67 | +0.52 | – | – | – | False | False |
-| AR37417959 | ts_direction | agg_funding_chg_7d | 1h|btc_30d_down | +1.06 | +0.91 | – | – | – | False | False |
-| AR78f115ef | ts_direction | agg_funding_chg_7d | 4h|mkt_vol_high | -0.11 | +0.97 | – | – | – | False | False |
-| AR02cbce45 | ts_direction | agg_funding_chg_7d | 4h|funding_crowded | -1.23 | +0.41 | – | – | – | False | False |
-| ARfc22a783 | ts_direction | agg_funding_chg_7d | 4h|weekend | -2.04 | +0.53 | – | – | – | False | False |
-| ARd072f28b | ts_direction | agg_funding_chg_7d | 4h|btc_30d_down | +0.85 | +1.11 | – | – | – | False | False |
+| AR1a0c1ce2 | ts_direction | korea_heavy_minus_rest_24h | 4h|mkt_vol_high | -0.61 | +2.10 | – | – | – | False | False |
+| AR5553819c | ts_direction | korea_heavy_minus_rest_24h | 4h|funding_crowded | -0.03 | +0.07 | – | – | – | False | False |
+| ARdc3988f0 | ts_direction | korea_heavy_minus_rest_24h | 4h|weekend | -0.34 | +0.87 | – | – | – | False | False |
+| ARdc8f37ba | ts_direction | korea_heavy_minus_rest_24h | 4h|btc_30d_down | -0.68 | +1.38 | – | – | – | False | False |
+| AR1d02c154 | ts_direction | korea_heavy_minus_rest_24h | 24h|mkt_vol_high | +0.13 | +2.57 | – | – | – | False | False |
+| AR1429eb11 | ts_direction | korea_heavy_minus_rest_24h | 24h|funding_crowded | +0.98 | – | – | – | – | False | False |
+| AR5439de52 | ts_direction | korea_heavy_minus_rest_24h | 24h|weekend | +0.91 | +0.79 | – | – | – | False | False |
+| AR0e18f764 | ts_direction | korea_heavy_minus_rest_24h | 24h|btc_30d_down | -0.45 | +0.96 | – | – | – | False | False |
+| ARd97b8be0 | ts_direction | korea_share_total_24h | 1h|mkt_vol_high | -1.56 | +0.12 | – | – | – | False | False |
+| AR1f75358d | ts_direction | korea_share_total_24h | 1h|funding_crowded | -1.01 | +0.24 | – | – | – | False | False |
+| AR23511b1b | ts_direction | korea_share_total_24h | 1h|weekend | -1.49 | +1.47 | – | – | – | False | False |
+| AR2ddbfe68 | ts_direction | korea_share_total_24h | 1h|btc_30d_down | -0.44 | +0.42 | – | – | – | False | False |
+| AR42486a22 | ts_direction | korea_share_total_24h | 4h|mkt_vol_high | -1.78 | -0.15 | – | – | – | False | False |
+| AR2537498b | ts_direction | korea_share_total_24h | 4h|funding_crowded | -1.33 | +0.40 | – | – | – | False | False |
+| ARc21f531b | ts_direction | korea_share_total_24h | 4h|weekend | -1.74 | +1.33 | – | – | – | False | False |
+| ARf4d814e5 | ts_direction | korea_share_total_24h | 4h|btc_30d_down | -0.57 | +0.50 | – | – | – | False | False |
+| AR455035e1 | ts_direction | korea_share_total_24h | 24h|mkt_vol_high | -1.07 | -1.29 | – | – | – | False | False |
+| ARa160ad58 | ts_direction | korea_share_total_24h | 24h|funding_crowded | -1.33 | – | – | – | – | False | False |
+| AR0f282d58 | ts_direction | korea_share_total_24h | 24h|weekend | -1.44 | +0.06 | – | – | – | False | False |
+| ARe5970dc0 | ts_direction | korea_share_total_24h | 24h|btc_30d_down | -0.43 | -0.45 | – | – | – | False | False |
+| AR319acfe6 | ts_direction | agg_taker_buy_24h | 1h|mkt_vol_high | -0.21 | +1.21 | – | – | – | False | False |
+| AR81d7bdd9 | ts_direction | agg_taker_buy_24h | 1h|funding_crowded | +0.26 | -0.56 | – | – | – | False | False |
+| AR0899f2d8 | ts_direction | agg_taker_buy_24h | 1h|weekend | -0.01 | -1.87 | – | – | – | False | False |
+| AR44154551 | ts_direction | agg_taker_buy_24h | 1h|btc_30d_down | -0.52 | -0.20 | – | – | – | False | False |
+| AR21e76b42 | ts_direction | agg_taker_buy_24h | 4h|mkt_vol_high | +0.31 | +1.27 | – | – | – | False | False |
+| AR5a979fee | ts_direction | agg_taker_buy_24h | 4h|funding_crowded | +0.31 | -0.51 | – | – | – | False | False |
+| ARb5ba1e90 | ts_direction | agg_taker_buy_24h | 4h|weekend | +0.79 | -2.10 | – | – | – | False | False |
+| AR43398844 | ts_direction | agg_taker_buy_24h | 4h|btc_30d_down | -0.14 | -0.04 | – | – | – | False | False |
+| AR24766e98 | ts_direction | agg_taker_buy_24h | 24h|mkt_vol_high | -0.37 | +0.96 | – | – | – | False | False |
+| AR829a5a10 | ts_direction | agg_taker_buy_24h | 24h|funding_crowded | -0.71 | – | – | – | – | False | False |
+| AR73b087f1 | ts_direction | agg_taker_buy_24h | 24h|weekend | +0.65 | -1.05 | – | – | – | False | False |
+| ARa54c9bb8 | ts_direction | agg_taker_buy_24h | 24h|btc_30d_down | -0.30 | +0.15 | – | – | – | False | False |
+| ARdd0683a4 | ts_direction | agg_ls_global | 1h|mkt_vol_high | +0.53 | +1.83 | – | – | – | False | False |
+| AR555dcff9 | ts_direction | agg_ls_global | 1h|funding_crowded | +0.03 | +1.56 | – | – | – | False | False |
+| AR2efc66e7 | ts_direction | agg_ls_global | 1h|weekend | +0.45 | +1.42 | – | – | – | False | False |
+| ARdf762d7c | ts_direction | agg_ls_global | 1h|btc_30d_down | +0.64 | +0.53 | – | – | – | False | False |
+| ARbcfcccfb | ts_direction | agg_ls_global | 4h|mkt_vol_high | +0.64 | +1.91 | – | – | – | False | False |
+| ARdb693380 | ts_direction | agg_ls_global | 4h|funding_crowded | +0.11 | +1.80 | – | – | – | False | False |
+| AR6099085b | ts_direction | agg_ls_global | 4h|weekend | +0.83 | +1.28 | – | – | – | False | False |
+| AR68a323f5 | ts_direction | agg_ls_global | 4h|btc_30d_down | +0.69 | +0.75 | – | – | – | False | False |
 
 ## D-series: market direction (sign of the EW market return over the next h; holdout)
 
-120 (variable x horizon) tested; a direction pass needs slope t >= 2, BHY, in-sample sign, PT p < .05, AUC CI low > .5, Clark-West p < .05, utility gain > 0 and Sharpe > hist-mean timing.
+240 (variable x horizon) tested; a direction pass needs slope t >= 2, BHY, in-sample sign, PT p < .05, AUC CI low > .5, Clark-West p < .05, utility gain > 0 and Sharpe > hist-mean timing.
 
 | id | variable | h | in t | hold t | PT hit | PT p | AUC [lo] | R2os | CW p | SR net / HM | CT gain | checks ok |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -114,7 +114,7 @@ Hypotheses: 240 tested (0 errors), 1 passed the full rule, 408 queued. Running B
 | test | closed | needed | mean net % | CI low % |
 |---|---|---|---|---|
 | F1 Upbit notice | 0 | 15 | – | – |
-| F2 pump CNN | 31 | 300 | +1.90 | -2.69 |
+| F2 pump CNN | 33 | 300 | +2.08 | -2.65 |
 | F3 crash rebound | 0 | 30 | – | – |
 | F4 spot-led | 2 | 100 | -26.74 | – |
 | F5 unlock short | 0 | 60 | – | – |
