@@ -106,6 +106,8 @@ METHODS = {
     "factor_momentum": "hold the signal only after its own trailing 30-day L/S was positive (Fieberg-Liedtke-Metko-Zaremba 2023)",
     "ctrend_combo": "Lewellen/Fieberg combination: rolling 180d FM slopes x characteristics, no in-sample weights",
     "mfd_gate": "machine-forecast-disagreement gate (Chu-Shen-Zhu 2026): trade only coins where bootstrap ridge forecasts agree",
+    "ts_direction": "D-series (ar_direction): sign of the whole-market return over the next 1h/4h/24h/1w from a market-wide predictor; "
+                    "NW slope, Pesaran-Timmermann, block-bootstrap AUC, Goyal-Welch recursive R2_OS + Clark-West, Campbell-Thompson utility gain",
 }
 
 PASS_RULE = ("holdout FM t >= 2 with the a-priori sign AND running BHY (q=0.05) over every hypothesis the engine has tested AND "

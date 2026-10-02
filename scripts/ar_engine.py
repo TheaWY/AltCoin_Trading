@@ -110,13 +110,24 @@ def propose(max_new=200):
             specs.append({"method": "layered", "var": var, "cond": cond, "prio": prio.get(fam, 5) + 5 + (2 if cond == "strategy_lost_7d" else 0)})
     specs.append({"method": "ctrend_combo", "var": "ALL", "cond": None, "prio": 2})
     specs.append({"method": "mfd_gate", "var": "ALL", "cond": None, "prio": 4})
+    # D-series: market DIRECTION (ar_direction.DVARS x horizon). Highest priority: direction of the whole market is the
+    # stated goal; cond = horizon so the hypothesis id and the a-priori sign are fixed before any data is seen.
+    import ar_direction as DR
+    for var in list(DR.DVARS) + ["ALL"]:
+        for hz in DR.HORIZONS:
+            specs.append({"method": "ts_direction", "var": var, "cond": hz, "prio": -1})
     new = []
     for s in sorted(specs, key=lambda s: s["prio"]):
         s["id"] = hid({k: s[k] for k in ("method", "var", "cond")})
         if s["id"] in tested:
             continue
-        s["registered"] = time.strftime("%F %T"); s["sign"] = C.VARIABLES[s["var"]][0] if s["var"] in C.VARIABLES else +1
-        s["source"] = C.VARIABLES[s["var"]][3] if s["var"] in C.VARIABLES else C.METHODS[s["method"]]
+        s["registered"] = time.strftime("%F %T")
+        if s["method"] == "ts_direction":
+            s["sign"] = DR.DVARS[s["var"]][0] if s["var"] in DR.DVARS else +1
+            s["source"] = DR.DVARS[s["var"]][3] if s["var"] in DR.DVARS else "recursive ridge over all D-series variables (market as a whole)"
+        else:
+            s["sign"] = C.VARIABLES[s["var"]][0] if s["var"] in C.VARIABLES else +1
+            s["source"] = C.VARIABLES[s["var"]][3] if s["var"] in C.VARIABLES else C.METHODS[s["method"]]
         new.append(s); tested.add(s["id"])
         if len(new) >= max_new:
             break
@@ -129,6 +140,10 @@ def run_one(spec, P):
     import b30_rigorous as B30
     d, F, hold = P["d"], P["F"], P["hold"]
     out = {"id": spec["id"], "method": spec["method"], "var": spec["var"], "cond": spec.get("cond"), "sign": spec.get("sign", 1), "run": time.strftime("%F %T")}
+    if spec["method"] == "ts_direction":
+        import ar_direction as DR
+        out.update(DR.run(P, spec["var"], spec["cond"], B30.START, B30.HOLD * 86400, B30.END))
+        return out
     if spec["method"] in ("xs_sort", "layered", "factor_momentum"):
         S = build_signal(P, spec["var"])
         if spec["method"] == "factor_momentum":
@@ -204,6 +219,10 @@ def run_one(spec, P):
 
 
 def verdict(out, bhy_flag):
+    if out.get("method") == "ts_direction":
+        import ar_direction as DR
+        ok = DR.verdict(out); ok["bhy"] = bool(bhy_flag)
+        return ok, all(ok.values())
     ok = {"holdout_t2": bool((out.get("holdout_fm_t") or -9) >= 2), "bhy": bool(bhy_flag), "insample_sign": bool((out.get("insample_fm_t") or -9) > 0),
           "lag": bool((out.get("holdout_lag1h_t") or -9) > 1.5), "dsort": bool((out.get("holdout_dsort_t") or -9) > 1.5), "band_net": bool((out.get("holdout_band_net_bp") or -9) > 0)}
     if out.get("method") == "layered":
@@ -226,7 +245,7 @@ def rebhy():
 def run(n=10, minutes=45):
     t0 = time.time()
     q = jl_read(QUEUE); done = {r["id"] for r in jl_read(RESULTS)}
-    todo = [s for s in q if s["id"] not in done][:n]
+    todo = sorted([s for s in q if s["id"] not in done], key=lambda s: s.get("prio", 5))[:n]   # priority first, then registration order
     if not todo:
         return []
     P = panel()
@@ -262,6 +281,12 @@ def promote():
         if not r.get("pass") or r["id"] in fa:
             continue
         var = r["var"]
+        if r["method"] == "ts_direction":
+            # a market-direction survivor is a beta/leverage overlay on the whole book, not a L/S book: logged here, and
+            # wired into the main book as a gross-exposure tilt only after it has a forward record (ar_live direction table)
+            fa[r["id"]] = {"status": "survivor_direction", "spec": {k: r[k] for k in ("method", "var", "cond", "sign")}, "registered": time.strftime("%F"),
+                           "evidence": {k: r.get(k) for k in ("insample_fm_t", "holdout_fm_t", "holdout_pt_hit", "holdout_pt_p", "holdout_auc", "holdout_auc_lo", "holdout_cw_p", "holdout_sharpe_net", "holdout_hm_sharpe", "holdout_ct_gain")}}
+            continue
         if var not in C.VARIABLES or not C.VARIABLES[var][4] or r["method"] not in ("xs_sort", "factor_momentum", "layered"):
             fa[r["id"]] = {"status": "survivor_not_live", "spec": {k: r[k] for k in ("method", "var", "cond", "sign")}, "registered": time.strftime("%F")}
             continue
@@ -327,6 +352,14 @@ def status():
         if "error" in r:
             Lm.append(f"| {r['id']} | {r['method']} | {r['var']} | {r.get('cond') or ''} | ERROR | | | | | | |"); continue
         Lm.append(f"| {r['id']} | {r['method']} | {r['var']} | {r.get('cond') or ''} | {f(r.get('insample_fm_t'))} | {f(r.get('holdout_fm_t'))} | {f(r.get('holdout_alpha_t'))} | {f(r.get('holdout_lag1h_t'))} | {f(r.get('holdout_band_net_bp'))} | {r.get('bhy')} | {r.get('pass')} |")
+    dr = [r for r in ok if r.get("method") == "ts_direction"]
+    if dr:
+        Lm += ["", "## D-series: market direction (sign of the EW market return over the next h; holdout)", "",
+               f"{len(dr)} (variable x horizon) tested; a direction pass needs slope t >= 2, BHY, in-sample sign, PT p < .05, AUC CI low > .5, Clark-West p < .05, utility gain > 0 and Sharpe > hist-mean timing.", "",
+               "| id | variable | h | in t | hold t | PT hit | PT p | AUC [lo] | R2os | CW p | SR net / HM | CT gain | checks ok |", "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        g = lambda v, s="{:.3f}": "–" if v is None or (isinstance(v, float) and not np.isfinite(v)) else s.format(v)  # noqa: E731
+        for r in sorted(dr, key=lambda r: -(r.get("holdout_fm_t") or -9))[:40]:
+            Lm.append(f"| {r['id']} | {r['var']} | {r.get('cond')} | {f(r.get('insample_fm_t'))} | {f(r.get('holdout_fm_t'))} | {g(r.get('holdout_pt_hit'))} | {g(r.get('holdout_pt_p'))} | {g(r.get('holdout_auc'))} [{g(r.get('holdout_auc_lo'))}] | {g(r.get('holdout_r2os'), '{:+.4f}')} | {g(r.get('holdout_cw_p'))} | {f(r.get('holdout_sharpe_net'))} / {f(r.get('holdout_hm_sharpe'))} | {g(r.get('holdout_ct_gain'), '{:+.3f}')} | {sum((r.get('checks') or {}).values())}/{len(r.get('checks') or {})} |")
     Lm += ["", "## Survivors (full rule)", ""] + ([f"- {r['id']} {r['method']} {r['var']}{' x ' + r['cond'] if r.get('cond') else ''}: holdout FM t {f(r.get('holdout_fm_t'))}, alpha t {f(r.get('holdout_alpha_t'))}, band net {f(r.get('holdout_band_net_bp'))} bp/day -> {fa.get(r['id'], {}).get('status', 'pending promotion')}" for r in passed] or ["- none yet"])
     Lm += ["", "## Near misses (holdout FM t >= 1.5, failed a check)", ""] + ([f"- {r['id']} {r['method']} {r['var']}{' x ' + r['cond'] if r.get('cond') else ''}: holdout t {f(r.get('holdout_fm_t'))}; failed {[k for k, v in (r.get('checks') or {}).items() if not v]}" for r in near] or ["- none"])
     Lm += ["", "## Forward paper tests (clean evidence)", "", "| test | closed | needed | mean net % | CI low % |", "|---|---|---|---|---|"]
