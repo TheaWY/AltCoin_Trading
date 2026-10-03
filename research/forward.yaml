@@ -134,3 +134,12 @@ F13:
   pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60)"
   kill: 30 closed events with mean net <= 0
   note: report-only in main_book (no Upbit execution adapter; venue decision is 유리's). Status column also carries the honest denominator.
+F14:
+  name: Korea-led burst fade (SHORT the Binance perp when a 30-min burst's turnover is >= 20% Upbit)
+  registered: 2026-10-03 11:40 KST (forward only; in-sample on B35's 23 days, confirmed on Upbit-side holdout in B37)
+  source: B35 Upbit-share>20% bursts mean 4h -1.5% (n=135, top quartile -2.8%); B37 Upbit hourly bursts holdout 4h -2.2% CI [-2.7,-1.7] n=1058, no-perp coins -3.5%
+  script: scripts/korea_led_fade_paper.py (launchd com.altcoin.korealedfade, every 5 min)
+  table: f14_korea_led_fade_paper
+  construction: same burst trigger as F12 (r30 >= +5%, 30-min volume >= 5x prior-2h avg, dv24 >= $5M, crypto perp listed >= 30d) AND Upbit KRW turnover / (Upbit + Binance) over the 30 min >= 20% -> paper SHORT at 1m close; stop +3% on 1m highs; 4h time exit; fee + slippage by dv24 + settled funding; max 10 open, one per coin per 4h
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60)"
+  kill: 30 closed events with mean net <= 0
