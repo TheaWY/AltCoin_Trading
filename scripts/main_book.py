@@ -50,9 +50,13 @@ FORWARD = {
     "F5": ("unlock_short_paper", "ts_open", "net", 60, "trade"),
     "F7": ("f7_vshare_paper", "ts_signal", "net", 12, "book"),
     "F9": ("f9_listing_fade_paper", "entry_ts", "net", 30, "event"),
-    "F11": ("f11_notice_mom_paper", "confirm_ts", "net", 60, "trade"),       # Upbit notice momentum (registered 2026-10-02)
-    "F12": ("f12_fresh_burst_paper", "ts_signal", "net", 60, "trade"),        # fresh burst (registered 2026-10-03)
+    "F11": ("f11_notice_mom_paper", "confirm_ts", "net", 30, "trade"),       # Upbit notice momentum (registered 2026-10-02)
+    "F12": ("f12_fresh_burst_paper", "ts_signal", "net", 30, "trade"),        # fresh burst (registered 2026-10-03)
 }
+# 2026-10-03: event strategies (F11/F12/F13) fire a few times a day at most, so the 60-event floor meant months to a verdict.
+# Floor lowered to 30 for them; in exchange, any candidate judged on fewer than 60 events must clear a 99% bootstrap CI
+# (0.5th percentile > 0) instead of 95%. Same rule in qualified().
+SMALL_N, SMALL_N_PCT, PCT = 60, 0.5, 2.5
 # Autonomous-research promotions (research/forward_auto.yaml, status 'forward') are candidates too: same rule as F7 (book unit).
 try:
     import yaml as _yaml
@@ -66,7 +70,10 @@ except Exception:  # noqa: BLE001
 for _k, _v in list(FORWARD.items()):
     if _k.startswith("AR"):
         MIRROR[_k] = (_v[0], "ts_signal"); STRAT[_k] = _k.lower()
-FORWARD_REPORT_ONLY = {"F8": ("f8_latesession_paper", "day", "net", 120, "event")}
+FORWARD_REPORT_ONLY = {"F8": ("f8_latesession_paper", "day", "net", 120, "event"),
+                       # F13: Upbit-executed notice longs (KRW spot, live Upbit book). The main book is a Binance-USDT perp
+                       # book and has no Upbit adapter, so F13 is judged and reported here; execution venue is 유리's call.
+                       "F13": ("f13_upbit_live_paper", "entry_ts", "net", 30, "trade")}
 F7_GROSS = 0.5                     # gross notional of the mirrored F7 book as a share of equity (legs exempt from MAX_OPEN)
 DD_PAUSE, PAUSE_S = 0.10, 7 * 86400
 STATE = "CREATE TABLE IF NOT EXISTS main_book_state (k TEXT PRIMARY KEY, v DOUBLE PRECISION, note TEXT, updated BIGINT)"
@@ -90,8 +97,9 @@ def qualified(st, src):
         boot = [np.concatenate([days[i] for i in rng.integers(0, len(days), len(days))]).mean() for _ in range(2000)]
     else:
         x = d["net"].to_numpy(); boot = [x[rng.integers(0, len(x), len(x))].mean() for _ in range(2000)]
-    lo = float(np.percentile(boot, 2.5))
-    return lo > 0, f"n={len(d)} mean={d['net'].mean():+.4f} ci_lo={lo:+.4f}"
+    pct = SMALL_N_PCT if len(d) < SMALL_N else PCT
+    lo = float(np.percentile(boot, pct))
+    return lo > 0, f"n={len(d)} mean={d['net'].mean():+.4f} ci_lo={lo:+.4f} ({100 - 2 * pct:.0f}% CI)"
 
 
 def enabled(st, now):

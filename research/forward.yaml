@@ -104,8 +104,8 @@ F10:
   script: scripts/pairs_divergence_paper.py (launchd com.altcoin.pairsdiv, hourly :20; same selection + z core as the retired book, side mirrored)
   table: f10_pairs_div_paper
   construction: entry |z|>=2 -> ride the spread (long rich leg / short beta x cheap leg); target |z|>=|entry|+1; stop |z|<=0.5 or -15%; max hold 48h; <=20 open; taker fee+slip both sides, Binance settled funding per leg
-  pass: ">= 60 closed events and mean net > 0 with bootstrap 95% CI above 0"
-  kill: 60 events with mean net <= 0
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60); floor lowered 2026-10-03 11:00 KST, 3 closed trades at the time"
+  kill: 30 events with mean net <= 0
   note: the B34 'opposite' number is an upper bound (old exits were taken on the original side); this test is the clean version
 F11:
   name: Upbit notice momentum (any notice kind on a perp-listed coin, confirmation-gated)
@@ -113,8 +113,8 @@ F11:
   script: scripts/upbit_listing_watcher.py notice_momentum() (same watcher process as F1, launchd com.altcoin.upbitlisting)
   table: f11_notice_mom_paper
   construction: detect notice (watcher, ~5-10 s lag); mid at detection = reference; if |mid move| >= 3% within 10 min -> paper position in the direction of the move at the touch; exit at 3% adverse (stop) or 4h; taker fee + slippage by dv24 both sides; notices with no confirmation kept as 'no_confirm'
-  pass: ">= 60 confirmed events and mean net > 0 with bootstrap 95% CI above 0"
-  kill: 60 confirmed events with mean net <= 0
+  pass: ">= 30 confirmed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60); floor lowered 2026-10-03 11:00 KST, 1 closed trade at the time"
+  kill: 30 confirmed events with mean net <= 0
 F12:
   name: fresh burst (30-min +5% on 5x volume in a coin that has NOT run up over the prior week)
   registered: 2026-10-03 00:30 KST (forward only; the split was found in-sample on 23 days / 646 bursts and is carried by few trades)
@@ -122,5 +122,15 @@ F12:
   script: scripts/fresh_burst_paper.py (launchd com.altcoin.freshburst, every 5 min)
   table: f12_fresh_burst_paper
   construction: long at trigger close; stop -3% on 1m lows; time exit 4h; one per coin per 4h; max 10 open; taker fee+slip both sides; settled funding
-  pass: ">= 60 closed events and mean net > 0 with bootstrap 95% CI above 0"
-  kill: 60 events with mean net <= 0
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60); floor lowered 2026-10-03 11:00 KST, 3 closed trades at the time"
+  kill: 30 events with mean net <= 0
+F13:
+  name: Upbit-executed notice longs, priced off the live Upbit KRW order book (listing open + confirmation-gated notice momentum)
+  registered: 2026-10-03 11:00 KST (pre-registered, 0 events)
+  why: SAND +42% / POD +82% (first hour) on 2026-10-02 were Upbit spot moves; POD had no Binance perp; M-series shows Korea never leads Binance at 1-min, so Binance-mirrored tests (F1/F11) structurally miss the move. Also 153 past Upbit listings 1h mean +7.8% (median +0.1%, tail-driven)
+  script: scripts/f13_upbit_live.py upbit_live() (thread per notice inside the watcher, launchd com.altcoin.upbitlisting)
+  table: f13_upbit_live_paper
+  construction: long only (spot). krw_listing -> poll KRW-<SYM> book until trading opens (<=24h), buy at first book, hold 60 min, stop -5%. warning_lifted/warning/other on an existing market -> +3% on mid within 10 min of detection -> buy at the touch, stop -3%, hold 4h; -3% first -> 'no_confirm_down'. delisting skipped. Fills = VWAP walking the live L5 book for 1,000,000 KRW; Upbit fee 0.05% per side. never_opened / no_confirm rows kept
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60)"
+  kill: 30 closed events with mean net <= 0
+  note: report-only in main_book (no Upbit execution adapter; venue decision is 유리's). Status column also carries the honest denominator.

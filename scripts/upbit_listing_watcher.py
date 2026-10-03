@@ -21,6 +21,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from src.data.storage import get_storage  # noqa: E402
+from scripts.f13_upbit_live import SCHEMA as F13_SCHEMA, upbit_live  # noqa: E402
 
 UPBIT = "https://api-manager.upbit.com/api/v1/announcements"
 FAPI = "https://fapi.binance.com"
@@ -139,7 +140,7 @@ def notice_momentum(s, nid, kind, code, title, first):
 
 
 def main() -> int:
-    db(SCHEMA); db(F11_SCHEMA)
+    db(SCHEMA); db(F11_SCHEMA); db(F13_SCHEMA)
     s = requests.Session()
     s.headers["User-Agent"] = "Mozilla/5.0"
     live = perps(s)
@@ -177,6 +178,8 @@ def main() -> int:
             syms = [x for x in re.findall(r"[A-Z][A-Z0-9]{1,11}", n["title"]) if x not in ("KRW", "BTC", "USDT")]
             # F11: every fresh notice (listing, warning, warning lifted, delisting, other) on a perp-listed coin
             f11_kind = cl[0] if cl else ("warning_lifted" if "유의 종목 지정 해제" in n["title"] else "warning" if "유의 종목" in n["title"] else "other")
+            for sym in dict.fromkeys(syms):
+                upbit_live(db, n["id"], f11_kind, sym, n["title"], first)   # F13: executed on Upbit itself, perp or not
             for sym in dict.fromkeys(syms):
                 code = next((c for c in (f"{sym}USDT", f"1000{sym}USDT") if c in live), None)
                 if code:
