@@ -14,7 +14,7 @@ long books and (b) a prompt for a long-only form of the same effect (e.g. pump f
 | U2 | B42 F2U: pump long with LightGBM filter, entry delay 1-120 min, 5 exits | m1 windows | DONE: FAIL (after fixing a look-ahead bug in run 1) |
 | U3 | B44 Upbit notices (re-run of F1/F11/F13 on Upbit): new KRW listings, warning designation and release, delisting notices; long-only entries at open / after fade | exchange_notices + m1 | done: FAIL (avoid new listings 72h) |
 | U4 | B45 crash rebound on 1m (re-run of F3 on Upbit) with entry timing | crash events + m1 | SKIPPED: B43 crash rebound fails outside the 2024-12-03 martial-law night |
-| U5 | B46 first-minutes entry timing for pumps and fresh bursts (re-run of F12 on Upbit) | s1 + bn1s | after U2 |
+| U5 | B46 first-minutes entry timing for pumps and fresh bursts (re-run of F12 on Upbit) | s1 + bn1s | done: FAIL (all cells negative) |
 | U6 | B47 Upbit share / Korea-led flows long-only (re-run of F7, F14 idea in long form) | h1 + bn_h1 | after U1 |
 | U7 | B48 pairs, long-only laggard leg (re-run of F10 on Upbit) | h1 | after U1 |
 
