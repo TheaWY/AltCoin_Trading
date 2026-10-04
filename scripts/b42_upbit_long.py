@@ -13,6 +13,7 @@ Pre-registered protocol (fixed before looking at any result):
                         >= 30 validation trades; then report that single configuration on TEST with a day-clustered 95% CI.
   also reported         the same grid without a model (trade every event) so the model's value is visible.
 Success = TEST mean net > 0 with CI lower bound > 0. Anything else is reported as a failure, not re-tuned.
+Run 1 (22:28) was INVALID: pre_ret_1h used c[-1] (end of window, T+12h) through negative-index wrap-around.
 Output: research/b42_upbit_long.md, data/upbit_db/b42_dataset.parquet. Paper research only.
 """
 from __future__ import annotations
@@ -113,7 +114,7 @@ def build():
                 "hour_kst": ((T // 3600) + 9) % 24, "weekday": pd.Timestamp(T, unit="s").weekday(),
                 "pumps_30d": int(((ev_t < T) & (ev_t >= T - 30 * 86400) & (ev.market.to_numpy() == r.market)).sum()),
                 "breadth_24h": int(((ev_t < T) & (ev_t >= T - 86400)).sum()),
-                "pre_ret_1h": c[iT - 61] / c[iT - 121] - 1}
+                "pre_ret_1h": c[iT - 61] / c[0] - 1}          # BUGFIX 2026-10-04: was c[iT-121] = c[-1] (wraps to the END of the window = look-ahead)
         base.update(ctx_at(H[r.market], T) if r.market in H else {})
         if btc is not None:
             b = btc.loc[:T - 3600, "c"]
