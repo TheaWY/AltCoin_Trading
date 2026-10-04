@@ -9,11 +9,11 @@ long books and (b) a prompt for a long-only form of the same effect (e.g. pump f
 
 | id | test | data | status |
 |---|---|---|---|
-| U0 | Upbit DB: 1h since 2024, pump events, 1s (last 3 months) + 1m windows, Binance spot 1h, Binance 1s proxy | Upbit/Binance public APIs | running |
-| U1 | B43 hourly suite: crash rebound, -25%/24h dump rebound, pump (mirror), buy-after-fade, daily cross-section (reversal, momentum 1/7/28d, volume surge, low vol, lottery MAX), kimchi premium, hour/weekday timing, Binance-BTC lead, pump breadth | h1, bn_h1 | queued (after U0 h1 + bn_h1) |
-| U2 | B42 F2U: pump long with LightGBM filter, entry delay 1-120 min, 5 exits | m1 windows | queued (after U0 m1) |
+| U0 | Upbit DB: 1h since 2024, pump events, 1s (last 3 months) + 1m windows, Binance spot 1h, Binance 1s proxy | Upbit/Binance public APIs | done (2,649 pump events, 417 1s windows, 1,423 Binance 1s proxies, 205 Binance 1h) |
+| U1 | B43 hourly suite: crash rebound, -25%/24h dump rebound, pump (mirror), buy-after-fade, daily cross-section (reversal, momentum 1/7/28d, volume surge, low vol, lottery MAX), kimchi premium, hour/weekday timing, Binance-BTC lead, pump breadth | h1, bn_h1 | DONE: 9/9 FAIL; avoid rules (no buys 2-24h after a +10% pump; none at premium >= +10%) |
+| U2 | B42 F2U: pump long with LightGBM filter, entry delay 1-120 min, 5 exits | m1 windows | DONE: FAIL (after fixing a look-ahead bug in run 1) |
 | U3 | B44 Upbit notices (re-run of F1/F11/F13 on Upbit): new KRW listings, warning designation and release, delisting notices; long-only entries at open / after fade | exchange_notices + m1 | queued (after U2) |
-| U4 | B45 crash rebound on 1m (re-run of F3 on Upbit) with entry timing | crash events + m1 | if U1 F_crash promising |
+| U4 | B45 crash rebound on 1m (re-run of F3 on Upbit) with entry timing | crash events + m1 | SKIPPED: B43 crash rebound fails outside the 2024-12-03 martial-law night |
 | U5 | B46 first-minutes entry timing for pumps and fresh bursts (re-run of F12 on Upbit) | s1 + bn1s | after U2 |
 | U6 | B47 Upbit share / Korea-led flows long-only (re-run of F7, F14 idea in long form) | h1 + bn_h1 | after U1 |
 | U7 | B48 pairs, long-only laggard leg (re-run of F10 on Upbit) | h1 | after U1 |
