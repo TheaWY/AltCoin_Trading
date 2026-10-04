@@ -60,22 +60,22 @@ def main():
     print("events", len(ev), flush=True)
     rows = []
     for i, e in ev.iterrows():
-        w = b37.upbit_1m(f"KRW-{e.base}", e.T - 3600, e.T + 60 + H * 60)
+        w = b37.upbit_1m(f"KRW-{e.base}", e.tt - 3600, e.tt + 60 + H * 60)
         if w is None or not len(w):
             continue
-        w = w.set_index("ts").reindex(range(e.T - 3600, e.T + 60 + (H + 1) * 60, 60))
+        w = w.set_index("ts").reindex(range(e.tt - 3600, e.tt + 60 + (H + 1) * 60, 60))
         w["c"] = w["c"].ffill().bfill()
         for k in ("o", "h", "l"):
             w[k] = w[k].fillna(w["c"])
         w["v"] = w["v"].fillna(0)
-        pre = w.loc[e.T - 3600:e.T - 60]
+        pre = w.loc[e.tt - 3600:e.tt - 60]
         if len(pre) != 60 or pre["v"].sum() <= 0:
             continue
         img = image(*(pre[k].to_numpy(float) for k in ("o", "h", "l", "c", "v")))
         x = torch.tensor(img.astype(np.float32)[None, None] / 255.0)
         with torch.no_grad():
             p = float(np.mean([torch.sigmoid(m(x)).item() for m in ms]))
-        post = w.loc[e.T + 60:]
+        post = w.loc[e.tt + 60:]
         o, c = post["o"].to_numpy(float), post["c"].to_numpy(float)
         cost = 2 * (FEE + slip(e.v24_krw / USDKRW))
         ro, rc = o / o[0] - 1, c / o[0] - 1
@@ -86,7 +86,7 @@ def main():
             if pk >= 0.15 and rc[k] <= pk - 0.10:
                 trail = ro[k + 1] - cost - cost / 2
                 break
-        rows.append(dict(base=e.base, T=e.T, ret_1h=e.ret_1h, v24_krw=e.v24_krw, p=p,
+        rows.append(dict(base=e.base, T=e.tt, ret_1h=e.ret_1h, v24_krw=e.v24_krw, p=p,
                          cnn="long" if p >= META["hi"] else "short" if p <= META["lo"] else "none",
                          long_4h=base, long_trail=trail, worst_1m=float(post["l"].min() / o[0] - 1)))
         if i % 100 == 0:
