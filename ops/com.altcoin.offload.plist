@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.offload</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>scripts/offload_b2.py</string>
+    <string>--prune-db</string>
+    <string>--db-days</string><string>800</string>
+    <string>--vacuum-full</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+  <!-- weekly, Sunday 04:30 local: back up research data to Backblaze B2, move old backups and 800+ day DB history there -->
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/offload.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/offload.err.log</string>
+</dict>
+</plist>
