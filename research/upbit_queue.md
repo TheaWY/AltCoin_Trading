@@ -16,7 +16,7 @@ long books and (b) a prompt for a long-only form of the same effect (e.g. pump f
 | U4 | B45 crash rebound on 1m (re-run of F3 on Upbit) with entry timing | crash events + m1 | SKIPPED: B43 crash rebound fails outside the 2024-12-03 martial-law night |
 | U5 | B46 first-minutes entry timing for pumps and fresh bursts (re-run of F12 on Upbit) | s1 + bn1s | done: FAIL (all cells negative) |
 | U6 | B47 Upbit share / Korea-led flows long-only (re-run of F7, F14 idea in long form) | h1 + bn_h1 | done: 4/4 FAIL (avoid Upbit laggard after Binance pump) |
-| U7 | B48 pairs, long-only laggard leg (re-run of F10 on Upbit) | h1 | after U1 |
+| U7 | B48 pairs, long-only laggard leg (re-run of F10 on Upbit) | h1 | done: FAIL (one leg = market beta) |
 
 Progress reports go to 유리 as each test finishes; results append to research/trial_ledger.csv.
 | U8 | B45 BTC regime filter on long books | h1 + B39 | done: trend-up useless; BTC<MA20 -> F2W forward |
