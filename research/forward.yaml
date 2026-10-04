@@ -143,3 +143,19 @@ F14:
   construction: same burst trigger as F12 (r30 >= +5%, 30-min volume >= 5x prior-2h avg, dv24 >= $5M, crypto perp listed >= 30d) AND Upbit KRW turnover / (Upbit + Binance) over the 30 min >= 20% -> paper SHORT at 1m close; stop +3% on 1m highs; 4h time exit; fee + slippage by dv24 + settled funding; max 10 open, one per coin per 4h
   pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60)"
   kill: 30 closed events with mean net <= 0
+
+F2b:
+  name: F2 variant - high-confidence CNN signals only + trailing exit (arm +15%, give back 10 points, on 1m closes)
+  registered: 2026-10-04 18:00 KST (shadow forward test; F2 signals with ts_signal >= 18:00 KST), approved by 유리
+  source: B39 (research/b39_f2_loss_audit.md) - consistent in both OOS eras but not significant: margin>=median +0.90%/+0.73% vs all +0.68%/+0.46%; trail15/10 +0.19%/+0.15% paired; combined +1.00%/+0.59%
+  script: scripts/f2b_shadow_paper.py (launchd com.altcoin.f2bshadow, every 5 min)
+  table: f2b_shadow_paper (net_trail where margin_hi)
+  pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0, AND paired (F2b minus F2 base on the same signals) mean > 0"
+  kill: 60 closed events with paired mean <= 0
+F2L:
+  name: F2 variant - long signals only + trailing exit (spot-executable; no short-squeeze tail)
+  registered: 2026-10-04 18:00 KST, same table and sample as F2b
+  source: B39 follow-up - longs+trail +0.83% (2024) / +0.75% (2026) vs F2 all +0.68%/+0.46%; longs worst -56% vs shorts -151%; post-hoc, needs forward confirmation
+  table: f2b_shadow_paper (net_trail where side > 0)
+  pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0"
+  kill: 60 closed events with mean net <= 0
