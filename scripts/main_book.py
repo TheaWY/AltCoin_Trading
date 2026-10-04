@@ -12,6 +12,7 @@ Costs: 0.05%/side fee + liquidity slippage on entry (in fees) and exit fee via s
 State: table main_book_map (source, symbol, key_ts, trade_id, status, t_entry, t_exit_plan, stop_px, note)."""
 from __future__ import annotations
 
+import json
 import sys
 import time
 
@@ -63,6 +64,11 @@ SMALL_N, SMALL_N_PCT, PCT = 60, 0.5, 2.5
 # 2026-10-04: 유리 admitted F2 at n=48 (mean +2.61%, 95% day-clustered CI still includes 0; registered rule needs 300).
 # The drawdown brake (DD_PAUSE) still applies. Remove the entry to revert to rule-based admission.
 MANUAL_ADMIT = {"F2": "owner override 2026-10-04, n=48 mean +2.6%, rule needs 300"}
+# 2026-10-04 (유리): LONG ONLY. Korea does not allow shorting, so the main book never opens a SHORT (any source) and skips
+# the short legs of book strategies. F2 additionally keeps only high-confidence longs (CNN p >= hi + 0.0230188; B39:
+# OOS 2024 +1.55% CI [+0.01%, +3.16%], 2026 +0.95% CI [-0.38%, +2.20%] vs all longs +0.45% / +0.28%).
+LONG_ONLY = True
+F2_LONG_MARGIN = 0.0230188
 # Autonomous-research promotions (research/forward_auto.yaml, status 'forward') are candidates too: same rule as F7 (book unit).
 try:
     import yaml as _yaml
@@ -151,7 +157,10 @@ def equity(st):
 
 def signals(st, now):
     out = []
-    a = q(st, "SELECT symbol, ts_signal, side, dv24 FROM pump_cnn_paper WHERE status='open' AND side <> 0 AND ts_signal >= ?", (BOOK_START - 3600,))
+    a = q(st, "SELECT symbol, ts_signal, side, dv24, p_mean FROM pump_cnn_paper WHERE status='open' AND side <> 0 AND ts_signal >= ?", (BOOK_START - 3600,))
+    if a is not None and LONG_ONLY:
+        hi = json.loads((ROOT / "data/models/pump_cnn/meta.json").read_text())["hi"]
+        a = a[(a.side > 0) & (a.p_mean >= hi + F2_LONG_MARGIN)]
     for r in (a.itertuples(index=False) if a is not None else []):
         out.append(("F2", r.symbol, int(r.ts_signal), "LONG" if r.side > 0 else "SHORT", int(r.ts_signal) + 60, float(r.dv24 or 0)))
     b = q(st, "SELECT symbol, ts_onset, ts_entry, dv24 FROM oi_drop_short_paper WHERE status='open' AND ts_entry >= ?", (BOOK_START,))
@@ -171,6 +180,8 @@ def signals(st, now):
             continue
         for r in (r_.itertuples(index=False) if r_ is not None else []):
             out.append((src, r.symbol, int(r.k), "LONG" if r.side > 0 else "SHORT", int(r.t), float(r.dv24 or 0)))
+    if LONG_ONLY:
+        out = [s for s in out if s[3] == "LONG"]
     return [s for s in out if s[4] <= now]
 
 
@@ -220,6 +231,8 @@ def open_new(st, now):
         eq = equity(st)
         n_books = len([k for k in ok if k == "F7" or k.startswith("AR")])
         for leg in f7_legs(st, FORWARD[bsrc][0]):
+            if LONG_ONLY and leg.w <= 0:
+                continue
             if (bsrc, leg.symbol, int(leg.ts_signal)) in done:
                 continue
             ts_px, px = last_px(st, leg.symbol)
