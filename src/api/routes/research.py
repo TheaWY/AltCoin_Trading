@@ -674,3 +674,51 @@ def manual_rollback() -> dict[str, Any]:
     from src.research.promotion import rollback
 
     return rollback("manual rollback from dashboard")
+
+
+# Forward-test paper books (2026-10-04). The portfolio page only showed the main book (paper_trades), which is empty
+# until a forward test passes admission, so the strategies that ARE trading (F10/F11/F12/F13/F14...) were invisible.
+# Each tuple: label, table, SELECT expressions for symbol, side, entry_ts, entry_px, exit_ts, exit_px, extra WHERE.
+_FWD_BOOKS = [
+    ("F10 pairs", "f10_pairs_div_paper", "a || ' / ' || b", "dir_a", "ts_open", "px_a", "ts_exit", "exit_px_a", ""),
+    ("F11 Upbit notice", "f11_notice_mom_paper", "symbol", "side", "confirm_ts", "entry_px", "exit_ts", "exit_px", ""),
+    ("F12 fresh burst", "f12_fresh_burst_paper", "symbol", "1", "ts_signal", "entry_px", "ts_exit", "exit_px", ""),
+    ("F13 Upbit live", "f13_upbit_live_paper", "market", "1", "entry_ts", "entry_vwap", "exit_ts", "exit_vwap", ""),
+    ("F14 Korea fade", "f14_korea_led_fade_paper", "symbol", "-1", "ts_signal", "entry_px", "ts_exit", "exit_px", ""),
+    ("F2 pump CNN", "pump_cnn_paper", "symbol", "side", "ts_signal", "entry_px", "NULL", "exit_px", ""),
+    ("F4 spot-led", "spot_led_paper", "symbol", "side", "ts_signal", "entry_px", "NULL", "exit_px", ""),
+    ("F5 unlock short", "unlock_short_paper", "symbol", "-1", "ts_open", "entry_px", "ts_exit", "exit_px", ""),
+    ("F9 listing fade", "f9_listing_fade_paper", "symbol", "-1", "entry_ts", "entry_px", "exit_ts", "exit_px", ""),
+]
+
+
+@router.get("/forward_book")
+def forward_book() -> dict[str, Any]:
+    open_rows: list[dict[str, Any]] = []
+    closed_rows: list[dict[str, Any]] = []
+    summary: list[dict[str, Any]] = []
+    for label, tab, sym, side, ets, epx, xts, xpx, where in _FWD_BOOKS:
+        if not _table_exists(tab):
+            continue
+        has_reason = bool(_rows(
+            "SELECT 1 FROM information_schema.columns WHERE table_name = '" + tab + "' AND column_name = 'exit_reason'"))
+        reason = "exit_reason" if has_reason else "NULL"
+        sql = (f"SELECT {sym} AS symbol, {side} AS side, {ets} AS entry_ts, {epx} AS entry_px, {xts} AS exit_ts, "  # noqa: S608
+               f"{xpx} AS exit_px, {reason} AS exit_reason, net, status FROM {tab} WHERE TRUE {where}")
+        try:
+            rows = [r for r in _rows(sql) if r["status"] == "open" or str(r["status"]).startswith("closed")]
+        except Exception:
+            continue
+        closed = [r for r in rows if r["status"] != "open" and r["net"] is not None]
+        nets = [float(r["net"]) for r in closed]
+        summary.append({"strategy": label, "open": sum(1 for r in rows if r["status"] == "open"), "closed": len(nets),
+                        "mean_net": (sum(nets) / len(nets)) if nets else None,
+                        "wins": sum(1 for x in nets if x > 0)})
+        for r in rows:
+            r["strategy"] = label
+            for k in ("entry_ts", "exit_ts", "side"):
+                r[k] = int(r[k]) if r[k] is not None else None
+            (open_rows if r["status"] == "open" else closed_rows).append(r)
+    open_rows.sort(key=lambda r: r["entry_ts"] or 0, reverse=True)
+    closed_rows.sort(key=lambda r: (r["exit_ts"] or r["entry_ts"] or 0), reverse=True)
+    return {"open": open_rows, "closed": closed_rows[:40], "summary": summary, "ts": int(time.time())}
