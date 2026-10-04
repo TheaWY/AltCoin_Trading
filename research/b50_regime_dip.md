@@ -24,6 +24,6 @@ Runtime 1s.
 ## Reading (2026-10-05)
 
 - FAIL. Selected on validation (72h <= -30%, BTC > MA20, hold 72h, val +9.6%) -> TEST -1.30% CI [-4.90, +2.56].
-- Train-era gains are inflated by the martial-law crash and rebound: 8% of train trades fall in 2024-12-03..06; without that window train mean is +3.76%.
+- Train-era gains are partly the martial-law crash and rebound, but mostly a decaying edge (2024 bull market -> 2025 val smaller -> 2026 negative): 8% of train trades fall in 2024-12-03..06; without that window train mean is +3.76%.
 - The BTC < MA20 gate from B45 does not carry over to plain Upbit dip-buying (validation near 0 or negative). The best TEST cell (-20%, BTC<MA20, 24h, +0.70%, n=531) was not the validation pick and is not claimed.
 - Look-ahead: regime uses the last completed daily close; signal at hour close, entry next open.
