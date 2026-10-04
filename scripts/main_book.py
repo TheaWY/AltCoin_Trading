@@ -59,6 +59,10 @@ FORWARD = {
 # Floor lowered to 30 for them; in exchange, any candidate judged on fewer than 60 events must clear a 99% bootstrap CI
 # (0.5th percentile > 0) instead of 95%. Same rule in qualified().
 SMALL_N, SMALL_N_PCT, PCT = 60, 0.5, 2.5
+# Manual admissions override the registered rule (owner's decision, logged in research/trial_ledger.csv).
+# 2026-10-04: 유리 admitted F2 at n=48 (mean +2.61%, 95% day-clustered CI still includes 0; registered rule needs 300).
+# The drawdown brake (DD_PAUSE) still applies. Remove the entry to revert to rule-based admission.
+MANUAL_ADMIT = {"F2": "owner override 2026-10-04, n=48 mean +2.6%, rule needs 300"}
 # Autonomous-research promotions (research/forward_auto.yaml, status 'forward') are candidates too: same rule as F7 (book unit).
 try:
     import yaml as _yaml
@@ -118,7 +122,11 @@ def enabled(st, now):
     if now < kv.get("pause_until", 0):
         return set(), "paused (drawdown brake)"
     ok, why = set(), []
+    for src in MANUAL_ADMIT:
+        ok.add(src); why.append(f"{src}: admitted manually ({MANUAL_ADMIT[src]})")
     for src in list(FORWARD) + list(FORWARD_REPORT_ONLY):
+        if src in MANUAL_ADMIT:
+            continue
         good, msg = qualified(st, src)
         why.append(f"{src}: {'admitted' if good else 'not yet'} ({msg})")
         if good and src in FORWARD:
