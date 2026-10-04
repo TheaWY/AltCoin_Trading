@@ -135,8 +135,68 @@ def step_windows(kind):
     print(kind, "new", done, flush=True)
 
 
+def step_bnh1():
+    """Binance SPOT hourly klines (<BASE>USDT) for every Upbit KRW coin that Binance spot lists: kimchi premium and
+    Binance-lead tests. data/upbit_db/bn_h1/<BASE>.parquet columns ts, o, h, l, c, qv (USDT)."""
+    out = DB / "bn_h1"; out.mkdir(parents=True, exist_ok=True)
+    ex = requests.get("https://api.binance.com/api/v3/exchangeInfo", timeout=30).json()
+    spot = {x["symbol"] for x in ex["symbols"] if x["quoteAsset"] == "USDT"}
+    bases = sorted({m.replace("KRW-", "") for m in markets()} | {"BTC"})
+    now = int(time.time()) // 3600 * 3600
+    for i, b in enumerate(bases):
+        sym = f"{b}USDT"
+        f = out / f"{b}.parquet"
+        if sym not in spot or f.exists():
+            continue
+        rows, t = [], START
+        while t < now:
+            for attempt in range(5):
+                try:
+                    r = requests.get("https://api.binance.com/api/v3/klines", params={"symbol": sym, "interval": "1h",
+                                     "startTime": t * 1000, "limit": 1000}, timeout=20)
+                    break
+                except requests.RequestException:
+                    time.sleep(3)
+            d = r.json() if r.status_code == 200 else []
+            if not d:
+                t += 1000 * 3600; continue
+            rows += d
+            t = d[-1][0] // 1000 + 3600
+            time.sleep(0.1)
+        if rows:
+            k = pd.DataFrame(rows).iloc[:, [0, 1, 2, 3, 4, 7]]
+            k.columns = ["ts", "o", "h", "l", "c", "qv"]
+            k["ts"] = k["ts"] // 1000
+            k.astype(float).astype({"ts": "int64"}).drop_duplicates("ts").to_parquet(f, index=False)
+        if i % 25 == 0:
+            print(time.strftime("%H:%M:%S"), "bn_h1", i, b, len(rows), flush=True)
+
+
+def step_other_events():
+    """crash events (close-to-close <= -10% in 1h) for long-only rebound tests, same filters as pumps."""
+    ev = []
+    for f in sorted((DB / "h1").glob("*.parquet")):
+        g = pd.read_parquet(f).set_index("ts").sort_index()
+        if len(g) < 100:
+            continue
+        g = g.reindex(range(int(g.index[0]), int(g.index[-1]) + 3600, 3600))
+        g["c"] = g["c"].ffill(); g["v"] = g["v"].fillna(0)
+        r1 = g["c"] / g["c"].shift(1) - 1
+        v24 = g["v"].rolling(24, min_periods=24).sum()
+        m = ((r1 <= -0.10) & (v24 >= 2.7e9) & (np.arange(len(g)) >= 72)).to_numpy()
+        for ts in g.index[m]:
+            ev.append((f.stem, int(ts) + 3600, float(r1.at[ts]), float(v24.at[ts])))
+    e = pd.DataFrame(ev, columns=["market", "T", "ret_1h", "v24_krw"]).sort_values("T").reset_index(drop=True)
+    e.to_parquet(DB / "crash_events.parquet", index=False)
+    print("crash events", len(e), flush=True)
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else "all"
+    if what == "bnh1":
+        step_bnh1()
+    if what == "crash":
+        step_other_events()
     if what in ("h1", "all"):
         step_h1()
     if what in ("events", "all"):
