@@ -60,7 +60,13 @@ def main():
     print("events", len(ev), flush=True)
     rows = []
     for i, e in ev.iterrows():
-        w = b37.upbit_1m(f"KRW-{e.base}", e.tt - 3600, e.tt + 60 + H * 60)
+        w = None
+        for _try in range(3):
+            try:
+                w = b37.upbit_1m(f"KRW-{e.base}", e.tt - 3600, e.tt + 60 + H * 60)
+                break
+            except Exception:  # noqa: BLE001  (network timeouts: retry, then skip the event)
+                time.sleep(3)
         if w is None or not len(w):
             continue
         w = w.set_index("ts").reindex(range(e.tt - 3600, e.tt + 60 + (H + 1) * 60, 60))
