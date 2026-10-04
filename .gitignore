@@ -18,3 +18,4 @@ catboost_info/
 data/tmp_aggtrades/
 data/tmp_b17/
 .claude/
+data/upbit_db/
