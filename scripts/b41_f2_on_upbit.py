@@ -48,7 +48,7 @@ def events():
         m = (r1 >= 0.10) & (v24 >= 2.7e9) & (age >= 72)
         for ts in g.index[m.to_numpy()]:
             out.append((sym.split("/")[0], int(ts) + 3600, float(r1.at[ts]), float(v24.at[ts])))
-    return pd.DataFrame(out, columns=["base", "T", "ret_1h", "v24_krw"])
+    return pd.DataFrame(out, columns=["base", "tt", "ret_1h", "v24_krw"])
 
 
 def main():
