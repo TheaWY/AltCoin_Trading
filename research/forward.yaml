@@ -159,3 +159,11 @@ F2L:
   table: f2b_shadow_paper (net_trail where side > 0)
   pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0"
   kill: 60 closed events with mean net <= 0
+
+F2W:
+  name: F2 high-confidence LONG only when BTC daily close (prev day) < its 20-day average
+  registered: 2026-10-04 23:10 KST (forward only), from B45 (post-hoc among ~60 comparisons)
+  source: B45 - 2024 +2.55% (n=75), 2026 +2.01% CI [+0.05%, +4.12%] (n=256); same longs with BTC > MA20: +0.71% / -0.04%
+  table: f2b_shadow_paper (net_base where side > 0 and margin_hi, BTC filter computed from data/upbit_db/bn_h1/BTC.parquet + Binance daily closes)
+  pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0, AND mean above the same longs when BTC > MA20"
+  kill: 60 closed events with mean net <= 0
