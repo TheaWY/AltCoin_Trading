@@ -20,4 +20,4 @@ long books and (b) a prompt for a long-only form of the same effect (e.g. pump f
 
 Progress reports go to 유리 as each test finishes; results append to research/trial_ledger.csv.
 | U8 | B45 BTC regime filter on long books | h1 + B39 | done: trend-up useless; BTC<MA20 -> F2W forward |
-| U9 | B50 multi-day selloff dip-buy (72h <= -20/-30%) with BTC<MA20 regime gate (from B45) | h1 | running |
+| U9 | B50 multi-day selloff dip-buy (72h <= -20/-30%) with BTC<MA20 regime gate (from B45) | h1 | done: FAIL |
