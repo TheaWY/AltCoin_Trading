@@ -146,10 +146,11 @@ def fit_lstm(Str, ytr, Ste):
 MODELS = {"M1_ridge": fit_ridge, "M2_lgbm": fit_lgb, "M3_mlp": fit_mlp, "M4_lstm": fit_lstm}
 
 
-def walk_forward(D, SQ):
+def walk_forward(D, SQ, only=None):
     fcols = [c for c in D.columns if c not in ("day", "coin", "y", "y_raw")]
     X = D[fcols].to_numpy(float); y = D["y"].to_numpy(float); days = D["day"].to_numpy()
-    preds = {m: np.full(len(D), np.nan) for m in MODELS}
+    use = {m: f for m, f in MODELS.items() if only is None or m == only}
+    preds = {m: np.full(len(D), np.nan) for m in use}
     R = OOS_START
     while R <= D["day"].max():
         te = (days >= R) & (days < R + pd.Timedelta(weeks=13))
@@ -157,14 +158,13 @@ def walk_forward(D, SQ):
         if te.any() and tr.sum() > 300:
             ytr = np.clip(y[tr], *np.nanpercentile(y[tr], [1, 99]))
             Xtr, Xte = prep(X[tr], X[te])
-            for m, f in MODELS.items():
+            for m, f in use.items():
                 preds[m][te] = f(SQ[tr], ytr, SQ[te]) if m == "M4_lstm" else f(Xtr, ytr, Xte)
             print(time.strftime("%T"), "retrain", R.date(), "train", int(tr.sum()), "test", int(te.sum()), flush=True)
         R += pd.Timedelta(weeks=13)
     P = D[["day", "coin", "y", "y_raw"]].copy()
-    for m in MODELS:
+    for m in use:
         P[m] = preds[m]
-    P["M5_ens"] = P.groupby("day")[list(MODELS)].rank(pct=True).mean(axis=1)
     return P
 
 
@@ -185,10 +185,19 @@ def weekly_ic(P, model):
 
 
 def main():
+    """LightGBM and PyTorch deadlock in one process on macOS (two OpenMP runtimes), so each model runs in its own
+    process: `b56_ml.py --model M2_lgbm` writes its predictions; `b56_ml.py --eval` combines and evaluates."""
     t0 = time.time()
-    D, SQ = dataset()
-    print("dataset", D.shape, SQ.shape, flush=True)
-    P = walk_forward(D, SQ)
+    if "--model" in sys.argv:
+        m = sys.argv[sys.argv.index("--model") + 1]
+        D, SQ = dataset(); print("dataset", D.shape, SQ.shape, flush=True)
+        walk_forward(D, SQ, only=m).to_parquet(B.ROOT / f"data/upbit_db/b56_preds_{m}.parquet", index=False)
+        return
+    D = pd.read_parquet(B.ROOT / "data/upbit_db/b56_preds_M1_ridge.parquet")[["day", "coin", "y", "y_raw"]]
+    P = D.copy()
+    for m in MODELS:
+        P[m] = pd.read_parquet(B.ROOT / f"data/upbit_db/b56_preds_{m}.parquet")[m].to_numpy()
+    P["M5_ens"] = P.groupby("day")[list(MODELS)].rank(pct=True).mean(axis=1)
     P.to_parquet(B.ROOT / "data/upbit_db/b56_preds.parquet", index=False)
     f17 = S.run(S.W_f17()); ewu = S.run(S.ew(UNIV))
     rows = []
