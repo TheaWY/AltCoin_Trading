@@ -167,3 +167,17 @@ F2W:
   table: f2b_shadow_paper (net_base where side > 0 and margin_hi, BTC filter computed from data/upbit_db/bn_h1/BTC.parquet + Binance daily closes)
   pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0, AND mean above the same longs when BTC > MA20"
   kill: 60 closed events with mean net <= 0
+
+F15:
+  name: Upbit BTC/ETH trend allocation, long only (prereg v2 H1)
+  registered: 2026-10-05 11:10 KST; forward sample = trade days >= 2026-10-06
+  source: B51 (research/b51_prereg_v2.md) - pre-registered before data (751343c); 2018-04..2026-10 Sharpe 1.55 vs 0.80 buy-and-hold,
+          maxDD -41% vs -81%, bootstrap p=0.0006 (Bonferroni K=3), lower drawdown in 5/5 eras; DSR(M=1100)=0.90. Checks B51b:
+          lag+1 day Sharpe 1.41, costs x4 1.43, every single SMA beats buy-and-hold.
+  script: scripts/f15_trend_paper.py (launchd com.altcoin.f15trend, hourly; stateless recompute from Upbit public daily candles)
+  table: f15_trend_paper
+  decision_rule: review at 90 and 365 trade days. Pass = drawdown smaller than 50/50 buy-and-hold over the window AND
+    Sharpe not below buy-and-hold by more than 0.3. The edge is mainly drawdown control, so a short window in a bull
+    market is expected to lag buy-and-hold in raw return; that alone is not a fail.
+  note: PAPER ONLY. Executable by hand on Upbit spot (no shorts, no leverage). H2 (weekly XS momentum) and H3 (trend-gated
+    alt basket) FAILED in the same pre-registration.
