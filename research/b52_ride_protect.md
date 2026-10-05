@@ -1,6 +1,6 @@
 # B52: prereg v3 surge ride (R) and loss protection (P)
 
-Prereg research/prereg_v3_ride_protect.md (commit cae2f8f, before running). Run 2026-10-05 12:39. Upbit KRW daily 2017-09-25..2026-10-04, 283 current markets (survivorship: alts biased up). Family K=2, one-sided alpha 0.025.
+Prereg research/prereg_v3_ride_protect.md (commit cae2f8f, before running). Run 2026-10-05 15:22. Upbit KRW daily 2017-09-25..2026-10-04, 283 current markets (survivorship: alts biased up). Family K=2, one-sided alpha 0.025.
 
 ## R: surge ride
 

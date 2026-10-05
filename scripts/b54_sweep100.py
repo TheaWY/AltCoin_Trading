@@ -131,7 +131,7 @@ def eq_brake(Wbase, x):
 
 def dual(n):
     W = zeros(); mom = CF[MAJ] / CF[MAJ].shift(n) - 1
-    best = mom.idxmax(axis=1); ok = mom.max(axis=1) > 0
+    best = mom.fillna(-np.inf).idxmax(axis=1); ok = mom.max(axis=1) > 0   # all-NaN rows -> cash
     for m in MAJ:
         W[m] = ((best == m) & ok).astype(float)
     return W
