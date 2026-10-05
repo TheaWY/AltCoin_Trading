@@ -28,6 +28,7 @@ def panel():
         if f.stem in EXCL:
             continue
         g = pd.read_parquet(f)
+        g = g[g.ts < pd.Timestamp("2026-10-05", tz="UTC").timestamp()]   # prereg end; drops today's unfinished candle
         if len(g) < 30:
             continue
         g = g.set_index(pd.to_datetime(g.ts, unit="s")).sort_index()
