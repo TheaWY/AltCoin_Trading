@@ -1267,3 +1267,13 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-10-05T18:01:00,B55_S3_N2_L2_s20,F17 core + satellite S3 x down N2 x loss L2 at 20% (prereg v6),combo,disc 2018-2023 / hold 2024-2026,1.715,,,disc diff -0.09 p=0.958; hold diff -0.04; not survivor
 2026-10-05T18:01:00,B55_S3_N2_L2_s40,F17 core + satellite S3 x down N2 x loss L2 at 40% (prereg v6),combo,disc 2018-2023 / hold 2024-2026,1.546,,,disc diff -0.26 p=0.987; hold diff -0.15; not survivor
 2026-10-05T18:45:00,F19_REGISTER,User-selected low-drawdown book: 80% F17 + 20% up&volatile satellite with alt crash brake,forward,2026-10-06..,,,,"risk preference, failed Sharpe test (B55)"
+2026-10-05T18:31:00,B56_M1_ridge_P,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,0.858,,,IC d +0.088 h +0.171; vs F17 p=1.000; FAIL
+2026-10-05T18:31:00,B56_M1_ridge_PG,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,1.436,,,IC d +0.088 h +0.171; vs F17 p=0.956; FAIL
+2026-10-05T18:31:00,B56_M2_lgbm_P,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,0.817,,,IC d +0.075 h +0.163; vs F17 p=0.999; FAIL
+2026-10-05T18:31:00,B56_M2_lgbm_PG,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,1.086,,,IC d +0.075 h +0.163; vs F17 p=0.997; FAIL
+2026-10-05T18:31:00,B56_M3_mlp_P,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,0.868,,,IC d +0.077 h +0.155; vs F17 p=1.000; FAIL
+2026-10-05T18:31:00,B56_M3_mlp_PG,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,1.218,,,IC d +0.077 h +0.155; vs F17 p=0.994; FAIL
+2026-10-05T18:31:00,B56_M4_lstm_P,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,0.499,,,IC d +0.078 h +0.120; vs F17 p=1.000; FAIL
+2026-10-05T18:31:00,B56_M4_lstm_PG,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,0.833,,,IC d +0.078 h +0.120; vs F17 p=0.999; FAIL
+2026-10-05T18:31:00,B56_M5_ens_P,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,1.155,,,IC d +0.107 h +0.191; vs F17 p=0.995; FAIL
+2026-10-05T18:31:00,B56_M5_ens_PG,ML/DL weekly top-5 long (prereg v7),ml,disc 2019-2023 / hold 2024-2026,1.435,,,IC d +0.107 h +0.191; vs F17 p=0.964; FAIL
