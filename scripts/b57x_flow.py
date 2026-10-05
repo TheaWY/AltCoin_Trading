@@ -38,7 +38,7 @@ def bn_panel():
 
 def upbit_at(coins, days):
     """per coin: close at T, close at T-24h, close at T-1h, open at T+1h, open at T+25h, 24h KRW value."""
-    T = (days.astype("int64") // 10**9).to_numpy()
+    T = ((days - pd.Timestamp("1970-01-01")) // pd.Timedelta("1s")).to_numpy().astype("int64")
     out = []
     for m in coins:
         f = ROOT / f"data/upbit_db/h1/{m}.parquet"
@@ -56,7 +56,7 @@ def upbit_at(coins, days):
 def dataset():
     bn = bn_panel()
     O, C, V = B.panel()
-    days = pd.DatetimeIndex(sorted(pd.to_datetime(bn.ts.unique(), unit="s")))
+    days = pd.DatetimeIndex(sorted(pd.to_datetime(bn.ts.unique(), unit="s"))).as_unit("ns")
     days = days[(days >= DEV[0]) & (days < SEALED[1])]
     # universe from Upbit DAILY data of the previous complete day (T-1)
     medv = V.rolling(30, min_periods=20).median().shift(1); age = C.notna().cumsum().shift(1)
@@ -64,7 +64,7 @@ def dataset():
     coins = sorted(set(bn.coin) & set(C.columns))
     u = upbit_at(coins, days)
     usdt = upbit_at(["KRW-USDT"], days).set_index("day")
-    bn["day"] = pd.to_datetime(bn.ts, unit="s")
+    bn["day"] = pd.to_datetime(bn.ts, unit="s").dt.as_unit("ns")
     D = u.merge(bn, on=["day", "coin"], how="inner")
     D["fx0"] = D.day.map(usdt.u_c0); D["fx24"] = D.day.map(usdt.u_c24)
     D["medv"] = [medv.at[d.normalize(), c] if d.normalize() in medv.index else np.nan for d, c in zip(D.day, D.coin)]
