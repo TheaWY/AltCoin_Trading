@@ -1109,3 +1109,5 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-10-05T12:39:00,B52_P_PROTECT,"Loss protection overlay on F15: crash brake (-10% day or -15% from 20d high until > SMA20) x vol scaling, prereg v3",confirmatory,2018-04..2026-10 daily,1.72,,3096,"PASS; maxDD -36 vs -41, worst30 -21.4 vs -29.0, Calmar 1.71 vs 1.60, 4/5 eras"
 2026-10-05T12:45:00,F15_LIVE_BUGFIX,"f15 live script fetched only 200 candles (Upbit max), so SMA200 was NaN and weights read 0.75 instead of 1.0; now 3 pages",audit,,,,,fixed before first forward day; backtest unaffected
 2026-10-05T12:45:00,F17_REGISTER,Forward paper F17 = F15 + P overlay,forward,2026-10-06..,,,,registered
+2026-10-05T15:22:00,B53_G1_STRICT_RIDE,"Surge ride with BTC weight=1 and coin weight>=0.75 regime (post-hoc informed by B52), prereg v4",confirmatory,2017-10..2026-10 daily,,0.1601,409,"FAIL; CI [+6.8,+26.9]% but median -5.3%, eras positive 3/5 (2022 none, 2025-26 -0.95%); vs random p<0.005"
+2026-10-05T15:22:00,B53_G2_ETHBTC_ROTATION,"ETH/BTC ratio-trend tilt (25/75..75/25) inside F17, prereg v4",confirmatory,2018-04..2026-10 daily,1.68,,3096,"FAIL; Sharpe 1.68 vs F17 1.72, p=0.79, 3/5 eras"
