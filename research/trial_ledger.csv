@@ -1266,3 +1266,4 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-10-05T18:01:00,B55_S3_N2_L1_s40,F17 core + satellite S3 x down N2 x loss L1 at 40% (prereg v6),combo,disc 2018-2023 / hold 2024-2026,1.602,,,disc diff -0.20 p=0.977; hold diff -0.23; not survivor
 2026-10-05T18:01:00,B55_S3_N2_L2_s20,F17 core + satellite S3 x down N2 x loss L2 at 20% (prereg v6),combo,disc 2018-2023 / hold 2024-2026,1.715,,,disc diff -0.09 p=0.958; hold diff -0.04; not survivor
 2026-10-05T18:01:00,B55_S3_N2_L2_s40,F17 core + satellite S3 x down N2 x loss L2 at 40% (prereg v6),combo,disc 2018-2023 / hold 2024-2026,1.546,,,disc diff -0.26 p=0.987; hold diff -0.15; not survivor
+2026-10-05T18:45:00,F19_REGISTER,User-selected low-drawdown book: 80% F17 + 20% up&volatile satellite with alt crash brake,forward,2026-10-06..,,,,"risk preference, failed Sharpe test (B55)"

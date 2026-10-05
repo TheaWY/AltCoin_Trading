@@ -44,9 +44,14 @@ def f18():
     f = ROOT / "data/forward/f18_holdings.parquet"
     if not f.exists():
         return []
-    h = pd.read_parquet(f); out = ["[F18 알트 돌파 · 페이퍼 관찰]"]
+    h = pd.read_parquet(f); out = []
     for r in h.itertuples():
-        out.append(f"{r.book}: {r.holdings}")
+        if r.book == "F19":
+            out += ["[F19 낙폭 줄이기 버전 (F17 80% + 상승·변동성 알트 20%) · 유리 선택]", f"목표 비중: {r.holdings}"]
+    out.append("[F18 알트 돌파 · 페이퍼 관찰]")
+    for r in h.itertuples():
+        if r.book != "F19":
+            out.append(f"{r.book}: {r.holdings}")
     g = ROOT / "data/forward/f18_breakout.parquet"
     if g.exists():
         d = pd.read_parquet(g)

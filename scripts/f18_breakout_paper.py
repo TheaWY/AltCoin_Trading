@@ -1,6 +1,9 @@
 """Forward paper test F18 (registered 2026-10-05 after B54): the two B54 holdout PASS rules, Upbit alt breakout portfolios.
   F18a = D_brk20_v1.5_trail : 20d closing high + value >= 1.5x 30d median, BTC trend >= 0.5, 10 slots x 10%, 20% trailing exit
   F18b = D_brk20_v1.5_own   : same entry + coin's own trend weight >= 0.75, Donchian-10 exit
+Also F19 (registered 2026-10-05 18:30, chosen by 유리 for lower drawdown): B55 book S3_N1_L0_s20 =
+80% F17 + 20% "up & volatile" alt satellite with the alt-index crash brake. It FAILED the Sharpe test (B55); it is kept
+because it cut backtest max drawdown (2024-26: -21% vs -26%) at the cost of return (+31% vs +36%/yr).
 Judged against the EW top-30 alt basket (the registered benchmark) AND, for 유리's purposes, against F17.
 Daily (launchd 09:20 KST): refresh Upbit daily candles, recompute with B51_END = today (completed candles only), write
 daily returns for days >= 2026-10-06 and today's holdings to data/forward/f18_breakout.parquet. Paper only, no orders.
@@ -33,6 +36,13 @@ def main():
             out.append((fid, d, float(v)))       # r[t] = held open t -> open t+1 (decided at close t-1); last day incomplete
         last = W.iloc[-1]; h = last[last > 0]
         hold.append((fid, W.index[-1], ", ".join(f"{k[4:]} {v:.0%}" for k, v in h.items()) or "cash"))
+    import b55_combos as K  # noqa: E402
+    W19 = K.book(K.sat_upvol(), 0.2, K.down_n1(), 1.0, False)
+    r = S.run(W19)
+    for d, v in r[(r.index >= START) & (r.index < r.index[-1])].items():
+        out.append(("F19", d, float(v)))
+    last = W19.iloc[-1]; h = last[last > 0]
+    hold.append(("F19", W19.index[-1], ", ".join(f"{k[4:]} {v:.1%}" for k, v in h.items()) or "cash"))
     for bid, W in (("EW30", S.W_ew30()), ("F17", S.W_f17())):
         r = S.run(W)
         for d, v in r[(r.index >= START) & (r.index < r.index[-1])].items():

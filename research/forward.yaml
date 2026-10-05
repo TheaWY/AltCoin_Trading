@@ -202,3 +202,13 @@ F18:
   script: scripts/f18_breakout_paper.py (launchd com.altcoin.f18breakout, daily 09:02 KST); output data/forward/f18_*.parquet
   decision_rule: 180 days: beats EW30 (registered) AND is reported next to F17; promotion to real use only if it also beats F17
     on Sharpe, which the backtest says it will not.
+
+F19:
+  name: low-drawdown book chosen by 유리 = 80% F17 + 20% "up & volatile" alt satellite (B55 S3_N1_L0_s20)
+  registered: 2026-10-05 18:45 KST at 유리's request ("수익이 줄어도 낙폭을 줄이는걸로"); forward days >= 2026-10-06
+  source: B55 - FAILED the Sharpe test vs F17 (discovery diff -0.07). Kept as a risk preference: 2024-26 backtest maxDD -21%
+          vs -26% (F17), CAGR +31% vs +36%, Sharpe 1.42 vs 1.44. Chosen after seeing the holdout table (selection bias).
+  satellite: 7d return >= +15%, 7d vol >= 1.5x 90d vol, close > SMA20, BTC trend >= 0.5; exit close < SMA10; 10 slots;
+             whole satellite to cash while the alt-index crash brake is on.
+  script: scripts/f18_breakout_paper.py (book F19, daily 09:02 KST); alert shows its target weights
+  decision_rule: 180 days: F19 maxDD <= F17 maxDD; report Sharpe and return gap honestly.
