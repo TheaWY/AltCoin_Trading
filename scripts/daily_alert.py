@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import subprocess
 import sys
+
+import pandas as pd
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,9 +40,25 @@ def f15(st):
     return out
 
 
+def f18():
+    f = ROOT / "data/forward/f18_holdings.parquet"
+    if not f.exists():
+        return []
+    h = pd.read_parquet(f); out = ["[F18 알트 돌파 · 페이퍼 관찰]"]
+    for r in h.itertuples():
+        out.append(f"{r.book}: {r.holdings}")
+    g = ROOT / "data/forward/f18_breakout.parquet"
+    if g.exists():
+        d = pd.read_parquet(g)
+        if len(d):
+            cum = d.groupby("book").ret.apply(lambda x: (1 + x).prod() - 1)
+            out.append("포워드 누적: " + " / ".join(f"{k} {v:+.1%}" for k, v in cum.items()))
+    return out
+
+
 def main():
     st = get_storage()
-    lines = f15(st)
+    lines = f15(st) + f18()
     print("\n".join(lines))
 
 

@@ -192,3 +192,13 @@ F17:
   decision_rule: at 90/365 trade days, F17 drawdown <= F15 drawdown and Sharpe not lower by > 0.2.
   R_surge_ride: FAILED in the same prereg (B52): 636 trades +10.4% mean but median -5.1%, negative in 2022 and 2025-26;
     beats random entries (p=0.015) only because of a few huge 2020-21 winners. Not registered.
+
+F18:
+  name: Upbit alt breakout portfolios (B54 holdout PASS): F18a = 20d high + 1.5x value, BTC gate, 20% trailing exit;
+        F18b = same + own trend >= 0.75, Donchian-10 exit. 10 slots x 10%, long only.
+  registered: 2026-10-05 15:55 KST; forward days >= 2026-10-06
+  source: B54 (research/b54_sweep100.md): discovery Sharpe diff vs EW alt basket +1.26 / +1.10 (BHY q<=0.10 of 100),
+          holdout +0.94 (p=0.003) / +1.10 (p=0.009). Absolute holdout only +0.4% / +6.9% per year vs F17 +36%.
+  script: scripts/f18_breakout_paper.py (launchd com.altcoin.f18breakout, daily 09:02 KST); output data/forward/f18_*.parquet
+  decision_rule: 180 days: beats EW30 (registered) AND is reported next to F17; promotion to real use only if it also beats F17
+    on Sharpe, which the backtest says it will not.

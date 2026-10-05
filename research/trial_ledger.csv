@@ -1111,3 +1111,104 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-10-05T12:45:00,F17_REGISTER,Forward paper F17 = F15 + P overlay,forward,2026-10-06..,,,,registered
 2026-10-05T15:22:00,B53_G1_STRICT_RIDE,"Surge ride with BTC weight=1 and coin weight>=0.75 regime (post-hoc informed by B52), prereg v4",confirmatory,2017-10..2026-10 daily,,0.1601,409,"FAIL; CI [+6.8,+26.9]% but median -5.3%, eras positive 3/5 (2022 none, 2025-26 -0.95%); vs random p<0.005"
 2026-10-05T15:22:00,B53_G2_ETHBTC_ROTATION,"ETH/BTC ratio-trend tilt (25/75..75/25) inside F17, prereg v4",confirmatory,2018-04..2026-10 daily,1.68,,3096,"FAIL; Sharpe 1.68 vs F17 1.72, p=0.79, 3/5 eras"
+2026-10-05T15:42:00,B54_A_sma10,BTC/ETH hold when close > SMA10 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.736,,,disc diff -0.07 p=0.627; hold diff -0.28 p=0.810; not survivor
+2026-10-05T15:42:00,B54_A_sma30,BTC/ETH hold when close > SMA30 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.726,,,disc diff -0.08 p=0.689; hold diff +0.01 p=0.485; not survivor
+2026-10-05T15:42:00,B54_A_sma150,BTC/ETH hold when close > SMA150 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.282,,,disc diff -0.52 p=0.969; hold diff -0.53 p=0.961; not survivor
+2026-10-05T15:42:00,B54_A_sma300,BTC/ETH hold when close > SMA300 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.167,,,disc diff -0.64 p=0.981; hold diff -0.73 p=0.978; not survivor
+2026-10-05T15:42:00,B54_A_ema12_26,EMA12 > EMA26 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.359,,,disc diff -0.44 p=0.979; hold diff -0.14 p=0.690; not survivor
+2026-10-05T15:42:00,B54_A_ema20_100,EMA20 > EMA100 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.857,,,disc diff -0.95 p=0.999; hold diff -0.58 p=0.985; not survivor
+2026-10-05T15:42:00,B54_A_ema50_200,EMA50 > EMA200 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.855,,,disc diff -0.95 p=0.996; hold diff -0.84 p=0.983; not survivor
+2026-10-05T15:42:00,B54_A_donch20_10,"Donchian enter 20d high, exit 10d low (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.619,,,disc diff -0.18 p=0.817; hold diff -0.15 p=0.628; not survivor
+2026-10-05T15:42:00,B54_A_donch55_20,"Donchian enter 55d high, exit 20d low (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.417,,,disc diff -0.39 p=0.928; hold diff -0.20 p=0.700; not survivor
+2026-10-05T15:42:00,B54_A_donch100_50,"Donchian enter 100d high, exit 50d low (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,0.887,,,disc diff -0.92 p=0.994; hold diff -0.24 p=0.775; not survivor
+2026-10-05T15:42:00,B54_A_donch200_100,"Donchian enter 200d high, exit 100d low (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,0.772,,,disc diff -1.03 p=0.997; hold diff -1.08 p=0.987; not survivor
+2026-10-05T15:42:00,B54_A_tsmom7,7d return > 0 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.694,,,disc diff -0.11 p=0.687; hold diff -0.39 p=0.881; not survivor
+2026-10-05T15:42:00,B54_A_tsmom30,30d return > 0 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.486,,,disc diff -0.32 p=0.921; hold diff -0.08 p=0.593; not survivor
+2026-10-05T15:42:00,B54_A_tsmom90,90d return > 0 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.824,,,disc diff -0.98 p=0.997; hold diff -0.51 p=0.943; not survivor
+2026-10-05T15:42:00,B54_A_tsmom180,180d return > 0 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.046,,,disc diff -0.76 p=0.989; hold diff -1.06 p=0.994; not survivor
+2026-10-05T15:42:00,B54_A_dual30,"dual momentum BTC vs ETH 30d, cash if both < 0 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.16,,,disc diff -0.64 p=0.982; hold diff -0.24 p=0.730; not survivor
+2026-10-05T15:42:00,B54_A_dual90,"dual momentum BTC vs ETH 90d, cash if both < 0 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,0.727,,,disc diff -1.08 p=1.000; hold diff -0.58 p=0.942; not survivor
+2026-10-05T15:42:00,B54_A_dual180,"dual momentum BTC vs ETH 180d, cash if both < 0 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.004,,,disc diff -0.80 p=0.984; hold diff -0.50 p=0.907; not survivor
+2026-10-05T15:42:00,B54_A_vt40,F15 x vol target 40% (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.709,,,disc diff -0.09 p=0.814; hold diff +0.03 p=0.348; not survivor
+2026-10-05T15:42:00,B54_A_vt60,F15 x vol target 60% (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.7,,,disc diff -0.10 p=0.860; hold diff -0.01 p=0.579; not survivor
+2026-10-05T15:42:00,B54_A_vt80,F15 x vol target 80% (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.661,,,disc diff -0.14 p=0.879; hold diff -0.02 p=0.579; not survivor
+2026-10-05T15:42:00,B54_A_sma200,close > SMA200 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.198,,,disc diff -0.61 p=0.978; hold diff -0.50 p=0.963; not survivor
+2026-10-05T15:42:00,B54_A_sma200_rsi50,close > SMA200 and RSI14 > 50 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.51,,,disc diff -0.29 p=0.926; hold diff -0.11 p=0.662; not survivor
+2026-10-05T15:42:00,B54_A_dip_uptrend,"above SMA200: enter RSI14<40, exit RSI14>60 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,0.016,,,disc diff -1.79 p=1.000; hold diff -1.48 p=0.978; not survivor
+2026-10-05T15:42:00,B54_A_rsi50,RSI14 > 50 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.612,,,disc diff -0.19 p=0.866; hold diff +0.08 p=0.372; not survivor
+2026-10-05T15:42:00,B54_A_rsi2_mr,"above SMA200: enter RSI2<10, exit close>SMA5 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,-0.033,,,disc diff -1.84 p=1.000; hold diff -1.21 p=0.956; not survivor
+2026-10-05T15:42:00,B54_A_macd,"MACD(12,26) > signal(9) (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.286,,,disc diff -0.52 p=0.950; hold diff -0.13 p=0.619; not survivor
+2026-10-05T15:42:00,B54_A_ddbrake10,F17 halved while its equity is > 10% below peak (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.785,,,disc diff -0.02 p=0.555; hold diff +0.00 p=0.479; not survivor
+2026-10-05T15:42:00,B54_A_ddbrake15,F17 halved while its equity is > 15% below peak (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.83,,,disc diff +0.03 p=0.391; hold diff -0.14 p=0.821; not survivor
+2026-10-05T15:42:00,B54_A_ddbrake20,F17 halved while its equity is > 20% below peak (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.78,,,disc diff -0.02 p=0.603; hold diff -0.06 p=0.767; not survivor
+2026-10-05T15:42:00,B54_B_mom7,weekly top tercile 7d return (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.176,,,disc diff -0.13 p=0.813; hold diff +0.04 p=0.395; not survivor
+2026-10-05T15:42:00,B54_B_mom14,weekly top tercile 14d return (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.232,,,disc diff -0.07 p=0.692; hold diff -0.00 p=0.482; not survivor
+2026-10-05T15:42:00,B54_B_mom60,weekly top tercile 60d return (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.253,,,disc diff -0.05 p=0.636; hold diff -0.35 p=0.929; not survivor
+2026-10-05T15:42:00,B54_B_mom90,weekly top tercile 90d return (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.149,,,disc diff -0.15 p=0.810; hold diff -0.18 p=0.795; not survivor
+2026-10-05T15:42:00,B54_B_skipmom28_7,weekly top tercile return t-28..t-7 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.298,,,disc diff -0.00 p=0.502; hold diff -0.27 p=0.902; not survivor
+2026-10-05T15:42:00,B54_B_skipmom91_7,weekly top tercile return t-91..t-7 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.261,,,disc diff -0.04 p=0.602; hold diff -0.31 p=0.914; not survivor
+2026-10-05T15:42:00,B54_B_rev3,weekly bottom tercile 3d return (reversal) (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.216,,,disc diff -0.09 p=0.701; hold diff -0.17 p=0.800; not survivor
+2026-10-05T15:42:00,B54_B_rev7,weekly bottom tercile 7d return (reversal) (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.22,,,disc diff -0.08 p=0.714; hold diff -0.39 p=0.970; not survivor
+2026-10-05T15:42:00,B54_B_rev14,weekly bottom tercile 14d return (reversal) (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.203,,,disc diff -0.10 p=0.731; hold diff -0.28 p=0.925; not survivor
+2026-10-05T15:42:00,B54_B_rev1_daily,daily bottom tercile 1d return (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,-1.425,,,disc diff -1.73 p=1.000; hold diff -1.23 p=1.000; not survivor
+2026-10-05T15:42:00,B54_B_lowvol30,weekly lowest tercile 30d vol (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.329,,,disc diff +0.03 p=0.428; hold diff +0.78 p=0.000; not survivor
+2026-10-05T15:42:00,B54_B_lowvol90,weekly lowest tercile 90d vol (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.389,,,disc diff +0.09 p=0.272; hold diff +0.75 p=0.000; not survivor
+2026-10-05T15:42:00,B54_B_lowmax7,weekly lowest tercile max daily return 7d (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.317,,,disc diff +0.02 p=0.445; hold diff -0.11 p=0.722; not survivor
+2026-10-05T15:42:00,B54_B_lowmax30,weekly lowest tercile max daily return 30d (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.235,,,disc diff -0.07 p=0.695; hold diff +0.72 p=0.000; not survivor
+2026-10-05T15:42:00,B54_B_small,weekly smallest tercile by 30d value (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.575,,,disc diff +0.27 p=0.015; hold diff +0.22 p=0.123; not survivor
+2026-10-05T15:42:00,B54_B_large,weekly largest tercile by 30d value (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.057,,,disc diff -0.25 p=0.909; hold diff +0.11 p=0.295; not survivor
+2026-10-05T15:42:00,B54_B_52wh,weekly top tercile close / 365d high (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.41,,,disc diff +0.11 p=0.212; hold diff +0.05 p=0.412; not survivor
+2026-10-05T15:42:00,B54_B_90dh,weekly top tercile close / 90d high (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.397,,,disc diff +0.09 p=0.220; hold diff +0.03 p=0.435; not survivor
+2026-10-05T15:42:00,B54_B_volup,weekly top tercile value trend 7d/90d (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.083,,,disc diff -0.22 p=0.934; hold diff -0.47 p=0.973; not survivor
+2026-10-05T15:42:00,B54_B_voldown,weekly bottom tercile value trend 7d/90d (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.332,,,disc diff +0.03 p=0.425; hold diff +0.39 p=0.006; not survivor
+2026-10-05T15:42:00,B54_B_gate_btc05,EW30 only when BTC trend weight >= 0.5 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.003,,,disc diff +0.70 p=0.013; hold diff +0.20 p=0.221; not survivor
+2026-10-05T15:42:00,B54_B_gate_btc1,EW30 only when BTC trend weight = 1 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.144,,,disc diff +0.84 p=0.022; hold diff +0.26 p=0.259; not survivor
+2026-10-05T15:42:00,B54_B_gate_altidx,EW30 only when alt index trend weight >= 0.5 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.945,,,disc diff +0.64 p=0.025; hold diff +0.35 p=0.204; not survivor
+2026-10-05T15:42:00,B54_B_own_trend,EW of universe coins whose own trend weight >= 0.75 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.159,,,disc diff -0.14 p=0.695; hold diff -0.15 p=0.584; not survivor
+2026-10-05T15:42:00,B54_B_mom28_btcgate,"weekly top tercile 28d return, only when BTC trend >= 0.5 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.019,,,disc diff +0.72 p=0.019; hold diff -0.02 p=0.487; not survivor
+2026-10-05T15:42:00,B54_C_ratio_tw50,alts when alt/BTC trend weight >= 0.5 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.893,,,disc diff -0.91 p=0.997; hold diff -1.43 p=1.000; not survivor
+2026-10-05T15:42:00,B54_C_ratio_tw75,alts when alt/BTC trend weight >= 0.75 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.789,,,disc diff -1.01 p=0.999; hold diff -0.97 p=0.999; not survivor
+2026-10-05T15:42:00,B54_C_ratio_tw100,alts when alt/BTC trend weight >= 1.0 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.228,,,disc diff -0.58 p=0.979; hold diff -0.25 p=0.896; not survivor
+2026-10-05T15:42:00,B54_C_ratio_sma30,alts when alt/BTC > its SMA30 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.07,,,disc diff -0.73 p=0.985; hold diff -1.47 p=0.999; not survivor
+2026-10-05T15:42:00,B54_C_ratio_sma90,alts when alt/BTC > its SMA90 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.818,,,disc diff -0.99 p=1.000; hold diff -1.15 p=0.998; not survivor
+2026-10-05T15:42:00,B54_C_ratio_sma180,alts when alt/BTC > its SMA180 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.521,,,disc diff -1.28 p=0.999; hold diff -0.58 p=0.962; not survivor
+2026-10-05T15:42:00,B54_C_ratio90_btc,alts when alt/BTC > SMA90 and BTC trend >= 0.5 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.423,,,disc diff -0.38 p=0.915; hold diff -1.00 p=0.999; not survivor
+2026-10-05T15:42:00,B54_C_ratio30_btc,alts when alt/BTC > SMA30 and BTC trend >= 0.5 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.484,,,disc diff -0.32 p=0.838; hold diff -1.19 p=1.000; not survivor
+2026-10-05T15:42:00,B54_C_half_tw50,50% alts when alt/BTC trend weight >= 0.5 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.328,,,disc diff -0.48 p=0.974; hold diff -0.81 p=0.999; not survivor
+2026-10-05T15:42:00,B54_C_half_sma90,50% alts when alt/BTC > SMA90 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.279,,,disc diff -0.52 p=0.985; hold diff -0.62 p=0.997; not survivor
+2026-10-05T15:42:00,B54_D_brk10_v1.5,"10d high + value >= 1.5x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.114,,,disc diff +0.81 p=0.013; hold diff +0.56 p=0.099; not survivor
+2026-10-05T15:42:00,B54_D_brk10_v2,"10d high + value >= 2x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.152,,,disc diff +0.85 p=0.009; hold diff +0.67 p=0.066; not survivor
+2026-10-05T15:42:00,B54_D_brk10_v3,"10d high + value >= 3x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.065,,,disc diff +0.76 p=0.020; hold diff +0.83 p=0.040; not survivor
+2026-10-05T15:42:00,B54_D_brk20_v1.5,"20d high + value >= 1.5x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.424,,,disc diff +1.12 p=0.001 BHY; hold diff +0.92 p=0.020; survivor FAIL
+2026-10-05T15:42:00,B54_D_brk20_v3,"20d high + value >= 3x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.275,,,disc diff +0.97 p=0.002; hold diff +1.02 p=0.011; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v1.5,"55d high + value >= 1.5x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.4,,,disc diff +1.10 p=0.001; hold diff +1.15 p=0.007; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v2,"55d high + value >= 2x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.367,,,disc diff +1.06 p=0.002; hold diff +1.03 p=0.013; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v3,"55d high + value >= 3x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.263,,,disc diff +0.96 p=0.004; hold diff +1.06 p=0.010; not survivor
+2026-10-05T15:42:00,B54_D_brk100_v1.5,"100d high + value >= 1.5x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.209,,,disc diff +0.91 p=0.014; hold diff +1.15 p=0.011; not survivor
+2026-10-05T15:42:00,B54_D_brk100_v2,"100d high + value >= 2x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.196,,,disc diff +0.89 p=0.016; hold diff +1.06 p=0.013; not survivor
+2026-10-05T15:42:00,B54_D_brk100_v3,"100d high + value >= 3x, Donchian-10 exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.077,,,disc diff +0.78 p=0.030; hold diff +1.01 p=0.018; not survivor
+2026-10-05T15:42:00,B54_D_brk20_v1.5_trail,"20d high + 1.5x value, 20% trailing exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.559,,,disc diff +1.26 p=0.000 BHY; hold diff +0.94 p=0.003; PASS
+2026-10-05T15:42:00,B54_D_brk20_v3_trail,"20d high + 3x value, 20% trailing exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.368,,,disc diff +1.07 p=0.003; hold diff +0.71 p=0.036; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v1.5_trail,"55d high + 1.5x value, 20% trailing exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.271,,,disc diff +0.97 p=0.004; hold diff +0.89 p=0.017; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v3_trail,"55d high + 3x value, 20% trailing exit, BTC gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.288,,,disc diff +0.99 p=0.004; hold diff +1.05 p=0.007; not survivor
+2026-10-05T15:42:00,B54_D_brk20_v2_nogate,"20d high + 2x value, no regime gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.16,,,disc diff +0.86 p=0.007; hold diff +0.83 p=0.030; not survivor
+2026-10-05T15:42:00,B54_D_brk20_v2_5slots,"20d high + 2x value, 5 slots x 20% (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.225,,,disc diff +0.92 p=0.011; hold diff +0.16 p=0.311; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v2_nogate,"55d high + 2x value, no regime gate (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.252,,,disc diff +0.95 p=0.006; hold diff +1.01 p=0.011; not survivor
+2026-10-05T15:42:00,B54_D_brk55_v2_5slots,"55d high + 2x value, 5 slots x 20% (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.219,,,disc diff +0.92 p=0.013; hold diff +0.94 p=0.015; not survivor
+2026-10-05T15:42:00,B54_D_brk20_v1.5_own,"20d high + 1.5x value, BTC gate + own trend >= 0.75 (prereg v5 sweep)",sweep,disc 2018-2023 / hold 2024-2026,1.4,,,disc diff +1.10 p=0.001 BHY; hold diff +1.10 p=0.009; PASS
+2026-10-05T15:42:00,B54_E_no_mon,F17 but flat on mon (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.57,,,disc diff -0.23 p=0.951; hold diff -0.62 p=0.997; not survivor
+2026-10-05T15:42:00,B54_E_no_tue,F17 but flat on tue (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.669,,,disc diff -0.13 p=0.793; hold diff +0.20 p=0.185; not survivor
+2026-10-05T15:42:00,B54_E_no_wed,F17 but flat on wed (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.41,,,disc diff -0.39 p=0.996; hold diff -0.73 p=0.999; not survivor
+2026-10-05T15:42:00,B54_E_no_thu,F17 but flat on thu (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.914,,,disc diff +0.11 p=0.251; hold diff -0.04 p=0.583; not survivor
+2026-10-05T15:42:00,B54_E_no_fri,F17 but flat on fri (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.352,,,disc diff -0.45 p=1.000; hold diff -0.19 p=0.800; not survivor
+2026-10-05T15:42:00,B54_E_no_sat,F17 but flat on sat (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.338,,,disc diff -0.47 p=1.000; hold diff -0.17 p=0.947; not survivor
+2026-10-05T15:42:00,B54_E_no_sun,F17 but flat on sun (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.606,,,disc diff -0.20 p=0.953; hold diff -0.34 p=0.966; not survivor
+2026-10-05T15:42:00,B54_E_weekends_only,F17 only Sat/Sun (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.059,,,disc diff -0.74 p=0.978; hold diff -0.99 p=0.920; not survivor
+2026-10-05T15:42:00,B54_E_weekdays_only,F17 only Mon-Fri (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.23,,,disc diff -0.57 p=1.000; hold diff -0.38 p=0.956; not survivor
+2026-10-05T15:42:00,B54_E_tom_only,F17 only days 25..31 and 1..5 (turn of month) (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.662,,,disc diff -0.14 p=0.641; hold diff -1.45 p=0.978; not survivor
+2026-10-05T15:42:00,B54_E_no_tom,F17 except turn of month (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,0.904,,,disc diff -0.90 p=0.999; hold diff +0.20 p=0.321; not survivor
+2026-10-05T15:42:00,B54_E_no_sep,F17 except September (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,2.005,,,disc diff +0.20 p=0.036; hold diff -0.05 p=0.728; not survivor
+2026-10-05T15:42:00,B54_E_no_jun_sep,F17 except June-September (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.927,,,disc diff +0.12 p=0.288; hold diff -0.23 p=0.707; not survivor
+2026-10-05T15:42:00,B54_E_oct_mar_only,F17 only October-March (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.711,,,disc diff -0.09 p=0.599; hold diff -0.19 p=0.643; not survivor
+2026-10-05T15:42:00,B54_E_no_first_week,F17 except days 1-7 (prereg v5 sweep),sweep,disc 2018-2023 / hold 2024-2026,1.195,,,disc diff -0.61 p=0.996; hold diff -0.11 p=0.676; not survivor
+2026-10-05T15:55:00,F18_REGISTER,Forward paper F18a/F18b = B54 holdout passes (alt breakout portfolios),forward,2026-10-06..,,,,"observation; benchmark EW30, compared with F17"

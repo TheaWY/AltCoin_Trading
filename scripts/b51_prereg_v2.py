@@ -20,6 +20,7 @@ ERAS = [("E1 2017-19", "2017-10-01", "2020-01-01"), ("E2 2020-21", "2020-01-01",
         ("E5 2025-26", "2025-01-01", "2026-10-05")]
 K, M_PRIOR = 3, 1100
 EXCL = {"KRW-USDT", "KRW-USDC"}
+END = __import__("os").environ.get("B51_END", "2026-10-05")
 
 
 def panel():
@@ -28,7 +29,7 @@ def panel():
         if f.stem in EXCL:
             continue
         g = pd.read_parquet(f)
-        g = g[g.ts < pd.Timestamp("2026-10-05", tz="UTC").timestamp()]   # prereg end; drops today's unfinished candle
+        g = g[g.ts < pd.Timestamp(END, tz="UTC").timestamp()]   # prereg end (env B51_END for forward use); drops unfinished candle
         if len(g) < 30:
             continue
         g = g.set_index(pd.to_datetime(g.ts, unit="s")).sort_index()
