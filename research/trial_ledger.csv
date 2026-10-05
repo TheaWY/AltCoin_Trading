@@ -1373,3 +1373,12 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-10-05T23:40:00,B58_R3,risk forecast overlay (prereg v9),risk,disc 2019-2023 / hold 2024-2026,2.117,,,dev maxDD -0.339 hold Sharpe 1.539; not selected; n/a
 2026-10-05T23:40:00,B58_R4,risk forecast overlay (prereg v9),risk,disc 2019-2023 / hold 2024-2026,2.052,,,dev maxDD -0.349 hold Sharpe 1.468; not selected; n/a
 2026-10-05T23:40:00,B58_R5,risk forecast overlay (prereg v9),risk,disc 2019-2023 / hold 2024-2026,2.135,,,dev maxDD -0.338 hold Sharpe 1.440; selected; FAIL
+2026-10-06T00:30:00,B57x_X1_taker,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC -0.0076 p=0.2738 BHY=fail
+2026-10-06T00:30:00,B57x_X2_fund,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC +0.0242 p=0.0058 BHY=pass
+2026-10-06T00:30:00,B57x_X3_gap24,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC -0.0067 p=0.3722 BHY=fail
+2026-10-06T00:30:00,B57x_X4_gap1,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC -0.0015 p=0.8246 BHY=fail
+2026-10-06T00:30:00,B57x_X5_prem,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC -0.0106 p=0.1692 BHY=fail
+2026-10-06T00:30:00,B57x_X6_dprem,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC +0.0109 p=0.1764 BHY=fail
+2026-10-06T00:30:00,B57x_X7_vsurge,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC -0.0127 p=0.0978 BHY=fail
+2026-10-06T00:30:00,B57x_X8_share,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC +0.0813 p=0.0000 BHY=pass
+2026-10-06T00:30:00,B57x_composite_ridge,Binance flow composite (prereg v9),flow,sealed 2025-10..2026-09,-0.764,,,IC +0.0770 p=0.0000 (PASS); book vs EW diff -0.17 p=0.6366 (FAIL)

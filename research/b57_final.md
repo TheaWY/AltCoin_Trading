@@ -13,3 +13,12 @@ U3_ens_all_h7: Sharpe 1.28 (diff -0.15, p=0.8132), maxDD -18.6%, CAGR 25.6% -> F
   period: Sharpe 1.28 vs 1.43, p=0.81. FAIL. Its drawdown was similar (-18.6% vs -19.2%).
 - Models do rank coins (IC 0.05..0.20) but the edge does not survive conversion into a long-only book that beats the trend rule.
   F17 stays the base strategy.
+
+## B57i interpretation (prereg v9, dev 2023-01..2025-06, no tests)
+- Top univariate features vs 7d relative return are all volatility / lottery measures with NEGATIVE sign:
+  upside vol 30d -0.10, idiosyncratic vol -0.10, rv7/rv30 -0.10, max daily return 30d -0.09, rv180 -0.09;
+  correlation with BTC +0.08.
+- Model predictions correlate +0.2..+0.5 with low-volatility rank (GBMs ~0.45-0.49); GBMs put BTC/ETH in the
+  top 3 about 38% of the time.
+- So the ML mostly rediscovered "avoid volatile, lottery-like alts, prefer majors". F17 already holds only
+  BTC/ETH, which is why the models could not beat it.
