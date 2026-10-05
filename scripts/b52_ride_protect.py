@@ -46,11 +46,15 @@ def exit_idx(Cn, j, i_entry_sig, T):
     return min(i_entry_sig + 60, T - 2)
 
 
-def run_R(O, C, V):
+def run_R(O, C, V, regime_df=None):
+    """regime_df: optional bool DataFrame (day x coin) replacing the v3 BTC regime (used by B53 G1)."""
     Cf = C.ffill()
     mem = membership(C, V)
     btc_w = B.trend_w(Cf["KRW-BTC"])
     regime = (btc_w >= 0.5)
+    if regime_df is not None:
+        mem = mem & regime_df.reindex_like(mem).fillna(False).astype(bool)
+        regime = pd.Series(True, index=C.index)
     brk = Cf > Cf.shift(1).rolling(20, min_periods=20).max()
     vratio = V / V.shift(1).rolling(30, min_periods=20).median()
     sig = brk & (vratio >= 2) & mem
