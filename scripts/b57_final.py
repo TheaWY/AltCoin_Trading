@@ -41,7 +41,7 @@ def main():
         fn = {"U1": E.W_U1, "U2": E.W_U2, "U3": E.W_U3}[u]
         r = E.win(E.S.run(fn(p)), *SEALED)
         a, b = r.to_numpy(), f17.reindex(r.index).fillna(0).to_numpy()
-        pv = E.B.boot_p(a, b, E.B.sharpe, 20, draws=5000)
+        _, pv = E.B.boot_p(a, b, E.B.sharpe, 20, draws=5000)  # boot_p returns (obs, p)
         d_s = E.B.sharpe(a) - E.B.sharpe(b); dd_ok = E.B.maxdd(a) >= E.B.maxdd(b) - 0.05
         verdict = "PASS" if (d_s > 0 and pv < 0.025 and dd_ok) else "FAIL"
         lines.append(f"{c}: Sharpe {E.B.sharpe(a):.2f} (diff {d_s:+.2f}, p={pv:.4f}), maxDD {E.B.maxdd(a):.1%}, "
