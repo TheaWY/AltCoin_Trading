@@ -181,3 +181,14 @@ F15:
     market is expected to lag buy-and-hold in raw return; that alone is not a fail.
   note: PAPER ONLY. Executable by hand on Upbit spot (no shorts, no leverage). H2 (weekly XS momentum) and H3 (trend-gated
     alt basket) FAILED in the same pre-registration.
+
+F17:
+  name: F15 + loss protection overlay (crash brake + volatility scaling), long only (prereg v3 P)
+  registered: 2026-10-05 12:45 KST; forward sample = trade days >= 2026-10-06; recorded as w_p / ret_p in f15_trend_paper
+  source: B52 (research/b52_ride_protect.md), prereg cae2f8f. 2018-04..2026-10: Sharpe 1.72 vs F15 1.55, maxDD -36% vs -41%,
+          worst day -9.6% vs -13.3%, worst 30d -21.4% vs -29.0%, Calmar 1.71 vs 1.60, lower maxDD 4/5 eras (E3/E4 within 1 pt).
+          Cost: CAGR +62% vs +65%. Exploratory: vol part cuts the worst month, brake part adds Sharpe; with an extra day of lag
+          Sharpe 1.53 (F15 with extra lag 1.41).
+  decision_rule: at 90/365 trade days, F17 drawdown <= F15 drawdown and Sharpe not lower by > 0.2.
+  R_surge_ride: FAILED in the same prereg (B52): 636 trades +10.4% mean but median -5.1%, negative in 2022 and 2025-26;
+    beats random entries (p=0.015) only because of a few huge 2020-21 winners. Not registered.
