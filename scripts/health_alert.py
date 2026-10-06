@@ -6,6 +6,7 @@ data/alerts/ntfy_topic exists (only after 유리 approves). Claude's check-ins r
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -29,7 +30,8 @@ def tb_counts():
     for f in LOGS:
         try:
             if f.stat().st_size < 50_000_000:
-                c[str(f.relative_to(ROOT))] = f.read_bytes().count(b"Traceback")
+                b = f.read_bytes()      # ignore tracebacks right after a logged auto-reconnect (websocket drops)
+                c[str(f.relative_to(ROOT))] = b.count(b"Traceback") - len(re.findall(rb"reconnecting[^\n]*\nTraceback", b))
         except OSError:
             pass
     return c
