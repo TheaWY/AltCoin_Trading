@@ -1382,3 +1382,4 @@ ts,run_id,hypothesis,tier,period,sharpe,mean_daily_net,n_trades,note
 2026-10-06T00:30:00,B57x_X7_vsurge,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC -0.0127 p=0.0978 BHY=fail
 2026-10-06T00:30:00,B57x_X8_share,Binance flow -> Upbit next-day rel ret (prereg v9),flow,dev 2024-03..2025-09,,,,IC +0.0813 p=0.0000 BHY=pass
 2026-10-06T00:30:00,B57x_composite_ridge,Binance flow composite (prereg v9),flow,sealed 2025-10..2026-09,-0.764,,,IC +0.0770 p=0.0000 (PASS); book vs EW diff -0.17 p=0.6366 (FAIL)
+2026-10-06T09:35:00,F19x_register,F19 + B57x X8 avoid filter on alt satellite (forward only),forward,forward >= 2026-10-07,,,,paper observation at 유리 request; filter not pre-registered in B57x; decision after 90 days

@@ -212,3 +212,17 @@ F19:
              whole satellite to cash while the alt-index crash brake is on.
   script: scripts/f18_breakout_paper.py (book F19, daily 09:02 KST); alert shows its target weights
   decision_rule: 180 days: F19 maxDD <= F17 maxDD; report Sharpe and return gap honestly.
+
+F19x:
+  name: F19 with the B57x "Upbit-heavy alt" avoid filter on the alt satellite (paper observation only)
+  registered: 2026-10-06 10:20 KST at 유리's request; forward days >= 2026-10-07 (first X8 snapshot 2026-10-06 run)
+  source: B57x - X8 (log Binance perp 24h quote volume in KRW / Upbit 24h KRW value, demeaned) had dev IC +0.081 and sealed
+          IC +0.081; bottom quintile underperformed (dev -28 bps/day, sealed -44). The avoid filter itself was NOT
+          pre-registered and the sealed period is spent, so this is a forward-only check.
+  rule: each daily run (09:02 KST ~ 00:02 UTC) snapshot X8 for the universe = top-40 Upbit KRW coins by 30d median value
+        with a Binance USDT perp and >= 90 days listed; any F19 satellite alt in the bottom X8 quintile that day gets
+        weight 0 (cash, slot not refilled). BTC/ETH core unchanged. Live 24h rolling volumes from Binance fapi
+        /ticker/24hr and Upbit /ticker, FX = KRW-USDT. Snapshots stored in data/forward/x8_daily.parquet.
+  script: scripts/f18_breakout_paper.py (book F19x)
+  decision_rule: 90 days: compare F19x vs F19 return and maxDD; promote the filter only if F19x >= F19 on both and the
+                 removed alts' forward returns were below the kept ones' on average.

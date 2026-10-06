@@ -20,6 +20,40 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 START = pd.Timestamp("2026-10-06")
+X8F = ROOT / "data/forward/x8_daily.parquet"
+
+
+def x8_snapshot(S, day):
+    """F19x (forward.yaml): live X8 = log(Binance perp 24h quote vol in KRW / Upbit 24h KRW value), demeaned,
+    for top-40 Upbit coins (30d median value, >= 90d) with a Binance USDT perp. Stored per decision day."""
+    import json
+    import urllib.request
+    import numpy as np
+    get = lambda u: json.load(urllib.request.urlopen(u, timeout=20))  # noqa: E731
+    bn = {}
+    for t in get("https://fapi.binance.com/fapi/v1/ticker/24hr"):
+        s = t["symbol"]
+        if not s.endswith("USDT"):
+            continue
+        b = s[:-4]
+        for p in ("1000000", "1000"):
+            if b.startswith(p) and len(b) > len(p) and not b[len(p)].isdigit():
+                b = b[len(p):]; break
+        bn["KRW-" + b] = bn.get("KRW-" + b, 0.0) + float(t["quoteVolume"])
+    age = S.C.notna().cumsum().loc[day]; medv = S._medv.loc[day]
+    alts = [c for c in S._alts if c in bn and age.get(c, 0) >= 90 and np.isfinite(medv.get(c, np.nan))]
+    uni = list(medv[alts].sort_values(ascending=False).index[:40])
+    up = {}
+    for i in range(0, len(uni) + 1, 50):
+        mk = ",".join(uni[i:i + 50] + (["KRW-USDT"] if i == 0 else []))
+        for t in get(f"https://api.upbit.com/v1/ticker?markets={mk}"):
+            up[t["market"]] = (float(t["acc_trade_price_24h"]), float(t["trade_price"]))
+    fx = up["KRW-USDT"][1]
+    x = pd.Series({c: np.log(max(bn[c] * fx, 1) / max(up[c][0], 1)) for c in uni if c in up})
+    x = x - x.median()
+    q = x.rank(pct=True)
+    return pd.DataFrame({"day": day, "coin": x.index, "x8": x.values, "bottom": (q <= 0.2).values,
+                         "taken": pd.Timestamp.now("UTC").tz_localize(None)})
 
 
 def main():
@@ -43,6 +77,27 @@ def main():
         out.append(("F19", d, float(v)))
     last = W19.iloc[-1]; h = last[last > 0]
     hold.append(("F19", W19.index[-1], ", ".join(f"{k[4:]} {v:.1%}" for k, v in h.items()) or "cash"))
+    # ---- F19x: same book, satellite alts in the bottom X8 quintile of that decision day -> 0 (snapshots kept)
+    dday = W19.index[-1]
+    try:
+        snap = x8_snapshot(S, dday)
+        old = pd.read_parquet(X8F) if X8F.exists() else snap.iloc[0:0]
+        X8 = pd.concat([old[old.day != dday], snap], ignore_index=True)
+        X8.to_parquet(X8F, index=False)
+    except Exception as e:  # noqa: BLE001
+        print("x8 snapshot failed:", repr(e), flush=True)
+        X8 = pd.read_parquet(X8F) if X8F.exists() else None
+    W19x = W19.copy()
+    if X8 is not None:
+        for d, g in X8[X8.bottom].groupby("day"):
+            if d in W19x.index:
+                cols = [c for c in g.coin if c in W19x.columns and c not in S.MAJ]
+                W19x.loc[d, cols] = 0.0
+    r = S.run(W19x)
+    for d, v in r[(r.index >= START) & (r.index < r.index[-1])].items():
+        out.append(("F19x", d, float(v)))
+    last = W19x.iloc[-1]; h = last[last > 0]
+    hold.append(("F19x", dday, ", ".join(f"{k[4:]} {v:.1%}" for k, v in h.items()) or "cash"))
     for bid, W in (("EW30", S.W_ew30()), ("F17", S.W_f17())):
         r = S.run(W)
         for d, v in r[(r.index >= START) & (r.index < r.index[-1])].items():
