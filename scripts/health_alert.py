@@ -27,7 +27,8 @@ def services():
 
 NET = re.compile(rb"NetworkError|ConnectionError|ConnectionClosed|RemoteDisconnected|Timeout|TimeoutError|"
                  rb"RequestTimeout|ExchangeNotAvailable|ServerDisconnected|ClientConnectorError|Max retries exceeded|"
-                 rb"Temporary failure in name resolution|Connection reset|503 Service|502 Bad Gateway")
+                 rb"Temporary failure in name resolution|Connection reset|503 Service|502 Bad Gateway|NameResolutionError|"
+                 rb"nodename nor servname|Network is unreachable|Errno 51|Errno 60|timed out|SSLEOFError|IncompleteRead")
 
 
 def real_tb(b):
