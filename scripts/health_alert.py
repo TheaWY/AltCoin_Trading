@@ -25,13 +25,23 @@ def services():
     return sorted({ln.split()[-1] for ln in out.splitlines() if "com.altcoin." in ln})
 
 
+NET = re.compile(rb"NetworkError|ConnectionError|ConnectionClosed|RemoteDisconnected|Timeout|TimeoutError|"
+                 rb"RequestTimeout|ExchangeNotAvailable|ServerDisconnected|ClientConnectorError|Max retries exceeded|"
+                 rb"Temporary failure in name resolution|Connection reset|503 Service|502 Bad Gateway")
+
+
+def real_tb(b):
+    """count tracebacks that are NOT transient network errors (those retry by themselves)."""
+    parts = b.split(b"Traceback (most recent call last)")[1:]
+    return sum(1 for blk in parts if not NET.search(blk[:4000]))
+
+
 def tb_counts():
     c = {}
     for f in LOGS:
         try:
             if f.stat().st_size < 50_000_000:
-                b = f.read_bytes()      # ignore tracebacks right after a logged auto-reconnect (websocket drops)
-                c[str(f.relative_to(ROOT))] = b.count(b"Traceback") - len(re.findall(rb"reconnecting[^\n]*\nTraceback", b))
+                c[str(f.relative_to(ROOT))] = real_tb(f.read_bytes())
         except OSError:
             pass
     return c

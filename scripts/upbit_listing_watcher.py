@@ -39,7 +39,10 @@ def db(sql, params=()):
     with st._connect() as c:  # noqa: SLF001
         cur = c.raw.cursor()
         cur.execute(sql.replace("?", "%s"), params)
-        return cur.fetchall() if cur.description else None
+        if not cur.description:
+            return None
+        # storage uses dict_row on Postgres; unpacking a dict yields its KEYS, so normalise to tuples
+        return [tuple(r.values()) if isinstance(r, dict) else tuple(r) for r in cur.fetchall()]
 
 
 def perps(s: requests.Session) -> set[str]:
