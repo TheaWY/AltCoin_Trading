@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.alphashadow</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>scripts/alpha_shadow.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <!-- hourly: pick the alpha candidates once a day after 00:00 UTC, settle finished ones -->
+  <key>StartCalendarInterval</key><dict><key>Minute</key><integer>5</integer></dict>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/alphashadow.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/alphashadow.err.log</string>
+</dict>
+</plist>

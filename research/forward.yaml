@@ -1,0 +1,228 @@
+# Forward (paper) tests of what survived the confirmatory layers. Paper only, no orders.
+registered: 2026-09-27
+tests:
+  - id: F1_upbit_krw_listing
+    source: [E1b (2025-03..2026-09 pass), B3_E1b_2024 (2024 holdout pass)]
+    object: scripts/upbit_listing_watcher.py (launchd com.altcoin.upbitlisting)
+    rule: poll Upbit announcements ~1/s; new KRW listing with a live Binance USDT perp -> paper long at the Binance best ask at detection; exit at best bid +15m and +60m
+    measures: detection lag vs first_listed_at (the key unknown), realised net at +15m/+60m
+    decision: after >= 15 listings, keep only if median detection lag <= 1.5 s AND mean net60 > 0; warning - 2026 median at +2 s was already negative
+    secondary: delisting notices -> paper short (B2_N2), same logging
+  - id: F2_pump_cnn
+    source: [B2_M7_pump (2026 test +0.75%/trade), B3_M7_pump_2024 (+0.58%), 6-seed check (12/12 positive)]
+    object: scripts/pump_cnn_paper.py with frozen data/models/pump_cnn (launchd com.altcoin.pumpcnn, minute 2 hourly)
+    rule: every +10% hour (24h volume >= $2M, >= 72h listed); 6-seed mean probability; long >= Dec-2025 70th pct, short <= 30th; hold 4h
+    decision: after >= 300 paper trades (about 6-8 weeks), keep only if mean net > 0 with day-clustered 95% CI above 0
+  - id: F3_crash_rebound
+    registered: 2026-09-27
+    source: [B6_3 crash_rebound_L meta-label pass (post-hoc), C1 rule in research/batch_C1.yaml]
+    object: scripts/crash_rebound_paper.py (launchd com.altcoin.crashrebound, minute 3 hourly)
+    rule: coin 24h <= -25%, BTC 24h <= -3%, close below prior 30d closing low, 24h vol >= $2M, >= 72h listed -> paper long; entry open T+60s, exit open T+60s+24h; 24h cooldown per coin
+    also_logged: crashes that fail the BTC or 30d-low filter (control arm, side=0)
+    decision: rare events (market-wide crashes), so review after >= 30 trades or 6 months; keep only if mean net > 0 with day-clustered CI above 0 AND beats the control arm
+  - id: F4_short_spot_led_pumps
+    registered: 2026-09-28
+    source: [B11_2 (post-hoc reversal: long spot-led +10% pumps lost 1.9%/24h in discovery AND holdout, CI below 0 in both)]
+    object: scripts/spot_led_paper.py (launchd com.altcoin.spotled, minute 4 hourly)
+    rule: >
+      hour T close: Binance perp 1h return >= +10%, 24h quote volume >= $2M, >= 72h listed, 24h cooldown per coin;
+      S1 = spot quote-volume share of (spot + perp) over the last 6h minus the same share over the last 168h (Binance REST klines);
+      S1 >= 0.01999 (discovery top-tercile threshold, frozen) -> paper SHORT perp at the open of the minute T+60s, exit open T+60s+24h;
+      pumps with S1 < 0.01999 or no spot market are logged as control (side 0) with the same hypothetical short outcome
+    costs: 0.05%/side fee + volume slippage; funding added at settlement from the funding table (shorts receive positive funding)
+    decision: after >= 100 shorts (about 3 months): keep only if mean net > 0 with day-clustered 95% CI above 0 AND beats the control arm
+  - id: F5_short_into_unlocks
+    registered: 2026-09-28
+    source: [B9_1 (+1.25% disc n=200, +1.34% holdout n=137, beats placebo in both; CI crossed 0)]
+    object: scripts/unlock_short_paper.py (launchd com.altcoin.unlockshort, minute 6 hourly; refreshes DefiLlama emissions daily)
+    rule: >
+      cliff unlock (DefiLlama emissions metadata.events unlockType=cliff) of >= 1% of circulating supply (circulating = cumulative
+      documented unlocked the day before), coin has a Binance USDT perp; same-day events summed; open paper SHORT at the first hourly run
+      at or after unlock time - 72h (skip if already later than unlock - 60h), exit at unlock + 24h
+    decision: after >= 60 trades (about 4-6 months): keep only if mean net > 0 with day-clustered CI above 0
+
+F6_oi_drop_short:
+  registered: 2026-09-28
+  source: B17_F04 oi_drop3|s5|t4h (validation +0.78%/trade CI [0.58,0.97], discovery +0.37% CI [0.11,0.62], 6,732 + 10,005 trades, all regimes positive)
+  rule: after a live pump onset (close/close_60m_ago - 1 >= +10%, dv24 >= $2M, >= 72h listed, 6h cooldown per coin), track 5-minute open interest;
+        when OI falls 3% below its post-onset high (within 24h), SHORT at the next minute close; exit at +4h or a 5% hard stop (+0.2% slippage past the stop);
+        cost 0.05%/side + liquidity slippage; paper only.
+  sample_size: 100 events minimum before any verdict; stop date 2026-11-15 (whichever first)
+  pass: mean net > 0 with day-clustered CI > 0; MAE p90 < 8%; no regime with mean < -0.5%
+  implementation: scripts/oi_drop_short_paper.py (launchd com.altcoin.oidropshort, every 5 min; OI polled from Binance REST); table oi_drop_short_paper; started 2026-09-28
+  amended_2026-09-28: backtest stop re-simulated on real minute highs -> validation +0.39%/trade CI [0.19,0.58], discovery +0.16% CI [-0.10,0.41] (edge
+        halved; F04 close-only stop was optimistic). Pass criteria unchanged. Settle now fills gap-opens above the stop at the open. Sizing for any
+        later live use (B17_F10): 10% notional per trade, max 3 concurrent. F08: no regime filter.
+  amended_2026-09-29: SOURCE INVALIDATED. The backtest used Vision metrics OI stamped ~5 min before it was measured (look-ahead).
+        With correct timing the rule loses (validation -0.22%, discovery -0.32%). The live service uses real-time OI, so the forward
+        result is honest but is now expected to be negative. Keep only as a check, or stop it.
+
+main_book:
+  started: 2026-09-28 (after the paper portfolio reset to 1,000 USDT; backup data/backups/paper_reset_20260928_2344)
+  chosen_by: 유리 - main paper book trades F2 (pump CNN) + F6 (oi-drop short) only; signal_xs, core hold and pump rider disabled in .env
+  object: scripts/main_book.py (launchd com.altcoin.mainbook, every 60 s); strategies f2_pump_cnn / f6_oi_short in paper_trades; state main_book_map
+  sizing: B17_F10 - 10% of equity per trade, max 3 open; entries at the latest 1-minute close when first seen (<= 15 min after the planned entry)
+  note: the F2/F6 forward-test tables stay the clean evidence; the main book adds execution delay and the position cap. PAPER ONLY, LIVE_TRADING=false.
+  amended_2026-10-01: >
+    Admission is now rule-based. A strategy enters the main book only after its own forward test passes its registered
+    decision rule (>= 300 closed paper trades, mean net > 0, day-clustered 95% CI above 0) and is then admitted at full
+    size automatically. The only brake is downside: equity 10% below its running peak pauses new entries for 7 days.
+    F2 is at 21/300, so the main book holds cash until then. F6 stays out (source invalidated).
+
+F7:
+  name: vshare_up weekly long/short (Upbit volume share, sign -1)
+  registered: 2026-10-01
+  source: B21_EDGE (data/reports/b21/edge.md) - best book; positive under all stress tests, 2026 CI touched 0
+  script: scripts/vshare_ls_paper.py  (launchd com.altcoin.f7vshare, Thursdays 09:05 KST)
+  table: f7_vshare_paper (one row per leg per week)
+  rules: frozen, see script docstring
+  pass: >= 12 weekly books AND >= 300 closed legs AND weekly book-net day-clustered CI lower bound > 0
+  kill: 12 books with mean weekly net <= 0
+
+F8:
+  name: late-session alt continuation (09:00->01:00 KST sign, hold 01:00->09:00 KST)
+  registered: 2026-10-01
+  source: B27_INTRADAY (data/reports/b27/intraday.md), 1 cell of 46 - forward test only
+  script: scripts/latesession_paper.py  (launchd com.altcoin.latesession, 01:05 and 09:05 KST)
+  table: f8_latesession_paper (one row per day)
+  rules: frozen, see script docstring
+  pass: >= 120 trading days and day-level net CI lower bound > 0
+  kill: 120 days with mean net <= 0
+
+F9:
+  name: post-Upbit-KRW-listing fade (short Binance perp days 1..10)
+  registered: 2026-10-01
+  source: B31 D2 + B31b (data/reports/b31/validate.json, d2_events.csv)
+  script: scripts/upbit_listing_fade_paper.py (launchd com.altcoin.listingfade, daily 09:05 KST; events from the F1 watcher)
+  table: f9_listing_fade_paper
+  pass: >= 30 closed events and mean net > 0 with bootstrap 95% CI above 0
+  kill: 30 events with mean net <= 0
+F10:
+  name: pairs DIVERGENCE continuation (opposite side of the retired pairs_statarb entries)
+  registered: 2026-10-02 23:00 KST (pre-registered; no live data before this)
+  source: B34 opposite-side audit (research/b34_opposite_2026-10-02.md) - retired book 31 trades -85 USDT, opposite +84, diff CI [+1.6, +9.2]/trade
+  script: scripts/pairs_divergence_paper.py (launchd com.altcoin.pairsdiv, hourly :20; same selection + z core as the retired book, side mirrored)
+  table: f10_pairs_div_paper
+  construction: entry |z|>=2 -> ride the spread (long rich leg / short beta x cheap leg); target |z|>=|entry|+1; stop |z|<=0.5 or -15%; max hold 48h; <=20 open; taker fee+slip both sides, Binance settled funding per leg
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60); floor lowered 2026-10-03 11:00 KST, 3 closed trades at the time"
+  kill: 30 events with mean net <= 0
+  note: the B34 'opposite' number is an upper bound (old exits were taken on the original side); this test is the clean version
+F11:
+  name: Upbit notice momentum (any notice kind on a perp-listed coin, confirmation-gated)
+  registered: 2026-10-02 23:55 KST (pre-registered; motivated by SAND 2026-10-02 16:00 '유의 종목 지정 해제' -> +17% in 60 min; the 4 prior warning-lifted events did nothing, so the gate is the hypothesis, not the notice kind)
+  script: scripts/upbit_listing_watcher.py notice_momentum() (same watcher process as F1, launchd com.altcoin.upbitlisting)
+  table: f11_notice_mom_paper
+  construction: detect notice (watcher, ~5-10 s lag); mid at detection = reference; if |mid move| >= 3% within 10 min -> paper position in the direction of the move at the touch; exit at 3% adverse (stop) or 4h; taker fee + slippage by dv24 both sides; notices with no confirmation kept as 'no_confirm'
+  pass: ">= 30 confirmed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60); floor lowered 2026-10-03 11:00 KST, 1 closed trade at the time"
+  kill: 30 confirmed events with mean net <= 0
+F12:
+  name: fresh burst (30-min +5% on 5x volume in a coin that has NOT run up over the prior week)
+  registered: 2026-10-03 00:30 KST (forward only; the split was found in-sample on 23 days / 646 bursts and is carried by few trades)
+  source: B35 SAND retrospective (research/b35_burst_retro.md) - all bursts 4h mean -0.1% (median -1.8%); r7d<=0 subset +3.7% CI [+0.7,+7.7] n=83 hit 57%; extended coins fade; Korea-led and OI-building bursts fade
+  script: scripts/fresh_burst_paper.py (launchd com.altcoin.freshburst, every 5 min)
+  table: f12_fresh_burst_paper
+  construction: long at trigger close; stop -3% on 1m lows; time exit 4h; one per coin per 4h; max 10 open; taker fee+slip both sides; settled funding
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60); floor lowered 2026-10-03 11:00 KST, 3 closed trades at the time"
+  kill: 30 events with mean net <= 0
+F13:
+  name: Upbit-executed notice longs, priced off the live Upbit KRW order book (listing open + confirmation-gated notice momentum)
+  registered: 2026-10-03 11:00 KST (pre-registered, 0 events)
+  why: SAND +42% / POD +82% (first hour) on 2026-10-02 were Upbit spot moves; POD had no Binance perp; M-series shows Korea never leads Binance at 1-min, so Binance-mirrored tests (F1/F11) structurally miss the move. Also 153 past Upbit listings 1h mean +7.8% (median +0.1%, tail-driven)
+  script: scripts/f13_upbit_live.py upbit_live() (thread per notice inside the watcher, launchd com.altcoin.upbitlisting)
+  table: f13_upbit_live_paper
+  construction: long only (spot). krw_listing -> poll KRW-<SYM> book until trading opens (<=24h), buy at first book, hold 60 min, stop -5%. warning_lifted/warning/other on an existing market -> +3% on mid within 10 min of detection -> buy at the touch, stop -3%, hold 4h; -3% first -> 'no_confirm_down'. delisting skipped. Fills = VWAP walking the live L5 book for 1,000,000 KRW; Upbit fee 0.05% per side. never_opened / no_confirm rows kept
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60)"
+  kill: 30 closed events with mean net <= 0
+  note: report-only in main_book (no Upbit execution adapter; venue decision is 유리's). Status column also carries the honest denominator.
+F14:
+  name: Korea-led burst fade (SHORT the Binance perp when a 30-min burst's turnover is >= 20% Upbit)
+  registered: 2026-10-03 11:40 KST (forward only; in-sample on B35's 23 days, confirmed on Upbit-side holdout in B37)
+  source: B35 Upbit-share>20% bursts mean 4h -1.5% (n=135, top quartile -2.8%); B37 Upbit hourly bursts holdout 4h -2.2% CI [-2.7,-1.7] n=1058, no-perp coins -3.5%
+  script: scripts/korea_led_fade_paper.py (launchd com.altcoin.korealedfade, every 5 min)
+  table: f14_korea_led_fade_paper
+  construction: same burst trigger as F12 (r30 >= +5%, 30-min volume >= 5x prior-2h avg, dv24 >= $5M, crypto perp listed >= 30d) AND Upbit KRW turnover / (Upbit + Binance) over the 30 min >= 20% -> paper SHORT at 1m close; stop +3% on 1m highs; 4h time exit; fee + slippage by dv24 + settled funding; max 10 open, one per coin per 4h
+  pass: ">= 30 closed events and mean net > 0 with bootstrap 99% CI above 0 (95% CI once n >= 60)"
+  kill: 30 closed events with mean net <= 0
+
+F2b:
+  name: F2 variant - high-confidence CNN signals only + trailing exit (arm +15%, give back 10 points, on 1m closes)
+  registered: 2026-10-04 18:00 KST (shadow forward test; F2 signals with ts_signal >= 18:00 KST), approved by 유리
+  source: B39 (research/b39_f2_loss_audit.md) - consistent in both OOS eras but not significant: margin>=median +0.90%/+0.73% vs all +0.68%/+0.46%; trail15/10 +0.19%/+0.15% paired; combined +1.00%/+0.59%
+  script: scripts/f2b_shadow_paper.py (launchd com.altcoin.f2bshadow, every 5 min)
+  table: f2b_shadow_paper (net_trail where margin_hi)
+  pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0, AND paired (F2b minus F2 base on the same signals) mean > 0"
+  kill: 60 closed events with paired mean <= 0
+F2L:
+  name: F2 variant - long signals only + trailing exit (spot-executable; no short-squeeze tail)
+  registered: 2026-10-04 18:00 KST, same table and sample as F2b
+  source: B39 follow-up - longs+trail +0.83% (2024) / +0.75% (2026) vs F2 all +0.68%/+0.46%; longs worst -56% vs shorts -151%; post-hoc, needs forward confirmation
+  table: f2b_shadow_paper (net_trail where side > 0)
+  pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0"
+  kill: 60 closed events with mean net <= 0
+
+F2W:
+  name: F2 high-confidence LONG only when BTC daily close (prev day) < its 20-day average
+  registered: 2026-10-04 23:10 KST (forward only), from B45 (post-hoc among ~60 comparisons)
+  source: B45 - 2024 +2.55% (n=75), 2026 +2.01% CI [+0.05%, +4.12%] (n=256); same longs with BTC > MA20: +0.71% / -0.04%
+  table: f2b_shadow_paper (net_base where side > 0 and margin_hi, BTC filter computed from data/upbit_db/bn_h1/BTC.parquet + Binance daily closes)
+  pass: ">= 60 closed events, mean net > 0 with day-clustered 95% CI above 0, AND mean above the same longs when BTC > MA20"
+  kill: 60 closed events with mean net <= 0
+
+F15:
+  name: Upbit BTC/ETH trend allocation, long only (prereg v2 H1)
+  registered: 2026-10-05 11:10 KST; forward sample = trade days >= 2026-10-06
+  source: B51 (research/b51_prereg_v2.md) - pre-registered before data (751343c); 2018-04..2026-10 Sharpe 1.55 vs 0.80 buy-and-hold,
+          maxDD -41% vs -81%, bootstrap p=0.0006 (Bonferroni K=3), lower drawdown in 5/5 eras; DSR(M=1100)=0.90. Checks B51b:
+          lag+1 day Sharpe 1.41, costs x4 1.43, every single SMA beats buy-and-hold.
+  script: scripts/f15_trend_paper.py (launchd com.altcoin.f15trend, hourly; stateless recompute from Upbit public daily candles)
+  table: f15_trend_paper
+  decision_rule: review at 90 and 365 trade days. Pass = drawdown smaller than 50/50 buy-and-hold over the window AND
+    Sharpe not below buy-and-hold by more than 0.3. The edge is mainly drawdown control, so a short window in a bull
+    market is expected to lag buy-and-hold in raw return; that alone is not a fail.
+  note: PAPER ONLY. Executable by hand on Upbit spot (no shorts, no leverage). H2 (weekly XS momentum) and H3 (trend-gated
+    alt basket) FAILED in the same pre-registration.
+
+F17:
+  name: F15 + loss protection overlay (crash brake + volatility scaling), long only (prereg v3 P)
+  registered: 2026-10-05 12:45 KST; forward sample = trade days >= 2026-10-06; recorded as w_p / ret_p in f15_trend_paper
+  source: B52 (research/b52_ride_protect.md), prereg cae2f8f. 2018-04..2026-10: Sharpe 1.72 vs F15 1.55, maxDD -36% vs -41%,
+          worst day -9.6% vs -13.3%, worst 30d -21.4% vs -29.0%, Calmar 1.71 vs 1.60, lower maxDD 4/5 eras (E3/E4 within 1 pt).
+          Cost: CAGR +62% vs +65%. Exploratory: vol part cuts the worst month, brake part adds Sharpe; with an extra day of lag
+          Sharpe 1.53 (F15 with extra lag 1.41).
+  decision_rule: at 90/365 trade days, F17 drawdown <= F15 drawdown and Sharpe not lower by > 0.2.
+  R_surge_ride: FAILED in the same prereg (B52): 636 trades +10.4% mean but median -5.1%, negative in 2022 and 2025-26;
+    beats random entries (p=0.015) only because of a few huge 2020-21 winners. Not registered.
+
+F18:
+  name: Upbit alt breakout portfolios (B54 holdout PASS): F18a = 20d high + 1.5x value, BTC gate, 20% trailing exit;
+        F18b = same + own trend >= 0.75, Donchian-10 exit. 10 slots x 10%, long only.
+  registered: 2026-10-05 15:55 KST; forward days >= 2026-10-06
+  source: B54 (research/b54_sweep100.md): discovery Sharpe diff vs EW alt basket +1.26 / +1.10 (BHY q<=0.10 of 100),
+          holdout +0.94 (p=0.003) / +1.10 (p=0.009). Absolute holdout only +0.4% / +6.9% per year vs F17 +36%.
+  script: scripts/f18_breakout_paper.py (launchd com.altcoin.f18breakout, daily 09:02 KST); output data/forward/f18_*.parquet
+  decision_rule: 180 days: beats EW30 (registered) AND is reported next to F17; promotion to real use only if it also beats F17
+    on Sharpe, which the backtest says it will not.
+
+F19:
+  name: low-drawdown book chosen by 유리 = 80% F17 + 20% "up & volatile" alt satellite (B55 S3_N1_L0_s20)
+  registered: 2026-10-05 18:45 KST at 유리's request ("수익이 줄어도 낙폭을 줄이는걸로"); forward days >= 2026-10-06
+  source: B55 - FAILED the Sharpe test vs F17 (discovery diff -0.07). Kept as a risk preference: 2024-26 backtest maxDD -21%
+          vs -26% (F17), CAGR +31% vs +36%, Sharpe 1.42 vs 1.44. Chosen after seeing the holdout table (selection bias).
+  satellite: 7d return >= +15%, 7d vol >= 1.5x 90d vol, close > SMA20, BTC trend >= 0.5; exit close < SMA10; 10 slots;
+             whole satellite to cash while the alt-index crash brake is on.
+  script: scripts/f18_breakout_paper.py (book F19, daily 09:02 KST); alert shows its target weights
+  decision_rule: 180 days: F19 maxDD <= F17 maxDD; report Sharpe and return gap honestly.
+
+F19x:
+  name: F19 with the B57x "Upbit-heavy alt" avoid filter on the alt satellite (paper observation only)
+  registered: 2026-10-06 10:20 KST at 유리's request; forward days >= 2026-10-07 (first X8 snapshot 2026-10-06 run)
+  source: B57x - X8 (log Binance perp 24h quote volume in KRW / Upbit 24h KRW value, demeaned) had dev IC +0.081 and sealed
+          IC +0.081; bottom quintile underperformed (dev -28 bps/day, sealed -44). The avoid filter itself was NOT
+          pre-registered and the sealed period is spent, so this is a forward-only check.
+  rule: each daily run (09:02 KST ~ 00:02 UTC) snapshot X8 for the universe = top-40 Upbit KRW coins by 30d median value
+        with a Binance USDT perp and >= 90 days listed; any F19 satellite alt in the bottom X8 quintile that day gets
+        weight 0 (cash, slot not refilled). BTC/ETH core unchanged. Live 24h rolling volumes from Binance fapi
+        /ticker/24hr and Upbit /ticker, FX = KRW-USDT. Snapshots stored in data/forward/x8_daily.parquet.
+  script: scripts/f18_breakout_paper.py (book F19x)
+  decision_rule: 90 days: compare F19x vs F19 return and maxDD; promote the filter only if F19x >= F19 on both and the
+                 removed alts' forward returns were below the kept ones' on average.

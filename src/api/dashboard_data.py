@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import logging
 import threading
 import time
 from datetime import datetime, timezone
@@ -137,7 +138,7 @@ def build_research_experiments(storage: Storage | None = None) -> dict[str, Any]
         rows = [
             dict(r)
             for r in conn.execute(
-                "SELECT * FROM experiments ORDER BY priority ASC, created_at DESC LIMIT 200"
+                "SELECT * FROM experiments ORDER BY priority ASC, created_at DESC LIMIT 40"
             ).fetchall()
         ]
         totals_rows = conn.execute(
@@ -176,7 +177,6 @@ def build_research_experiments(storage: Storage | None = None) -> dict[str, Any]
                     "gross_pnl": agg.get("gross_pnl"),
                     "positive_windows": f"{positive}/{len(windows)}" if windows else None,
                 },
-                "windows": windows,
             }
         )
 
@@ -453,7 +453,7 @@ def build_history_payload(storage: Storage | None = None) -> dict[str, Any]:
 
 
 def invalidate_payload_cache() -> None:
-    _cache["payload"] = None
+    # keep serving the old payload; the next request triggers a background rebuild
     _cache["built_at"] = 0.0
 
 
@@ -501,20 +501,35 @@ def _slim_alt(alt: dict[str, Any]) -> dict[str, Any]:
     return slim
 
 
-def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
-    now = time.monotonic()
-    cached = _cache["payload"]
-    if cached is not None and now - _cache["built_at"] < config.DASHBOARD_CACHE_SECONDS:
-        return cached
-
-    with _cache_lock:
-        cached = _cache["payload"]
-        if cached is not None and now - _cache["built_at"] < config.DASHBOARD_CACHE_SECONDS:
-            return cached
+def _refresh(storage: Storage | None) -> None:
+    try:
         payload = _build_alts_payload_uncached(storage)
         _cache["payload"] = payload
         _cache["built_at"] = time.monotonic()
-        return payload
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("dashboard payload rebuild failed")
+    finally:
+        _cache["refreshing"] = False
+
+
+def build_alts_payload(storage: Storage | None = None) -> dict[str, Any]:
+    """Stale-while-revalidate: a build takes ~15s, so requests always get the
+    last finished payload at once and a stale one is rebuilt in the background.
+    Only the very first call after start blocks."""
+    now = time.monotonic()
+    cached = _cache["payload"]
+    if cached is not None:
+        if now - _cache["built_at"] >= config.DASHBOARD_CACHE_SECONDS and not _cache.get("refreshing"):
+            with _cache_lock:
+                if not _cache.get("refreshing"):
+                    _cache["refreshing"] = True
+                    threading.Thread(target=_refresh, args=(storage,), daemon=True).start()
+        return cached
+    with _cache_lock:
+        if _cache["payload"] is None:
+            _cache["refreshing"] = True
+            _refresh(storage)
+        return _cache["payload"] or {}
 
 
 def _build_alts_payload_uncached(storage: Storage | None = None) -> dict[str, Any]:
