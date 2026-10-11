@@ -1,4 +1,4 @@
-# Autonomous research status - 2026-10-12 05:15 KST
+# Autonomous research status - 2026-10-12 06:15 KST
 
 Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY over all 650 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 63, 'korea': 54, 'volume': 36, 'funding': 27, 'flow': 27, 'oi': 27, 'cross': 27, 'positioning': 18, 'liq': 2}
 
@@ -74,7 +74,7 @@ Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY
 | test | closed | needed | mean net % | CI low % |
 |---|---|---|---|---|
 | F1 Upbit notice | 1 | 15 | +10.69 | – |
-| F2 pump CNN | 103 | 300 | +1.81 | -1.44 |
+| F2 pump CNN | 104 | 300 | +1.71 | -1.37 |
 | F3 crash rebound | 0 | 30 | – | – |
 | F4 spot-led | 15 | 100 | -16.17 | -36.48 |
 | F5 unlock short | 1 | 60 | +6.04 | – |
