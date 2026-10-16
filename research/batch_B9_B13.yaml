@@ -1,0 +1,48 @@
+# B9-B13: follow-up studies on newly downloaded free data. Registered 2026-09-27 BEFORE any of this data is analysed.
+# Common protocol (same as B7/B8): discovery 2024-04-01..2025-08-31, holdout 2025-09-01..2026-09-23 touched once,
+# sign/thresholds fixed on discovery, day-clustered bootstrap 95% CI, Benjamini-Hochberg q=0.10 within each batch,
+# costs = 0.05%/side fee + volume slippage + actual funding, entry at the next minute open after the signal is public.
+registered: 2026-09-27
+
+B9_token_unlocks:
+  data: DefiLlama emissions datasets (data/cache/unlocks), mapped to Binance perps
+  events: scheduled unlock of >= 1% of circulating supply (cliff unlocks; linear vesting excluded), 24h cooldown per token
+  tests:
+    B9_1: short perp from t-72h to t+24h vs unlock time (pre-unlock hedging drift); net mean > 0 with CI > 0
+    B9_2: dose-response: return (t-72h..t+72h) regressed on unlock size (% of circulating); slope < 0 with CI < 0
+    B9_3: controls = same coins at random non-unlock times (placebo); B9_1 must beat placebo
+  note: tier confirmatory only if >= 60 events in each period, else exploratory
+
+B10_onchain_exchange_inflows:
+  status: blocked until a free BigQuery sandbox project exists (user action)
+  data: bigquery-public-data token_transfers (Ethereum/Polygon/BSC as available) + Dune spellbook CEX labels (data/cache/cex_labels)
+  feature: token net inflow to CEX wallets over 6h / 24h, scaled by 24h exchange volume
+  tests:
+    B10_1: case-control on B8 pump events and on dump events (-20% in 6h), AUC with CI (same method as B8_1)
+    B10_2: top-decile inflow -> short 24h, net of costs; mean > 0 with CI > 0
+
+B11_korean_multivenue_and_spot_led:
+  data: Upbit + Bithumb 1h (data/cache/upbit1h_hist, bithumb1h_hist), Binance spot 1h (data/cache/spot1h_hist)
+  features:
+    K6_korea_combined_surge_6h: (Upbit + Bithumb) KRW value 6h vs 7d mean
+    K7_bithumb_premium: Bithumb price / (Binance x USDT-KRW) - 1
+    S1_spot_share_6h: spot quote volume / (spot + perp) over 6h minus its 7d mean      # spot-led buying
+    S2_basis_change_6h: (perp - spot)/spot now minus 6h ago
+    S3_spot_taker_imbalance_6h: spot taker-buy share - 0.5
+  tests:
+    B11_1: B8_1 case-control method on the same pump events; BH across these 5 features
+    B11_2: pump-continuation split: among pumps (+10% 1h), do spot-led pumps (S1 top tercile) have higher 24h net return
+           than perp-led pumps (S1 bottom tercile)? long spot-led only: net mean > 0 with CI > 0
+
+B12_listing_announcements_5_exchanges:
+  data: notices from Binance, Upbit, Bybit, OKX, Bithumb (data/cache/notices + exchange_notices)
+  events: first announcement of a spot or perp listing for a coin that already trades as a Binance USDT perp
+  tests:
+    B12_1: per exchange, long Binance perp at announcement +60s, exit +15m/+60m/+24h; net mean > 0 with CI > 0 (BH across 5 x 3)
+    B12_2: second-announcement effect: listing on exchange B within 7 days after exchange A
+  note: 1m bars only (no second-level data) -> +60s entry is conservative; latency results stay with F1 forward test
+
+B13_orderbook_depth_precursors:
+  data: Binance bookDepth hourly 2024-03..2026-09 (data/cache/depth1h + data/cache/bookdepth)
+  features: ask depth 1% change 24h (thinning), bid depth 1% change 24h, imbalance 1%/5% 6h mean, depth(1%)/24h volume
+  tests: B8_1 case-control on pump and dump events; BH across 4 features x 2 event types

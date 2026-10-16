@@ -13,6 +13,7 @@ from src.research.generator import (
     _iter_combos,
     _ordered_candidates,
     _space_size,
+    queue_capacity,
 )
 from src.research.promotion import config_hash
 
@@ -56,6 +57,21 @@ class OrderedCandidates(unittest.TestCase):
 
     def test_limit_zero_is_empty(self):
         self.assertEqual(_ordered_candidates({"A": [1]}, [], set(), "", 0), [])
+
+
+class QueueCapacity(unittest.TestCase):
+    def test_champion_does_not_block_new_slots(self):
+        # remaining=9, 9 challengers already queued → no new; champion is extra
+        self.assertEqual(queue_capacity(9, 9, 300), 0)
+        self.assertEqual(queue_capacity(9, 10, 300), 0)
+
+    def test_history_bump_opens_slots(self):
+        self.assertEqual(queue_capacity(131, 9, 300), 122)
+        self.assertEqual(queue_capacity(131, 9, 20), 20)
+
+    def test_exhausted_is_zero(self):
+        self.assertEqual(queue_capacity(0, 0, 300), 0)
+        self.assertEqual(queue_capacity(-1, 0, 300), 0)
 
 
 if __name__ == "__main__":

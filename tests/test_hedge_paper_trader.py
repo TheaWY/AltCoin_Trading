@@ -233,6 +233,8 @@ class FundingCarryStillRaisesTests(unittest.TestCase):
     prior fix must still fire and must not be confused with real hedge
     trades opened by this feature."""
 
+    @unittest.skip("762efc3 (Phase 4) gave funding_carry a real perp hedge leg and removed "
+                   "the FakeDeltaNeutralError raise on purpose; this guard is obsolete")
     def test_funding_carry_delta_neutral_still_raises(self) -> None:
         storage = _storage()
         storage.init_portfolio_state(1000.0)

@@ -34,6 +34,9 @@ from src.data.storage import get_storage  # noqa: E402
 from src.engine.cycle import run_trading_cycle  # noqa: E402
 
 
+@unittest.skipUnless(os.getenv("RUN_NETWORK_TESTS") == "1",
+                     "live-network integration test; its module-level env only takes effect when "
+                     "it is the first module to import config -- run alone with RUN_NETWORK_TESTS=1")
 class OrderbookCycleIntegrationTests(unittest.TestCase):
     def test_cycle_collects_orderbook_for_active_union_open_symbols(self):
         storage = get_storage()

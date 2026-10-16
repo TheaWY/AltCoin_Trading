@@ -1,0 +1,76 @@
+# B7: new-variable discovery layer. Registered 2026-09-27 BEFORE any factor is computed or tested.
+# Survey behind it: research/b7_design.md (alpha mining, deep residual stat-arb, lead-lag, order-flow imbalance).
+registered: 2026-09-27
+
+protocol:
+  data: data/cache/b7 dense hourly matrices from Binance USDT-perp 1m klines 2024-03..2026-09, delisted coins kept, TradFi perps excluded
+  universe: at each rebalance, 24h quote volume >= $5M, >= 720h listed, all inputs finite
+  rebalance: 00/08/16 UTC (evaluation cadence 8h)
+  target: 24h forward log return minus beta x BTC 24h forward log return (beta = 30d hourly OLS, past data only), cross-sectionally ranked
+  periods:
+    discovery: 2024-04-01..2025-08-31   # everything is fitted / signed / mined here
+    holdout: 2025-09-01..2026-09-23     # touched once per registered item, after discovery is frozen
+  factor_metrics:
+    - rank IC per rebalance, averaged per day; day-block bootstrap 95% CI
+    - quintile long-short (equal weight, dollar neutral, 3 staggered 24h books), net of 0.05%/side fee + volume slippage + actual funding
+    - novelty = partial rank IC after cross-sectionally regressing the factor on known factors
+  known_factors: [ret_24h, ret_7d, ret_28d, rv_7d, log_dv24, funding_8h, max_1h_7d]
+  pass_rule: >
+    sign fixed on discovery; holdout rank IC > 0 with CI > 0 AND holdout long-short net mean > 0 with CI > 0
+    AND holdout novelty IC > 0; then Benjamini-Hochberg q = 0.10 across every factor sent to holdout in B7
+  multiple_testing: every formula evaluated is counted in research/trial_ledger.csv (GP generations included)
+
+experiments:
+  B7_A_mechanism_factors:
+    method: pre-registered mechanism-driven formulas (AlphaAgent-style LLM proposals, frozen here before any data is seen)
+    factors:
+      A01_ofi_q24: quarter-boundary (:00 :15 :30 :45 minutes) taker imbalance over 24h, sum(2 tbq_q - qv_q) / sum(qv_q)   # arXiv 2607.09426
+      A02_ofi_q_excess: A01 minus taker imbalance of the non-boundary minutes over 24h
+      A03_ofi24_rel: 24h taker imbalance minus the cross-sectional median
+      A04_flow_price_gap: rank(24h taker imbalance) - rank(24h return)   # buying not yet priced
+      A05_ofi_persist: 7d taker imbalance skipping the last 24h
+      A06_lag_beta_mkt: 30d OLS slope of coin 1h return on the previous hour's liquid-market return, times the market return of the last hour
+      A07_levy_lead: 7d mean Levy area (BTC leads coin) times BTC return over the last 4h
+      A08_corr_break: 24h mean 1m-correlation with BTC minus its 30d mean
+      A09_trade_size: log(24h quote volume per trade) minus its 30d mean   # larger tickets
+      A10_trade_count_surge: log(24h trades / 30d mean daily trades)       # retail attention
+      A11_rskew_7d: skewness of hourly returns over 7d
+      A12_squeeze: 24h realised vol / 7d realised vol
+      A13_funding_change: funding_8h now minus 24h ago
+      A14_funding_price_gap: rank(funding_8h) - rank(7d return)          # crowded longs without price
+      A15_close_loc_24h: (close - 24h low) / (24h high - 24h low)
+      A16_close_loc_7d: same on 7d
+      A17_vol_price_corr: 7d correlation of hourly return and hourly log volume change
+      A18_amihud_change: log(24h Amihud illiquidity / 30d mean)
+      A19_upwick_24h: sum of upper wicks / sum of ranges over 24h
+      A20_resid_mom: 7d BTC-beta residual return, skipping the last 24h
+      A21_idio_vol: 7d residual volatility
+      A22_settle_flow: taker imbalance in the 3 hours ending at funding settlements (00/08/16 UTC) over the last 24h
+      A23_q_share: quarter-boundary share of volume over 24h, minus its 30d mean
+      A24_intraday_noise: 1m realised variance over 24h / (24 x squared hourly-return variance over 24h)   # variance ratio, >1 = mean reverting minutes
+  B7_B_formula_mining:
+    method: genetic programming over formula trees with a factor POOL (AlphaGen/AlphaForge-style) and cost-aware fitness
+    vocabulary: [ret_1h, log_qv, ofi_1h, ofi_q_1h, rv_1h, levy_1h, corr_btc_1h, funding_8h, log_trades, range_1h]
+    operators: [add, sub, mul, div, neg, abs, sign_log, ts_mean(w), ts_std(w), ts_delta(w), ts_zscore(w), ts_corr(w), ts_max(w), ts_min(w), cs_rank]
+    windows_hours: [4, 24, 72, 168]
+    fitness: >
+      discovery split into 3 purged chronological folds (24h gap); fitness = median fold rank IC
+      minus 0.02 x (1 - 24h rank autocorrelation) [turnover proxy] minus 0.001 x tree size
+    pool: accept a formula only if |rank corr| < 0.5 with every pool member AND every known factor; pool max 15
+    search: population 400, 30 generations, tournament 5, crossover 0.6, mutation 0.3, max depth 5
+    holdout: every pool member individually (counts toward BH) + the equal-weight z-score combination of the pool
+  B7_C_deep_residual_statarb:
+    method: Guijarro-Ordonez/Pelger/Zanotti deep statistical arbitrage adapted to perps
+    residuals: hourly returns minus rolling PCA (5 factors, 30d window, fitted on past data only) on the liquid universe
+    model: 1D-CNN + Transformer encoder over the last 72h of cumulative residual, taker imbalance and volume channels -> raw weight; weights demeaned and scaled to unit gross
+    objective: maximise Sharpe of the daily portfolio net of turnover x (fee + slippage), rebalance every 4h
+    train: discovery minus its last 90 days; validation: last 90 days of discovery (early stopping); test: holdout
+    pass: holdout net Sharpe > 1.0 AND daily net mean CI > 0 (day-block bootstrap)
+  B7_D_ml_increment:
+    method: LightGBM LambdaRank on known factors only vs known + all B7_A factors (+ B7_B pool)
+    validation: quarterly expanding walk-forward, first test quarter 2025-09, 2-day embargo
+    pass: holdout rank IC gain > 0 with day-block CI > 0 (tells whether the new variables add information jointly)
+  B7_E_book_depth:
+    tier: exploratory (only 2026-03-25..2026-09-24 of 5m bookDepth exists)
+    factors: [depth imbalance at 1% (imb_1) 24h mean, imb_5 24h mean, change of imb_1 vs 7d, (bid+ask depth 1%) / 24h volume]
+    split: discovery 2026-03-25..2026-06-30, holdout 2026-07-01..2026-09-23; same metrics, no BH credit

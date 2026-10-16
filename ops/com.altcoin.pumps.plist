@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.pumps</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>scripts/pump_research.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>StartInterval</key><integer>7200</integer>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/pumps.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/pumps.err.log</string>
+</dict>
+</plist>

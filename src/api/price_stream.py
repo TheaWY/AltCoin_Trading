@@ -23,7 +23,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-STREAM_URL = "wss://fstream.binance.com/stream?streams=!miniTicker@arr"
+STREAM_URL = "wss://fstream.binance.com/market/stream?streams=!miniTicker@arr"  # /market: old path went silent
 REST_24H_URL = "https://fapi.binance.com/fapi/v1/ticker/24hr"  # weight 40
 REST_PRICE_URL = "https://fapi.binance.com/fapi/v1/ticker/price"  # weight 2
 BROADCAST_INTERVAL_SECONDS = 0.25
@@ -42,6 +42,7 @@ class PriceRelay:
         # symbol -> [last_price, pct_24h]
         self.prices: dict[str, list[Any]] = {}
         self.open_24h: dict[str, float] = {}
+        self.qvol: dict[str, float] = {}
         self.dirty: set[str] = set()
         # /ws client -> symbols it currently displays (drives aggTrade subs)
         self.watchers: dict[Any, set[str]] = {}
@@ -91,6 +92,10 @@ class PriceRelay:
                 continue
             if open_24h:
                 self.open_24h[symbol] = open_24h
+            try:
+                self.qvol[symbol] = float(ticker.get("q") or ticker.get("quoteVolume") or 0)
+            except (TypeError, ValueError):
+                pass
             self._set_price(symbol, close)
 
     def ingest_trade(self, trade: dict[str, Any]) -> None:

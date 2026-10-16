@@ -29,7 +29,9 @@ from typing import Any, Callable, Iterable
 
 logger = logging.getLogger(__name__)
 
-BINANCE_FORCE_ORDER_STREAM = "wss://fstream.binance.com/ws/!forceOrder@arr"
+# /market path: the old /ws URL connects but has delivered nothing since
+# Binance split its futures streams (no binance rows in liquidations at all).
+BINANCE_FORCE_ORDER_STREAM = "wss://fstream.binance.com/market/ws/!forceOrder@arr"
 
 # Point-in-time guard: an event stamped meaningfully in the FUTURE (exchange or
 # local clock skew, or a malformed message) would land in an hour bucket that

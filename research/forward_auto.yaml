@@ -1,0 +1,77 @@
+AR28741da3:
+  status: forward
+  spec:
+    method: xs_sort
+    var: upbit_share_24h
+    cond: null
+    sign: -1
+  registered: '2026-10-02'
+  table: fa_ar28741da3
+  construction: daily 00:05 UTC, band L/S enter 20% keep 30%, EW, gross 1.0, costs
+    fee+slip, funding
+  pass: '>= 60 daily books AND day-net bootstrap 95% CI > 0'
+  kill: 60 books with mean net <= 0
+  evidence:
+    insample_fm_t: 3.444080738472188
+    holdout_fm_t: 2.5857411914505533
+    holdout_alpha_t: 2.564168731545764
+    holdout_lag1h_t: 1.5729575163030192
+    holdout_dsort_t: 1.808647173934858
+    holdout_band_net_bp: 5.263281190807231
+ARa200b4d5:
+  status: forward
+  spec:
+    method: xs_sort
+    var: upbit_share_7d
+    cond: null
+    sign: -1
+  registered: '2026-10-02'
+  table: fa_ara200b4d5
+  construction: daily 00:05 UTC, band L/S enter 20% keep 30%, EW, gross 1.0, costs
+    fee+slip, funding
+  pass: '>= 60 daily books AND day-net bootstrap 95% CI > 0'
+  kill: 60 books with mean net <= 0
+  evidence:
+    insample_fm_t: 2.243648594452237
+    holdout_fm_t: 3.117268065531847
+    holdout_alpha_t: 2.564266371334729
+    holdout_lag1h_t: 1.7962834346481436
+    holdout_dsort_t: 2.6993899155501113
+    holdout_band_net_bp: 7.285249956215195
+ARd5d71ff6:
+  status: forward
+  spec:
+    method: factor_momentum
+    var: korea_share_24h
+    cond: null
+    sign: -1
+  registered: '2026-10-02'
+  table: fa_ard5d71ff6
+  construction: daily 00:05 UTC, band L/S enter 20% keep 30%, EW, gross 1.0, costs
+    fee+slip, funding
+  pass: '>= 60 daily books AND day-net bootstrap 95% CI > 0'
+  kill: 60 books with mean net <= 0
+  evidence:
+    insample_fm_t: 0.9462211519679727
+    holdout_fm_t: 4.211534169566528
+    holdout_alpha_t: 2.551756561417105
+    holdout_lag1h_t: 2.100860368671908
+    holdout_dsort_t: 2.7744156558962905
+    holdout_band_net_bp: 5.172686075482899
+ARb44d336e:
+  status: forward
+  track: short_history_forward_only
+  spec:
+    method: xs_sort
+    var: liq_long_cont_24h
+    cond: null
+    sign: -1
+  registered: '2026-10-02'
+  table: fa_arb44d336e
+  construction: daily 00:05 UTC, band L/S enter 20% keep 30%, EW, gross 1.0, costs
+    fee+slip, funding
+  pass: '>= 60 daily books AND day-net bootstrap 95% CI > 0'
+  kill: 60 books with mean net <= 0
+  evidence:
+    note: sign chosen after a 36-day short-history result (ARfa0a97ce holdout t -2.83
+      against reversal); no back-test credit, forward test only

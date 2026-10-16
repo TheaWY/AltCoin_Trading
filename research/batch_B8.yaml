@@ -1,0 +1,66 @@
+# B8: what is visible BEFORE a pump? Non-price data (Korean flow, derivatives positioning, order book, notices).
+# Registered 2026-09-27 BEFORE any B8 feature is computed. Motivation: B7 showed price/volume predicts the median
+# 24h move but not the mean, because the mean is set by rare pumps whose triggers are outside price data.
+registered: 2026-09-27
+
+data:
+  primary (history 2024-03..2026-09, after backfill):
+    - Binance hourly panel (data/cache/b7): price, volume, taker flow, funding
+    - Binance vision 5m metrics aggregated hourly (data/cache/metrics1h): open interest, top-trader account/position L/S, global L/S, taker L/S ratio
+    - Upbit KRW 1h candles (data/cache/upbit1h_hist) + KRW-USDT: Korean volume and KRW premium per coin
+    - exchange_notices (Binance/Upbit listing, delisting, warning), 2017..2026
+  exploratory only (short history, no pass credit):
+    - Binance bookDepth 5m (2026-03..09), liquidations (2026-07..09), coinalyze multi-exchange (2026-06..09), Hyperliquid positions (2026-09..)
+
+periods:
+  discovery: 2024-04-01..2025-08-31
+  holdout: 2025-09-01..2026-09-23   # touched once, after discovery results are frozen in git
+
+event_definition:
+  pump: coin-hour t0 (hour close) where max close over (t0, t0+6h] / close(t0) - 1 >= +20%, universe dv24 >= $2M and >= 720h listed;
+        first qualifying hour per coin, then 72h cooldown. Features use only data up to t0 (the pump is in the future).
+  controls: for each pump, up to 5 coins at the same t0, same universe, no pump within +-72h,
+            matched on 24h-volume tercile and 7d-volatility tercile (vol alone predicts pumps; matching removes it)
+
+registered_features (sign = expected direction for pumps; measured at t0):
+  korean_flow:
+    K1_upbit_surge_6h: log(Upbit KRW value 6h / Upbit 7d hourly mean x 6)                  # +
+    K2_upbit_vs_binance_surge: K1 - log(Binance quote volume 6h / its 7d mean x 6)          # +
+    K3_krw_premium: Upbit close / (Binance close x USDT-KRW) - 1                           # +
+    K4_krw_premium_change_6h: K3 now minus K3 6h ago                                       # +
+    K5_upbit_share_24h_change: Upbit share of (Upbit+Binance) USD volume 24h minus its 7d mean   # +
+  derivatives_positioning:
+    D1_oi_change_6h: log OI now / 6h ago                                                   # +
+    D2_oi_change_24h: log OI now / 24h ago                                                 # +
+    D3_oi_vs_price_6h: D1 minus 6h log price change (positions built without price move)  # +
+    D4_top_pos_ls_change_24h: top-trader position L/S now minus 24h ago                   # +
+    D5_global_ls_change_24h: all-account L/S now minus 24h ago                            # - (crowd short -> squeeze)
+    D6_taker_ratio_6h: mean taker buy/sell ratio 6h                                        # +
+    D7_oi_to_volume: OI / 24h quote volume                                                 # +
+  funding_and_flow:
+    F1_funding_level: latest funding                                                       # - (shorts crowded)
+    F2_taker_imbalance_6h: Binance taker-buy share 6h minus 0.5                            # +
+    F3_quarter_hour_flow_6h: taker imbalance in :00/:15/:30/:45 minutes over 6h            # +
+  price_context (reported, not new):
+    P1_ret_6h, P2_ret_24h, P3_volume_surge_6h, P4_range_6h
+  notices:
+    N1_listing_notice_prior_24h: any Upbit/Binance listing notice for the coin in (t0-24h, t0]   # +
+
+tests:
+  B8_1_precursor_case_control:
+    metric: per feature, AUC of case vs matched controls (within-event ranking), event-day cluster bootstrap CI
+    rule: sign from discovery; PASS if holdout AUC > 0.5 with CI lower bound > 0.5, Benjamini-Hochberg q=0.10 across all registered features
+    also: conditional logistic regression (strata = event) with all passing features jointly; report holdout AUC
+  B8_2_lead_time_profile:
+    for B8_1 passing features, AUC at t0-24h .. t0 in 1h steps (how early is it visible); report only
+  B8_3_pump_probability_model:
+    target: pump starting in the next 6h (same definition) for every universe coin-hour at 00/04/08/12/16/20 UTC
+    models: LightGBM (a) price/volume features only, (b) + B8 features; train on discovery, calibrate on its last 60 days, test on holdout
+    metrics: PR-AUC vs base rate, precision in the top 0.5% of scores, calibration; and trading: long top-5 scores each 4h, hold 6h and 24h, net of fees/slippage/funding, day-block CI
+    pass: (b) PR-AUC > (a) with CI > 0 AND top-5 long net mean > 0 with CI > 0
+  B8_4_exploratory_short_history:
+    same case-control on bookDepth imbalance/ask thinning, liquidation clusters, coinalyze multi-exchange OI, Hyperliquid whale net positioning; no pass credit, feeds future registrations
+
+queued_next (need data first):
+  B9_token_unlocks: event study around scheduled unlocks (DefiLlama emissions adapters, free)
+  B10_onchain_exchange_inflows: BigQuery token_transfers + CEX labels, hourly net inflow per token before pumps/dumps

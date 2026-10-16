@@ -58,7 +58,8 @@ def _load_panel(lo_ts: int, hi_ts: int) -> tuple[np.ndarray, dict, dict]:
                 v = float(r.get("volume") or 0)
                 if cl > 0:
                     lc[i] = np.log(cl)
-                    dv[i] = cl * v
+                    qv = r.get("quote_volume")
+                    dv[i] = float(qv) if qv not in (None, 0, 0.0) else cl * v
         if np.isfinite(lc).sum() >= 1500:
             logp[s] = lc
             dvol[s] = dv
@@ -66,12 +67,16 @@ def _load_panel(lo_ts: int, hi_ts: int) -> tuple[np.ndarray, dict, dict]:
 
 
 def _trade_pair(spec: pairs.PairSpec, logp: dict, w0: int, trade_hours: int,
-                z_stop_delta: float | None = None) -> list[float]:
-    return [r for r, _ in _trade_pair_ex(spec, logp, w0, trade_hours, z_stop_delta)]
+                z_stop_delta: float | None = None,
+                dollar_stop_pct: float | None = None) -> list[float]:
+    return [r for r, _ in _trade_pair_ex(
+        spec, logp, w0, trade_hours, z_stop_delta, dollar_stop_pct
+    )]
 
 
 def _trade_pair_ex(spec: pairs.PairSpec, logp: dict, w0: int, trade_hours: int,
-                   z_stop_delta: float | None = None) -> list[tuple[float, str]]:
+                   z_stop_delta: float | None = None,
+                   dollar_stop_pct: float | None = None) -> list[tuple[float, str]]:
     """Trade ONE pair forward. Returns (spread-return, reason) net of cost."""
     zwin = pairs.ZWIN_HOURS
     fa = logp[spec.a][w0 - zwin:w0 + trade_hours]
@@ -97,16 +102,21 @@ def _trade_pair_ex(spec: pairs.PairSpec, logp: dict, w0: int, trade_hours: int,
             pos = pairs.entry_side(z)
             entry_i = i
             entry_z = z
-        elif pos != 0 and z_stop_delta and pairs.should_stop(z, entry_z, z_stop_delta):
-            ret = pos * (sp[i] - sp[entry_i]) - pairs.round_trip_cost(i - entry_i)
-            out.append((ret, "z_stop"))
-            pos = 0
-            entry_z = None
-        elif pos != 0 and pairs.should_close(z):
-            ret = pos * (sp[i] - sp[entry_i]) - pairs.round_trip_cost(i - entry_i)
-            out.append((ret, "z_revert"))
-            pos = 0
-            entry_z = None
+        elif pos != 0:
+            pnl = pos * (sp[i] - sp[entry_i])
+            cost = pairs.round_trip_cost(i - entry_i)
+            if z_stop_delta and pairs.should_stop(z, entry_z, z_stop_delta):
+                out.append((pnl - cost, "z_stop"))
+                pos = 0
+                entry_z = None
+            elif dollar_stop_pct and pairs.should_dollar_stop(pnl, dollar_stop_pct):
+                out.append((pnl - cost, "stop_loss"))
+                pos = 0
+                entry_z = None
+            elif pairs.should_close(z):
+                out.append((pnl - cost, "z_revert"))
+                pos = 0
+                entry_z = None
     return out
 
 
@@ -176,11 +186,10 @@ def run(lo_ts: int, hi_ts: int, n_trials: int = 150) -> dict:
 
 def compare_stops(lo_ts: int, hi_ts: int, k: int = 60, max_windows: int = 6,
                   deltas: list[float | None] | None = None) -> dict:
-    """Live-like (K pairs) z-stop scorecards on historical panels.
+    """Live-like (K pairs) stop scorecards on historical panels.
 
-    `deltas=None` means z-revert only (no z-stop). Default sweep includes the
-    live default (0.5) and the previously suggested 1.5 so |avgL| vs avgW is
-    comparable in one run.
+    Always includes the old live book (z-revert + 15% dollar stop) as the
+    before-case, then a z-stop sweep. `deltas=None` means z-revert only.
     """
     if deltas is None:
         deltas = [None, 0.5, 0.75, 1.0, 1.25, 1.5]
@@ -188,9 +197,19 @@ def compare_stops(lo_ts: int, hi_ts: int, k: int = 60, max_windows: int = 6,
     T = len(allt)
     sel_h, trade_h = pairs.SEL_HOURS, pairs.TRADE_HOURS
     starts = list(range(sel_h, T - trade_h, trade_h))[-max_windows:]
-    books: dict[float | None, list[tuple[float, str]]] = {d: [] for d in deltas}
+    books: dict[str, list[tuple[float, str]]] = {}
+    specs_plan: list[tuple[str, float | None, float | None]] = [
+        ("BEFORE dollar 15% (old live)", None, 0.15),
+    ]
+    for d in deltas:
+        label = "z_revert only" if d is None else f"z_stop +{d:g}"
+        specs_plan.append((label, d, None))
+    specs_plan.append(("AFTER z_stop +1.0 + dollar 15% (new live)", 1.0, 0.15))
+    for label, _, _ in specs_plan:
+        books[label] = []
     print(f"compare-stops windows={len(starts)} universe={len(logp)} K={k} "
-          f"deltas={deltas}", flush=True)
+          f"min_daily_dvol={pairs.MIN_DVOL:g} listing_days={pairs.MIN_LISTING_DAYS:g} "
+          f"exclude={sorted(pairs.EXCLUDE)}", flush=True)
     for w0 in starts:
         sel = slice(w0 - sel_h, w0)
         live = pairs.liquid_universe(logp, dvol, sel)
@@ -200,8 +219,10 @@ def compare_stops(lo_ts: int, hi_ts: int, k: int = 60, max_windows: int = 6,
         wdate = dt.datetime.fromtimestamp(int(allt[w0]), tz=dt.timezone.utc).date()
         print(f"  window {wdate} live={len(live)} pairs={len(specs)}", flush=True)
         for spec in specs:
-            for d in deltas:
-                books[d].extend(_trade_pair_ex(spec, logp, w0, trade_h, d))
+            for label, z_d, dollar in specs_plan:
+                books[label].extend(
+                    _trade_pair_ex(spec, logp, w0, trade_h, z_d, dollar)
+                )
 
     def _fmt(s):
         pf = s["profit_factor"]
@@ -217,10 +238,9 @@ def compare_stops(lo_ts: int, hi_ts: int, k: int = 60, max_windows: int = 6,
 
     print("\n=== STOP COMPARE (spread-return units, live-like K) ===", flush=True)
     out: dict = {}
-    for d in deltas:
-        card = _scorecard(books[d])
-        label = "z_revert only" if d is None else f"z_stop +{d:g}"
-        print(f"  {label:16s} {_fmt(card)}", flush=True)
+    for label, _, _ in specs_plan:
+        card = _scorecard(books[label])
+        print(f"  {label:42s} {_fmt(card)}", flush=True)
         out[label] = card
     return out
 

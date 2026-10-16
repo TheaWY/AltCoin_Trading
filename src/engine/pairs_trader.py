@@ -43,12 +43,12 @@ _SELECTION_KEY = "pairs_selection"
 HOUR = 3600
 
 MAX_CONCURRENT = int(getattr(config, "PAIRS_MAX_CONCURRENT", 60))
-MAX_PER_SYMBOL = int(getattr(config, "PAIRS_MAX_PER_SYMBOL", 3))
+MAX_PER_SYMBOL = int(getattr(config, "PAIRS_MAX_PER_SYMBOL", 2))
 PAIR_NOTIONAL_PCT = float(getattr(config, "PAIRS_PAIR_NOTIONAL_PCT", 0.01))
 MAX_GROSS_PCT = float(getattr(config, "PAIRS_MAX_GROSS_PCT", 0.80))
 MARGIN_FRAC = float(getattr(config, "PAIRS_MARGIN_FRAC", 1.0))
 STOP_PCT = float(getattr(config, "PAIRS_STOP_PCT", 0.15))
-Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 0.5))
+Z_STOP_DELTA = float(getattr(config, "PAIRS_Z_STOP_DELTA", 1.0))
 NEG_EXPECTANCY_DEPLOY_PCT = float(getattr(config, "PAIRS_NEG_EXPECTANCY_DEPLOY_PCT", 0.40))
 MIN_EXPECTANCY_TRADES = int(getattr(config, "PAIRS_MIN_EXPECTANCY_TRADES", 10))
 MAX_HOLD_HOURS = float(getattr(config, "PAIRS_MAX_HOLD_HOURS", pairs.TRADE_HOURS))
@@ -104,7 +104,8 @@ def _panel(storage, symbols: list[str], lookback_hours: int, now_ts: int) -> tup
                 v = float(r.get("volume") or 0)
                 if cl > 0:
                     lc[i] = np.log(cl)
-                    dv[i] = cl * v
+                    qv = r.get("quote_volume")
+                    dv[i] = float(qv) if qv not in (None, 0, 0.0) else cl * v
         if np.isfinite(lc).sum() >= lookback_hours * pairs.COVERAGE:
             logp[s] = lc
             dvol[s] = dv
@@ -120,7 +121,10 @@ def _all_symbols(storage) -> list[str]:
             "AND (MAX(timestamp) - MIN(timestamp)) >= ?",
             (min_span,),
         ).fetchall()
-    return [dict(r)["symbol"] for r in rows if dict(r)["symbol"] != config.SYMBOL]
+    return [
+        dict(r)["symbol"] for r in rows
+        if dict(r)["symbol"] != config.SYMBOL and not pairs.is_excluded(dict(r)["symbol"])
+    ]
 
 
 def tight_deploy_cap(n_closed: int, expectancy: float | None) -> float | None:
@@ -233,7 +237,9 @@ def _equity(storage) -> float:
     eq = cash
     for t in _open_pairs(storage):
         eq += _pair_gross(t) * MARGIN_FRAC + _pair_unrealized(storage, t)
-    return eq
+    from src.engine.core_manager import core_value
+
+    return eq + core_value(storage)
 
 
 def _open_one(storage, a: str, b: str, beta: float, z: float, now_ts: int) -> bool:
@@ -341,7 +347,9 @@ def run_pairs_cycle(storage=None) -> dict[str, Any]:
         primary_notional = float(t["quantity"]) * float(t["entry_price"])
         entry_z = t.get("atr_pct")
         entry_z = float(entry_z) if entry_z is not None else None
-        if pairs.should_stop(z, entry_z, Z_STOP_DELTA):
+        if pairs.is_excluded(t["symbol"]) or pairs.is_excluded(t.get("hedge_symbol")):
+            _close_one(storage, t, now_ts, "excluded"); closed += 1
+        elif pairs.should_stop(z, entry_z, Z_STOP_DELTA):
             _close_one(storage, t, now_ts, "z_stop"); closed += 1
         elif primary_notional > 0 and _pair_unrealized(storage, t) < -STOP_PCT * primary_notional:
             _close_one(storage, t, now_ts, "stop_loss"); closed += 1
@@ -360,7 +368,16 @@ def run_pairs_cycle(storage=None) -> dict[str, Any]:
         key = (p["a"], p["b"])
         if key in open_keys:
             continue
+        if pairs.is_excluded(p["a"]) or pairs.is_excluded(p["b"]):
+            continue
         z = _pair_z(storage, p["a"], p["b"], p["beta"], now_ts)
+        if pairs.should_open(z):
+            # sentiment gate on the spread: +1 = long A / short B
+            from src.engine.sentiment_gate import allow_pair
+
+            long_leg, short_leg = (p["a"], p["b"]) if pairs.entry_side(z) > 0 else (p["b"], p["a"])
+            if not allow_pair(storage, long_leg, short_leg)[0]:
+                continue
         if pairs.should_open(z) and _open_one(storage, p["a"], p["b"], p["beta"], z, now_ts):
             opened += 1
             live_open += 1

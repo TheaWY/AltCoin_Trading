@@ -128,7 +128,9 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
             reason = None
             entry_z = t.get("entry_z")
             entry_z = float(entry_z) if entry_z is not None else None
-            if pairs.should_stop(z, entry_z):
+            if pairs.is_excluded(t["symbol"]) or pairs.is_excluded(t.get("hedge_symbol")):
+                reason = "excluded"
+            elif pairs.should_stop(z, entry_z):
                 reason = "z_stop"
             elif pairs.should_close(z):
                 reason = "z_revert"
@@ -140,9 +142,13 @@ def run_lab_cycle(storage=None) -> dict[str, Any]:
                 cash = _close_lab(storage, t, now, reason, margin_frac, cash); closed += 1
         # entries: top-K of the shared selection, |z|>=2, gross cap
         open_keys = {(t["symbol"], t["hedge_symbol"]) for t in _open_positions(storage, name)}
-        for p in selection[:cfg["k"]]:
+        # wind-down mode: keep managing exits, open nothing new (B6: pairs lost 74% of real exits)
+        entry_pool = [] if getattr(config, "PAIRS_LAB_NO_NEW_ENTRIES", False) else selection[:cfg["k"]]
+        for p in entry_pool:
             key = (p["a"], p["b"])
             if key in open_keys:
+                continue
+            if pairs.is_excluded(p["a"]) or pairs.is_excluded(p["b"]):
                 continue
             eq, gross, _ = _equity(storage, name, cash, margin_frac)
             z = ptr._pair_z(storage, p["a"], p["b"], p["beta"], now)

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.tickoffload</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>scripts/offload_b2.py</string>
+    <string>--ticks-only</string>
+    <string>--move-ticks-days</string><string>2</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/opt/homebrew/bin:/usr/bin:/bin</string></dict>
+  <!-- daily 05:15: kr_ticks (full-rate Bithumb book, us timestamps) older than 2 days -> B2, verified, then removed locally -->
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>5</integer><key>Minute</key><integer>15</integer></dict>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/tickoffload.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/tickoffload.err.log</string>
+</dict>
+</plist>

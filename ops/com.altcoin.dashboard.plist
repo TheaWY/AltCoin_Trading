@@ -15,6 +15,9 @@
     <string>8000</string>
   </array>
   <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <!-- web-only: the worker is the single trading scheduler -->
+  <key>EnvironmentVariables</key>
+  <dict><key>RUN_TRADING_SCHEDULER</key><string>false</string></dict>
   <key>KeepAlive</key><true/>
   <key>RunAtLoad</key><true/>
   <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/dashboard.out.log</string>

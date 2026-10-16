@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.mainbook</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>-u</string>
+    <string>-W</string><string>ignore</string>
+    <string>scripts/main_book.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <key>StartInterval</key><integer>60</integer>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/mainbook.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/mainbook.err.log</string>
+</dict>
+</plist>
+

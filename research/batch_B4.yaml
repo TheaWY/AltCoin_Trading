@@ -1,0 +1,16 @@
+batch: B4
+registered: 2026-09-27
+purpose: >
+  Layer 4. Calendar and market-structure hypotheses (not price-pattern prediction), tested once on all 30 months
+  2024-03-08 .. 2026-09-22 (all Binance USDT perps incl. delisted). Execution as B2 (next-minute open, fixed hold,
+  fees + volume slippage + actual funding).
+pass_rule: BH-FDR q < 0.05 across this batch AND mean net > 0 AND mean net > 0 in each of the three years (2024-25, 2025, 2026)
+hypotheses:
+  - {id: B4_C1_fundpos_pre_short, rule: "8h-funding coins with trailing funding >= +0.05%/8h: short at the hour close 60m before a funding time (23/07/15 UTC), hold 60m", mechanism: longs close before paying funding}
+  - {id: B4_C2_fundpos_post_long, rule: "same coins: long at the funding hour close (00/08/16 UTC), hold 60m", mechanism: longs re-enter after paying}
+  - {id: B4_C3_fundneg_pre_long, rule: "trailing funding <= -0.05%/8h: long 60m before funding, hold 60m", mechanism: shorts close before paying}
+  - {id: B4_C4_fundneg_post_short, rule: "same coins: short at the funding hour close, hold 60m", mechanism: shorts re-enter}
+  - {id: B4_C5_weekend_long, rule: "Friday 20:00 UTC: long the 10 highest-volume alts, hold 52h", mechanism: weekend retail flow (calendar anomaly literature)}
+  - {id: B4_C7_turn_of_month_long, rule: "last day of month 20:00 UTC: long the 10 highest-volume alts, hold 28h", mechanism: turn-of-month inflows}
+  - {id: B4_C9_korea_open_fade, rule: "00:00 UTC (09:00 KST): short the 5 liquid (>= $20M) alts with the highest 8h return, hold 4h", mechanism: Korean morning retail flow exhausts overnight winners}
+  - {id: B4_C10_korea_open_follow, rule: "00:00 UTC: long the same 5 alts, hold 4h", mechanism: Korean morning retail chases overnight winners}
