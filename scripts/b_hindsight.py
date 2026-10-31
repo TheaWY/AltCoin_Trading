@@ -130,11 +130,13 @@ def decompose(pO, p19, Rm):
     eO, e19 = pO["exp"], p19["exp"]
     nO = pO["H"].div(eO.replace(0, np.nan), axis=0).fillna(0.0)
     n19 = p19["H"].div(e19.replace(0, np.nan), axis=0).fillna(0.0)
-    exposure = (eO - e19) * Rm
-    selection = e19 * ((nO - n19) * Rz.sub(Rm, axis=0)).sum(axis=1)
+    rO, r19 = (nO * Rz).sum(axis=1), (n19 * Rz).sum(axis=1)   # return per unit of exposure
+    ref = r19.where(e19 > 0, Rm)                                 # F19 in cash -> reference is the market
+    exposure = (eO - e19) * ref                                   # same picks as F19, oracle's exposure
     cost = p19["cost"] - pO["cost"]
     total = pO["net"] - p19["net"]
-    resid = total - exposure - selection - cost
+    selection = total - exposure - cost                           # oracle's picks at oracle's exposure (exact split)
+    resid = total - exposure - selection - cost                   # 0 by construction, kept as a check
     eqO = S.ew(pO["H"] > 0)
     conc = eO * ((nO - eqO) * Rz).sum(axis=1)
     D = pd.DataFrame(dict(total=total, exposure=exposure, selection=selection, cost=cost, residual=resid,
