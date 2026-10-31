@@ -85,7 +85,9 @@ async def run_ex(ex: str) -> None:
 def archive(storage) -> None:
     cutoff = (int(time.time()) // 86400 - KEEP_DAYS) * 86400
     with storage._connect() as c:  # noqa: SLF001
-        days = [r[0] for r in c.execute("SELECT DISTINCT ts/86400 FROM kr_1m WHERE ts < ?", (cutoff,)).fetchall()]
+        # Postgres storage returns dict rows; unpacking a dict by index raises KeyError(0)
+        days = [int(list(r.values())[0]) if isinstance(r, dict) else int(r[0])
+                for r in c.execute("SELECT DISTINCT ts/86400 FROM kr_1m WHERE ts < ?", (cutoff,)).fetchall()]
     for d in days:
         with storage._connect() as c:  # noqa: SLF001
             cur = c.execute("SELECT * FROM kr_1m WHERE ts >= ? AND ts < ?", (d * 86400, d * 86400 + 86400))
