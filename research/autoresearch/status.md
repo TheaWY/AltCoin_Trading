@@ -1,4 +1,4 @@
-# Autonomous research status - 2026-11-01 02:15 KST
+# Autonomous research status - 2026-11-01 03:15 KST
 
 Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY over all 650 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 63, 'korea': 54, 'volume': 36, 'funding': 27, 'flow': 27, 'oi': 27, 'cross': 27, 'positioning': 18, 'liq': 2}
 
@@ -81,7 +81,7 @@ Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY
 | F7 Upbit share weekly | 1 | 12 | +3.02 | – |
 | F8 late-session | 16 | 120 | -0.42 | -1.10 |
 | F9 Upbit-listing fade | 1 | 30 | +24.61 | – |
-| F10 pairs divergence | 67 | 60 | -2.93 | -4.77 |
+| F10 pairs divergence | 69 | 60 | -2.74 | -4.71 |
 | F11 Upbit notice momentum | 8 | 30 | +9.35 | +3.19 |
 | F12 fresh burst | 79 | 30 | -0.14 | -1.88 |
 | F13 Upbit-executed notice long | 6 | 30 | -3.29 | -8.65 |
