@@ -98,7 +98,7 @@ def pts(ts_str: str) -> int:
 
 # ------------------------------------------------------------------ sources
 CM = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
-CM_DAILY = ["AdrActCnt", "AdrBalCnt", "BlkCnt", "CapMVRVCur", "CapMrktCurUSD", "FeeTotUSD", "FlowInExUSD", "FlowOutExUSD",
+CM_DAILY = ["AdrActCnt", "AdrBalCnt", "BlkCnt", "CapMVRVCur", "CapMrktCurUSD", "FeeTotNtv", "FlowInExUSD", "FlowOutExUSD",
             "HashRate", "IssTotUSD", "PriceUSD", "ROI30d", "SplyCur", "SplyExUSD", "SplyExNtv", "TxCnt", "TxTfrCnt",
             "volume_reported_spot_usd_1d"]
 

@@ -15,7 +15,7 @@ LABELS: dict[tuple[str, str], tuple[str, str]] = {
     ("coinmetrics", "AdrActCnt"): ("활성 주소 수", "n"), ("coinmetrics", "CapMVRVCur"): ("MVRV", "x"),
     ("coinmetrics", "FlowInExUSD"): ("거래소 유입", "usd"), ("coinmetrics", "FlowOutExUSD"): ("거래소 유출", "usd"),
     ("coinmetrics", "SplyExUSD"): ("거래소 보유량", "usd"), ("coinmetrics", "HashRate"): ("해시레이트", "n"),
-    ("coinmetrics", "TxCnt"): ("트랜잭션 수", "n"), ("coinmetrics", "FeeTotUSD"): ("총 수수료", "usd"),
+    ("coinmetrics", "TxCnt"): ("트랜잭션 수", "n"), ("coinmetrics", "FeeTotNtv"): ("총 수수료 (BTC)", "n"),
     ("coinmetrics", "CapMrktCurUSD"): ("시가총액", "usd"), ("coinmetrics", "volume_reported_spot_usd_1d"): ("현물 거래대금", "usd"),
     ("coinmetrics", "ReferenceRateUSD_1h"): ("CM 기준가", "usd"), ("coinmetrics", "IssTotUSD"): ("일 발행액", "usd"),
     ("mempool", "fee_fastestFee"): ("수수료 fastest (sat/vB)", "n"), ("mempool", "mempool_count"): ("멤풀 tx 수", "n"),
