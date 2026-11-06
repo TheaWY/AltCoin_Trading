@@ -78,7 +78,7 @@ def write_note(path, r, status="pending", meta=None, body=None):
         "url": r["url"],
         "duration": hms(r["duration_sec"]),
         "upload_order": int(r["order"]),
-        "about_ko": r["description_ko"],
+        "about": r["description"],
         "transcript_status": status,
         "transcript_video_id": meta.get("transcript_video_id", ""),
         "transcript_lang": meta.get("transcript_lang", ""),
@@ -88,9 +88,9 @@ def write_note(path, r, status="pending", meta=None, body=None):
         "tags": ["youtube", "video-essay", safe(r["channel"]).replace(" ", "-").lower()],
     }
     lines = ["---"] + [f"{k}: {json.dumps(v, ensure_ascii=False)}" for k, v in fm.items()] + ["---", ""]
-    lines += [f"# {r['title']}", "", f"채널: [[{r['channel']}]] · 길이 {fm['duration']} · [YouTube]({r['url']})", ""]
-    lines += ["## 어떤 영상인가", "", r["description_ko"], "", "## Transcript", "", MARK, ""]
-    lines.append(body if body else "_아직 가져오지 않음. `python yt_vault.py fetch` 실행 필요._")
+    lines += [f"# {r['title']}", "", f"Channel: [[{r['channel']}]] · Length {fm['duration']} · [YouTube]({r['url']})", ""]
+    lines += ["## What it is", "", r["description"], "", "## Transcript", "", MARK, ""]
+    lines.append(body if body else "_Not fetched yet. Run `python yt_vault.py fetch`._")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
@@ -111,12 +111,12 @@ def cmd_build(a):
         by.setdefault(r["channel"], []).append(r)
     for ch, rs in by.items():
         rs.sort(key=lambda r: (r["type"] != "video", -int(r["order"])))
-        out = [f"# {ch}", "", f"영상 {sum(r['type']=='video' for r in rs)}개" +
-               (f" + Shorts {sum(r['type']=='short' for r in rs)}개" if any(r['type'] == 'short' for r in rs) else ""), "",
-               "| # | 영상 | 길이 | 어떤 영상인가 |", "|---|---|---|---|"]
+        out = [f"# {ch}", "", f"{sum(r['type']=='video' for r in rs)} videos" +
+               (f" + {sum(r['type']=='short' for r in rs)} Shorts" if any(r['type'] == 'short' for r in rs) else ""), "",
+               "| # | Video | Length | What it is |", "|---|---|---|---|"]
         for r in rs:
             link = f"[[{note_path(a.vault, r).stem}\\|{r['title'].replace('|', '/')}]]"
-            out.append(f"| {r['order']} | {link} | {hms(r['duration_sec'])} | {r['description_ko'].replace('|', '/')} |")
+            out.append(f"| {r['order']} | {link} | {hms(r['duration_sec'])} | {r['description'].replace('|', '/')} |")
         (Path(a.vault) / ROOT / ch / f"{ch}.md").write_text("\n".join(out) + "\n", encoding="utf-8")
     idx = [f"# {ROOT}", ""] + [f"- [[{ch}]] ({len(rs)})" for ch, rs in by.items()]
     (Path(a.vault) / ROOT / f"{ROOT}.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
@@ -193,7 +193,7 @@ def cmd_fetch(a):
             meta, err = fetch_one(r, a.cookies, tmp)
         if err:
             fail += 1
-            write_note(p, r, status="failed", meta=meta or {}, body=f"_가져오기 실패: {err}_")
+            write_note(p, r, status="failed", meta=meta or {}, body=f"_Fetch failed: {err}_")
             print(f"FAIL {r['video_id']} {r['title'][:50]} :: {err}")
         else:
             done += 1
@@ -218,7 +218,7 @@ def cmd_verify(a):
         issues = []
         if not p.exists():
             rec.update(note_exists="N", transcript_status="missing", words=0, wpm="")
-            issues.append("노트 없음")
+            issues.append("note missing")
         else:
             fm = read_front(p.read_text(encoding="utf-8"))
             rec["note_exists"] = "Y"
@@ -229,25 +229,25 @@ def cmd_verify(a):
             words = int(fm.get("transcript_words") or 0)
             rec["words"] = words
             if fm.get("video_id") != r["video_id"]:
-                issues.append("노트 video_id 불일치")
+                issues.append("note video_id mismatch")
             if fm.get("title") != r["title"]:
-                issues.append("노트 제목 불일치")
+                issues.append("note title mismatch")
             st = rec["transcript_status"]
             if st == "ok":
                 if rec["transcript_video_id"] != r["video_id"]:
-                    issues.append("transcript가 다른 영상 것")
+                    issues.append("transcript belongs to a different video")
                 mins = (float(r["duration_sec"]) / 60) if r["duration_sec"] else 0
                 wpm = round(words / mins) if mins else ""
                 rec["wpm"] = wpm
                 if wpm != "" and not (60 <= wpm <= 260):
-                    issues.append(f"분당 단어 {wpm} 비정상(길이 대비 너무 짧거나 김)")
+                    issues.append(f"{wpm} words/min is out of range (too short or long for the video length)")
                 if words < 30:
-                    issues.append("transcript 거의 비어 있음")
+                    issues.append("transcript nearly empty")
             else:
                 rec["wpm"] = ""
-                issues.append("transcript 미수집" if st == "pending" else "transcript 수집 실패")
+                issues.append("transcript not fetched" if st == "pending" else "transcript fetch failed")
         if r["video_id"] in seen_ids:
-            issues.append("목록 중복")
+            issues.append("duplicate in list")
         seen_ids[r["video_id"]] = 1
         rec["check"] = "PASS" if not issues else "FAIL"
         rec["issues"] = "; ".join(issues)
@@ -256,7 +256,7 @@ def cmd_verify(a):
     wb = Workbook()
     ws = wb.active
     ws.title = "Videos"
-    cols = ["channel", "type", "order", "video_id", "title", "url", "duration_sec", "description_ko",
+    cols = ["channel", "type", "order", "video_id", "title", "url", "duration_sec", "description",
             "note_exists", "transcript_status", "transcript_video_id", "transcript_kind", "upload_date",
             "words", "wpm", "check", "issues", "note_file"]
     ws.append(cols)
