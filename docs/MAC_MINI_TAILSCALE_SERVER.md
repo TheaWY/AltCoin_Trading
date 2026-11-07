@@ -89,7 +89,7 @@ Start fresh on local Postgres. This is usually cleaner than migrating Railway da
 python scripts/bootstrap_all_candles.py --limit 0 --candles 720
 python scripts/refresh_all_metrics.py --limit 0 --market-metrics-limit 100
 python scripts/update_market_categories.py --once --limit 0
-python scripts/reset_paper_portfolio.py --krw 1000000 --krw-per-usdt 1400 --force
+python scripts/reset_paper_portfolio.py --krw 1000000 --krw-per-usdt 1400 --close-open   # also clears the benchmark chart; stop the worker first
 ```
 
 ### 6. Run dashboard locally

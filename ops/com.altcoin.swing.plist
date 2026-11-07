@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.altcoin.swing</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO_PATH__/.venv/bin/python</string>
+    <string>scripts/swing_research.py</string>
+  </array>
+  <key>WorkingDirectory</key><string>__REPO_PATH__</string>
+  <!-- daily, shortly after the 09:00 KST (00:00 UTC) daily close -->
+  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>20</integer></dict>
+  <key>StandardOutPath</key><string>__REPO_PATH__/data/logs/swing.out.log</string>
+  <key>StandardErrorPath</key><string>__REPO_PATH__/data/logs/swing.err.log</string>
+</dict>
+</plist>

@@ -1,0 +1,11 @@
+batch: B5
+registered: 2026-09-27
+purpose: >
+  Layer 5. The deep-learning result that held up (chart-image CNN on pump events) is taken back to its source paper's
+  own setup: Jiang, Kelly & Xiu (2023, JF) "(Re-)Imag(in)ing Price Trends" - CNN on standardized OHLC+volume chart
+  images predicting the cross-section of future returns. Applied to all liquid Binance perps (24h volume >= $20M).
+split: train 2024-03-08..2025-06-30, validate 2025-07..2025-09 (early stopping, no tuning beyond that), test 2025-10..2026-09-22
+pass_rule: test mean daily long-short net > 0 with 95% day-block bootstrap CI above 0
+hypotheses:
+  - {id: B5_JKX_I20_R5, image: "20 daily bars (3 px per bar: open tick, high-low bar, close tick) + volume, 64 x 60", target: "sign of next 5-day return minus the cross-sectional median", trade: "Mondays 00 UTC: long top decile, short bottom decile by probability, hold 5 days, net of fees+slippage"}
+  - {id: B5_JKX_I60h_R24, image: "60 hourly bars (1 px per bar) + volume, 64 x 60", target: "sign of next 24h return minus the cross-sectional median", trade: "daily 00 UTC: long top decile, short bottom decile, hold 24h, net of fees+slippage"}

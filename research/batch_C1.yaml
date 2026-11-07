@@ -1,0 +1,20 @@
+# C1: market-wide crash rebound rule, distilled from the B6_3 crash-rebound meta-label (post-hoc reading).
+# Registered 2026-09-27 BEFORE the holdout run. Thresholds fixed here and not tuned afterwards.
+registered: 2026-09-27
+rule:
+  trigger: coin 24h return <= -25% at an hourly close, 24h volume >= $2M, >= 72h listed
+  market_filter: BTC 24h return <= -3%
+  level_filter: close below the prior 30-day closing low (dlo30 <= 0)
+  side: long
+  hold: 24h
+  cooldown: 24h per coin
+  net: fees 0.05%/side + volume slippage + funding (hourly-close label, same as B6)
+tests:
+  - id: C1_holdout_2024
+    period: 2024-04-01..2024-11-30 (never used in B6_3 evaluation; the rule came from 2024-12..2026-09)
+    pass: mean net24 > 0 with day-clustered bootstrap 95% CI above 0, n >= 20
+    also_report: the complement (crashes failing either filter) as control; must be lower than C1
+  - id: C1_insample_reference
+    period: 2024-12-01..2026-09-24
+    note: reference only, this is where the idea came from; report with and without the 5 largest crash days
+forward: F3_crash_rebound in research/forward.yaml

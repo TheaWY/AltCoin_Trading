@@ -1,0 +1,26 @@
+batch: B3
+registered: 2026-09-27
+purpose: >
+  Layer 3. Ideas that looked best in B2 (and the earlier E1b) are re-tested ONCE on data never used so far:
+  2024-03-08 .. 2025-02-26 (Binance vision 1m, all perps incl. delisted). Models are trained exactly as in B2
+  (train 2025-03..11, validate 2025-12) and applied frozen to 2024 events (backward out-of-time test).
+  Rules keep their exact B2 definitions and execution.
+pass_rule: mean net per trade > 0 with 95% day-clustered bootstrap CI above 0, and BH-FDR q < 0.10 across this batch
+hypotheses:
+  - {id: B3_M7_pump_2024, source: B2_M7_pump, rule: chart-image CNN; long if p >= Dec-2025 70th pct, short if <= 30th pct; hold 4h}
+  - {id: B3_M8_pump_2024, source: B2_M8_pump, rule: ensemble M2+M4+M7, same thresholds}
+  - {id: B3_M1_pump_2024, source: B2_M1_pump, rule: logistic, same thresholds}
+  - {id: B3_M2_pump_2024, source: B2_M2_pump, rule: LightGBM, same thresholds}
+  - {id: B3_D24_L_24h_2024, source: B2_D24_L_24h, rule: 24h return <= -25% -> long, hold 24h}
+  - {id: B3_D24_L_4h_2024, source: B2_D24_L_4h, rule: same, hold 4h}
+  - {id: B3_P24_S_4h_2024, source: B2_P24_S_4h, rule: 24h return >= +30% -> short, hold 4h}
+  - {id: B3_NL_S_24h_2024, source: B2_NL_S_24h, rule: new perp 24h after first trade -> short, hold 24h}
+  - {id: B3_N4_new_perp_short_72h_2024, source: B2_N4, rule: new perp 1h after first trade -> short, hold 72h}
+  - {id: B3_FU_L_24h_2024, source: B2_FU_L_24h, rule: trailing funding <= -0.10% -> long, hold 24h (collects funding)}
+  - {id: B3_E1b_upbit_listing_2s_2024, source: E1b, rule: Upbit KRW listing notice -> long Binance perp at first trade >= notice+2s, exit +60m}
+  - {id: B3_N2_upbit_delist_short_2024, source: B2_N2, rule: Upbit delisting notice -> short at +2s, exit +60m}
+  - {id: B3_N1_upbit_warning_short_2024, source: B2_N1, rule: Upbit caution designation -> short at +2s, exit +60m}
+  - {id: B3_G1_xs_mlp_2024, source: B2_G1, rule: NN3 cross-sectional model frozen; daily long top 10 / short bottom 10}
+notes: >
+  B2_N3 (Binance spot listing, +2s) is NOT carried forward: second-level data showed the market reacts about 2.5-3 s
+  after the notice timestamp, so a +2 s entry is earlier than the public can see the notice (execution-infeasible).

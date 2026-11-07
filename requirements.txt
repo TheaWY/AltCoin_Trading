@@ -10,3 +10,5 @@ aiosqlite>=0.20.0
 pyngrok>=7.0.0
 psycopg[binary,pool]>=3.2.0
 pyyaml>=6.0.0
+arch>=8.0
+pytest>=8
