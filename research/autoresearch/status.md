@@ -1,4 +1,4 @@
-# Autonomous research status - 2026-11-12 08:15 KST
+# Autonomous research status - 2026-11-12 09:15 KST
 
 Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY over all 650 holdout p-values. Families tested: {'method': 306, 'vol': 63, 'price': 63, 'korea': 54, 'volume': 36, 'funding': 27, 'flow': 27, 'oi': 27, 'cross': 27, 'positioning': 18, 'liq': 2}
 
@@ -78,18 +78,18 @@ Hypotheses: 654 tested (4 errors), 0 passed the full rule, 0 queued. Running BHY
 | F3 crash rebound | 0 | 30 | – | – |
 | F4 spot-led | 29 | 100 | -34.81 | -65.03 |
 | F5 unlock short | 5 | 60 | +3.21 | – |
-| F7 Upbit share weekly | 2 | 12 | +2.27 | – |
-| F8 late-session | 26 | 120 | -0.46 | -0.96 |
+| F7 Upbit share weekly | 3 | 12 | +1.39 | – |
+| F8 late-session | 27 | 120 | -0.55 | -1.07 |
 | F9 Upbit-listing fade | 4 | 30 | +20.22 | – |
-| F10 pairs divergence | 132 | 60 | -0.65 | -2.37 |
+| F10 pairs divergence | 133 | 60 | -0.69 | -2.31 |
 | F11 Upbit notice momentum | 8 | 30 | +9.35 | +3.19 |
 | F12 fresh burst | 137 | 30 | -0.06 | -1.44 |
 | F13 Upbit-executed notice long | 8 | 30 | -3.27 | -7.54 |
 | F14 Korea-led burst fade (short) | 53 | 30 | +1.22 | -0.19 |
-| AR28741da3 upbit_share_24h | 23 | 60 | -2.32 | -3.38 |
-| ARa200b4d5 upbit_share_7d | 23 | 60 | -2.17 | -3.17 |
-| ARd5d71ff6 korea_share_24h | 21 | 60 | -2.23 | -3.42 |
-| ARb44d336e liq_long_cont_24h | 21 | 60 | +1.00 | -0.10 |
+| AR28741da3 upbit_share_24h | 24 | 60 | -2.33 | -3.30 |
+| ARa200b4d5 upbit_share_7d | 24 | 60 | -2.13 | -3.04 |
+| ARd5d71ff6 korea_share_24h | 22 | 60 | -1.93 | -3.19 |
+| ARb44d336e liq_long_cont_24h | 22 | 60 | +1.20 | +0.09 |
 
 ## Next (queue head) and why
 
