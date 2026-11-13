@@ -1,0 +1,73 @@
+# B14: ML/DL layer on the NEW data sources (Korean venues, positioning, spot, on-chain flows, order-book depth,
+# unlock calendar, market cap). Registered 2026-09-28 BEFORE any B14 feature tensor is built.
+# Every model is evaluated on pre-defined SLICES (event type, regime, liquidity, Korean-listed, year) and a pass
+# requires consistency across slices, not just a pooled number.
+registered: 2026-09-28
+
+protocol:
+  periods: {discovery: 2024-04-01..2025-08-31, holdout: 2025-09-01..2026-09-23}   # holdout touched once per test
+  validation_inside_discovery: purged walk-forward (quarterly, 2-day embargo, last 30 days of each train window = early stopping/calibration)
+  target_main: 24h forward log return minus beta x BTC (beta = 30d rolling, past only); also the raw 24h return for P&L
+  costs: 0.05%/side + volume slippage + actual funding; entry at the next minute open after the hour close (T+60s)
+  uncertainty: day-clustered bootstrap 95% CI; Benjamini-Hochberg q=0.10 within each experiment
+  seeds: 3 for every neural model; ensemble = mean of seed probabilities
+  leakage_guards: CoinGecko/unlock/notice/on-chain data are used only at timestamps >= their publication time; all rolling stats past-only
+
+feature_tensor (built once, data/cache/b14/):
+  cadence: every 4h (00/04/08/12/16/20 UTC) for every coin in the universe (dv24 >= $2M, >= 720h listed)
+  groups:
+    price_volume (B7): ret 1h/6h/24h/7d/28d, rv 24h/7d, range 6h, volume surge, taker imbalance 6h/24h, quarter-hour flow, log dv24, xs ranks
+    positioning (metrics1h): OI change 6h/24h, OI/volume, top-trader pos L/S + change 24h, global L/S + change, taker ratio 6h, funding 8h + change 24h
+    korean (upbit/bithumb): Upbit surge 6h, Korea combined surge 6h, Upbit share 24h change, KRW premium + change 6h, Bithumb premium, korean_listed flag
+    spot (spot1h): spot share 6h minus 168h, spot taker imbalance 6h, perp-spot basis + change 6h
+    onchain (BigQuery flows, 160 tokens): CEX inflow 6h/24h / volume, net flow 24h / volume, inflow count 24h (NaN for non-ERC20; models handle NaN)
+    depth (depth1h, when B13 data is complete): ask depth 1% change 24h, bid depth 1% change 24h, imbalance 1% 6h, depth/volume
+    calendar: hours to next cliff unlock >= 1% (capped 30d), size of that unlock, hours since last unlock, hours since first Upbit listing notice, hours since Binance listing
+    size: log market cap (CoinGecko, lagged 1 day), mcap / 24h volume (turnover)
+    market_state: BTC ret 1h/24h/7d, alt breadth, mean funding across universe, aggregate OI change 24h, mean KRW premium, BTC realised vol 7d
+  sequence_tensor (DL only): last 48 hours x 12 channels: ret_1h, log volume (demeaned), taker imbalance, OI change 1h, top L/S, funding, Korean volume share,
+    spot share, KRW premium, CEX inflow 1h/volume, BTC ret_1h, breadth
+
+slices (every model reports each; a PASS needs the pooled rule AND the per-slice rule):
+  regime: 3 HMM states fitted walk-forward on daily market_state (B14_5); per-slice rule = net mean > 0 in >= 2 of 3 states
+  liquidity: dv24 terciles; per-slice rule = not negative with CI entirely below 0 in any tercile
+  korean_listed: yes / no
+  year: 2025H2 / 2026H1 / 2026Q3 (holdout thirds); per-slice rule = positive in >= 2 of 3
+  event_type (for B14_2 and B14_3 only): pump fade S, pump follow L, breakout L, crash rebound L, spot-led pump S
+
+experiments:
+  B14_1_ranker_new_sources:
+    method: LightGBM LambdaRank, quarterly expanding walk-forward, first test quarter 2025-09
+    compare: (a) price_volume only, (b) + positioning, (c) + korean + spot, (d) + onchain + depth + calendar + size (full)
+    metrics: daily rank IC with CI; equal-weight quintile L/S net; top-10 long-only net; SHAP group importance per fold
+    pass: IC gain (d) - (a) > 0 with CI > 0 AND full-model quintile L/S net > 0 with CI > 0 AND slice rules
+  B14_2_meta_labeling_v2:
+    method: LightGBM P(loss) per primary (5 primaries incl. spot-led pump short), features = full tensor at entry, isotonic calibration
+    rule: skip trades with P(loss) above the primary's discovery median; improvement in mean net per trade with CI
+    pass: improvement CI > 0 in >= 3 of 5 primaries AND (for those) positive in >= 2 of 3 regime states
+  B14_3_magnitude_quantiles:
+    method: LightGBM quantile regression (q10, q50, q90) of the 24h residual return, full tensor; walk-forward as B14_1
+    metrics: pinball loss vs unconditional quantiles; coverage of the [q10, q90] interval
+    trade: long when q10 > +cost, short when q90 < -cost (asymmetric confidence); position = 1 / predicted interval width (vol-aware sizing), gross capped
+    pass: net mean > 0 with CI > 0 AND pinball improvement > 0 in >= 3 of 4 holdout quarters AND slice rules
+  B14_4_sequence_dl:
+    method: GRU and TCN on the 48h x 12 sequence + tensor snapshot; 3 seeds each; targets (a) pump in next 6h (>= +20%), (b) sign of 24h residual return
+    baseline: LightGBM on the same information (tensor + hand-made sequence summaries)
+    blend: mean of calibrated probabilities (tree + GRU + TCN)
+    metrics: (a) PR-AUC and precision@top-0.5% vs baseline; (b) AUC, quintile L/S net, top-10 long net
+    pass: blend beats the tree baseline with day-block CI > 0 on the primary metric AND the traded rule has net CI > 0 AND slice rules
+  B14_5_regime_hmm:
+    method: Gaussian HMM, 3 states, on daily market_state features (standardised), fitted walk-forward (refit monthly on past data only), state assigned with past-only filtering
+    outputs: state timeline, per-state mean/vol of alt returns, per-state performance of: signal_xs paper P&L, crash-rebound rule, F2 pump CNN paper P&L, and every B14 model
+    pass (as a standalone signal): a rule "trade primary X only in state s" is NOT registered as a strategy; this experiment is diagnostic and feeds the slice rules above
+  B14_6_ipca_latent_factors:
+    method: IPCA (Kelly-Pruitt-Su ALS) with K = 2, 3, 4 on 25 characteristics (price_volume + positioning + korean + spot + size), weekly rebalance, estimated walk-forward yearly
+    benchmark: observable 4-factor model (market, size, momentum, reversal) with rolling betas
+    metrics: OOS total R2, predictive R2, tangency portfolio net Sharpe (costs as above), per K
+    pass: predictive R2 > benchmark AND tangency net Sharpe > 1.0 with daily net CI > 0
+  B14_7_causal_leadlag:
+    method: PCMCI+ (tigramite, ParCorr) on hourly aggregate series: mean KRW premium, Upbit volume share, aggregate OI change, mean funding, alt breadth, BTC return, mean alt residual return; max lag 24h; fitted on discovery
+    trade test: each discovered lagged link INTO alt residual return becomes a registered signal (sign from discovery); on holdout, long/short the liquid alt basket when the source series exceeds +-1 sd; BH across links
+    pass: >= 1 link with holdout net CI > 0 after BH
+  B14_8_robustness_table:
+    for every passing rule from B14_1-B14_7: report the full slice table, the Deflated Sharpe given the number of B14 trials in research/trial_ledger.csv, and the 2024 (pre-discovery) period as a second holdout where data exists

@@ -652,6 +652,18 @@ def run_trading_cycle(storage: Storage | None = None) -> dict[str, Any]:
             if not price_row:
                 _record_candidate_stop(entry_funnel, symbol, "blocked_freshness", "no latest price at open")
                 continue
+            # Sentiment gate: shadow-logs until the sentiment lab's composite
+            # passes out-of-sample, then vetoes entries sentiment opposes.
+            from src.engine.sentiment_gate import allow_entry
+
+            sent_ok, sent_reason = allow_entry(storage, symbol, str(verdict.get("direction") or ""))
+            if not sent_ok:
+                entry_funnel["blocked_sentiment"] = entry_funnel.get("blocked_sentiment", 0) + 1
+                _record_candidate_stop(
+                    entry_funnel, symbol, "blocked_sentiment", sent_reason,
+                    float(candidate.get("confidence") or 0.0),
+                )
+                continue
             signal_result = {
                 "signal_id": None,
                 "symbol": symbol,

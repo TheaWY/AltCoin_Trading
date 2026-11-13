@@ -50,7 +50,7 @@ from src.symbols import ccxt_symbol, trading_symbols  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-BINANCE_FUTURES_COMBINED_STREAM = "wss://fstream.binance.com/stream?streams="
+BINANCE_FUTURES_COMBINED_STREAM = "wss://fstream.binance.com/market/stream?streams="  # /market: old path went silent
 MAX_STREAMS_PER_CONNECTION = 200
 ALNUM_SYMBOL = re.compile(r"^[A-Z0-9]+$")
 

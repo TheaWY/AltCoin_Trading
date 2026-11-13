@@ -28,7 +28,10 @@ def _enrich_portfolio(payload: dict) -> dict:
         symbol = trade["symbol"]
         latest = storage.get_latest_price(symbol)
         current_price = float(latest["close"]) if latest else float(trade["entry_price"])
-        inv = trader.investment_for_symbol(symbol, current_price)
+        # One row per open trade: a symbol can hold several open trades, and
+        # looking up by symbol alone repeats the first trade for each of them.
+        inv = trader.investment_for_symbol(symbol, current_price, open_trade=trade)
+        inv["id"] = trade.get("id")
         inv["symbol"] = symbol
         inv["base"] = symbol.split("/")[0]
         positions.append(inv)

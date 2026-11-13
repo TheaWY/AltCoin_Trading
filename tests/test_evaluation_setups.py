@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import unittest
 from contextlib import contextmanager
+from unittest import mock
 
 from src.engine.evaluation import (  # noqa: E402
     STYLE_FAILED_PUMP_LONG,
@@ -111,7 +112,9 @@ class EvaluationSetupTests(unittest.TestCase):
             volume_ratio=1.8,
         )
         self.assertIsNone(_failed_pump_short_setup(metrics))
-        funding_setup = _funding_setup(metrics, funding_rate=-0.02)
+        # SETUP_FUNDING_ENABLED is resolved on config at import time: pin it here
+        with mock.patch.object(config, "SETUP_FUNDING_ENABLED", True):
+            funding_setup = _funding_setup(metrics, funding_rate=-0.02)
         self.assertIsNotNone(funding_setup)
         self.assertEqual(funding_setup["style"], STYLE_SCALP)
         self.assertEqual(funding_setup["direction"], "LONG")

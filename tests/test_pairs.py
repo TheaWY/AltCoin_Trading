@@ -61,17 +61,25 @@ class EntryExitRule(unittest.TestCase):
         self.assertFalse(pairs.should_close(None))
 
     def test_should_stop_adverse_delta_from_entry_z(self):
-        # default delta=0.5: entry 2.2 stops at >= 2.7
-        self.assertTrue(pairs.should_stop(2.7, 2.2))
-        self.assertFalse(pairs.should_stop(2.69, 2.2))
-        self.assertTrue(pairs.should_stop(-2.7, -2.2))
-        self.assertFalse(pairs.should_stop(-2.69, -2.2))
-        self.assertFalse(pairs.should_stop(-2.7, 2.2))  # wrong direction is revert, not stop
+        # default delta=1.0: entry 2.2 stops at >= 3.2
+        self.assertTrue(pairs.should_stop(3.2, 2.2))
+        self.assertFalse(pairs.should_stop(3.19, 2.2))
+        self.assertTrue(pairs.should_stop(-3.2, -2.2))
+        self.assertFalse(pairs.should_stop(-3.19, -2.2))
+        self.assertFalse(pairs.should_stop(-3.2, 2.2))  # wrong direction is revert, not stop
         self.assertFalse(pairs.should_stop(None, 2.2))
         self.assertFalse(pairs.should_stop(2.7, None))
-        # explicit 1.5 still available for research
+        # tighter 0.5 and the originally suggested 1.5 remain available
+        self.assertTrue(pairs.should_stop(2.7, 2.2, 0.5))
+        self.assertFalse(pairs.should_stop(2.69, 2.2, 0.5))
         self.assertTrue(pairs.should_stop(3.7, 2.2, 1.5))
         self.assertFalse(pairs.should_stop(3.69, 2.2, 1.5))
+
+    def test_should_dollar_stop_cuts_at_configured_pct(self):
+        self.assertTrue(pairs.should_dollar_stop(-0.15))
+        self.assertFalse(pairs.should_dollar_stop(-0.149))
+        self.assertTrue(pairs.should_dollar_stop(-0.08, 0.05))
+        self.assertFalse(pairs.should_dollar_stop(0.02, 0.15))
 
     def test_zscore_none_on_degenerate_window(self):
         flat = np.full(pairs.ZWIN_HOURS, 5.0)
@@ -93,23 +101,50 @@ class EntryExitRule(unittest.TestCase):
 
 
 class Selection(unittest.TestCase):
+    def test_median_daily_dvol_sums_24h_blocks(self):
+        hourly = np.full(48, 100.0)
+        self.assertAlmostEqual(pairs.median_daily_dvol(hourly), 2400.0)
+        thin = np.full(24, pairs.MIN_DVOL * 0.1 / 24)
+        self.assertLess(pairs.median_daily_dvol(thin), pairs.MIN_DVOL)
+        fat = np.full(24, pairs.MIN_DVOL * 2 / 24)
+        self.assertGreaterEqual(pairs.median_daily_dvol(fat), pairs.MIN_DVOL)
+
     def test_liquid_universe_pit_filters_coverage_and_volume(self):
         n = pairs.SEL_HOURS
         sel = slice(0, n)
+        liq_h = pairs.MIN_DVOL * 2 / 24
+        thin_h = pairs.MIN_DVOL * 0.1 / 24
         logp = {
             "LIQ/USDT": np.zeros(n),
             "THIN/USDT": np.zeros(n),
             "GAPPY/USDT": np.concatenate([np.zeros(n // 3), np.full(n - n // 3, np.nan)]),
         }
         dvol = {
-            "LIQ/USDT": np.full(n, pairs.MIN_DVOL * 2),
-            "THIN/USDT": np.full(n, pairs.MIN_DVOL * 0.1),
-            "GAPPY/USDT": np.full(n, pairs.MIN_DVOL * 2),
+            "LIQ/USDT": np.full(n, liq_h),
+            "THIN/USDT": np.full(n, thin_h),
+            "GAPPY/USDT": np.full(n, liq_h),
         }
         live = pairs.liquid_universe(logp, dvol, sel)
         self.assertIn("LIQ/USDT", live)
         self.assertNotIn("THIN/USDT", live)
         self.assertNotIn("GAPPY/USDT", live)
+
+    def test_liquid_universe_drops_excluded_memes_even_if_liquid(self):
+        n = pairs.SEL_HOURS
+        sel = slice(0, n)
+        hourly = np.full(n, pairs.MIN_DVOL * 3 / 24)
+        logp = {
+            "BTW/USDT": np.zeros(n),
+            "PUMP/USDT": np.zeros(n),
+            "LIQ/USDT": np.zeros(n),
+        }
+        dvol = {s: hourly for s in logp}
+        live = pairs.liquid_universe(logp, dvol, sel)
+        self.assertTrue(pairs.is_excluded("BTW/USDT"))
+        self.assertTrue(pairs.is_excluded("pump/usdt"))
+        self.assertNotIn("BTW/USDT", live)
+        self.assertNotIn("PUMP/USDT", live)
+        self.assertIn("LIQ/USDT", live)
 
     def test_liquid_universe_drops_recently_listed_when_series_is_long(self):
         min_h = int(pairs.MIN_LISTING_DAYS * 24)
@@ -118,11 +153,9 @@ class Selection(unittest.TestCase):
         old = np.zeros(n)
         young = np.full(n, np.nan)
         young[-2000:] = 0.0  # ~83 days: enough coverage, short of 180d listing floor
+        hourly = np.full(n, pairs.MIN_DVOL * 2 / 24)
         logp = {"OLD/USDT": old, "YOUNG/USDT": young}
-        dvol = {
-            "OLD/USDT": np.full(n, pairs.MIN_DVOL * 2),
-            "YOUNG/USDT": np.full(n, pairs.MIN_DVOL * 2),
-        }
+        dvol = {"OLD/USDT": hourly, "YOUNG/USDT": hourly}
         live = pairs.liquid_universe(logp, dvol, sel)
         self.assertIn("OLD/USDT", live)
         self.assertNotIn("YOUNG/USDT", live)
